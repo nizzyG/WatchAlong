@@ -75,6 +75,8 @@ input:disabled {
   height: 100%;
   object-fit: contain;
   background: #020305;
+  opacity: 1;
+  transition: opacity 300ms ease;
 }
 
 .view-library .reaction-video,
@@ -93,6 +95,22 @@ input:disabled {
   padding: 34px;
   overflow: hidden;
   background: #05070a;
+  animation: library-fade-in 300ms ease both;
+}
+
+.view-transitioning .library-home,
+.view-transitioning .reaction-video {
+  transition: opacity 300ms ease;
+}
+
+@keyframes library-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .library-home-header {
@@ -100,6 +118,28 @@ input:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
+}
+
+.library-home-brand {
+  display: grid;
+  grid-template-columns: 34px minmax(0, auto);
+  gap: 10px;
+  align-items: center;
+}
+
+.library-home-brand p {
+  grid-column: 2;
+}
+
+.library-home-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(207, 224, 239, 0.12);
+  border-radius: 8px;
+  color: rgba(213, 230, 242, 0.76);
+  background: rgba(16, 24, 32, 0.54);
 }
 
 .library-home-header h1,
@@ -142,6 +182,11 @@ input:disabled {
 .library-empty-state h2 {
   font-size: 28px;
   font-weight: 720;
+}
+
+.library-ownership-line {
+  max-width: 460px;
+  font-size: 13px;
 }
 
 .library-session-grid {
@@ -332,7 +377,8 @@ input:disabled {
 
 .startup-error-state,
 .welcome-backdrop,
-.missing-media-backdrop {
+.missing-media-backdrop,
+.session-dialog-backdrop {
   position: absolute;
   inset: 0;
   z-index: 32;
@@ -345,7 +391,8 @@ input:disabled {
 
 .startup-error-card,
 .welcome-card,
-.missing-media-card {
+.missing-media-card,
+.session-dialog {
   display: grid;
   justify-items: center;
   gap: 16px;
@@ -378,22 +425,26 @@ input:disabled {
 .startup-error-card h1,
 .welcome-card h1,
 .missing-media-card h1,
+.session-dialog h1,
 .startup-error-card p,
 .welcome-card p,
-.missing-media-card p {
+.missing-media-card p,
+.session-dialog p {
   margin: 0;
 }
 
 .startup-error-card h1,
 .welcome-card h1,
-.missing-media-card h1 {
+.missing-media-card h1,
+.session-dialog h1 {
   font-size: 28px;
   font-weight: 760;
 }
 
 .startup-error-card p,
 .welcome-card p,
-.missing-media-card p {
+.missing-media-card p,
+.session-dialog p {
   max-width: 470px;
   color: #aebdcb;
   line-height: 1.45;
@@ -401,7 +452,8 @@ input:disabled {
 
 .startup-error-actions,
 .welcome-actions,
-.missing-media-actions {
+.missing-media-actions,
+.session-dialog-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -411,10 +463,46 @@ input:disabled {
 .startup-error-actions .secondary-button,
 .welcome-actions .secondary-button,
 .missing-media-actions .secondary-button,
-.missing-media-actions .primary-button {
+.missing-media-actions .primary-button,
+.session-dialog-actions .secondary-button,
+.session-dialog-actions .primary-button {
   width: auto;
   padding: 0 12px;
   font-size: inherit;
+}
+
+.session-dialog {
+  justify-items: stretch;
+  width: min(460px, calc(100vw - 68px));
+  text-align: left;
+}
+
+.session-dialog h1,
+.session-dialog p {
+  text-align: center;
+}
+
+.session-dialog label {
+  display: grid;
+  gap: 7px;
+  color: #dce8f3;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.session-dialog input {
+  width: 100%;
+  height: 42px;
+  padding: 0 11px;
+  border: 1px solid rgba(194, 212, 232, 0.16);
+  border-radius: 7px;
+  color: #eef5ff;
+  background: rgba(4, 7, 10, 0.78);
+  outline: none;
+}
+
+.session-dialog input:focus {
+  border-color: rgba(224, 238, 247, 0.48);
 }
 
 .missing-media-list {
@@ -425,7 +513,7 @@ input:disabled {
 
 .missing-media-list div {
   display: grid;
-  grid-template-columns: 82px minmax(0, 1fr);
+  grid-template-columns: 20px 96px minmax(0, 1fr);
   gap: 10px;
   align-items: center;
   padding: 10px 12px;
@@ -435,11 +523,24 @@ input:disabled {
   text-align: left;
 }
 
+.missing-media-list svg {
+  color: #f0d27d;
+}
+
 .missing-media-list strong {
   color: #dce8f3;
   font-size: 12px;
   font-weight: 780;
   text-transform: uppercase;
+}
+
+.missing-media-library-link {
+  height: auto;
+  padding: 0;
+  color: #aebdcb;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .missing-media-list span {
@@ -1354,6 +1455,17 @@ input:disabled {
   font-size: 13px;
 }
 
+.wizard-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  margin: 0;
+  color: #ffd9d9;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 .wizard-actions {
   display: flex;
   align-self: end;
@@ -1362,7 +1474,7 @@ input:disabled {
 }
 
 .wizard-reaction-step {
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: 10px;
   padding-top: 10px;
 }
@@ -1433,6 +1545,11 @@ input:disabled {
 
 .wizard-reaction-ready {
   justify-self: center;
+}
+
+.wizard-movie-complete {
+  justify-self: center;
+  align-self: start;
 }
 
 .wizard-ready-step {
@@ -1770,6 +1887,28 @@ input:disabled {
   min-width: 0;
 }
 
+.panel-patreon-storage strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel-setting-actions {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.panel-setting-actions .link-button {
+  height: 30px;
+  font-size: 12px;
+}
+
+.panel-learn-more {
+  white-space: normal;
+}
+
 .panel-setting-row strong,
 .panel-setting-row small,
 .panel-toggle-row strong,
@@ -1777,6 +1916,12 @@ input:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.panel-toggle-row .panel-learn-more {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .panel-toggle-row input[type='checkbox'] {
@@ -2195,7 +2340,7 @@ input:disabled {
 
 .control-row {
   display: grid;
-  grid-template-columns: 38px 38px 38px 38px minmax(94px, auto) minmax(220px, 1fr) auto auto 38px;
+  grid-template-columns: 38px 38px 38px minmax(94px, auto) minmax(280px, 1fr) auto auto 38px 38px;
   gap: 10px;
   align-items: center;
 }
@@ -2344,7 +2489,7 @@ input:disabled {
 
 @media (max-width: 1100px) {
   .control-row {
-    grid-template-columns: 38px 38px 38px 38px minmax(94px, auto) minmax(140px, 1fr) 38px 38px 38px;
+    grid-template-columns: 38px 38px 38px minmax(84px, auto) minmax(120px, 1fr) auto auto 38px 38px;
   }
 
   .secondary-button {

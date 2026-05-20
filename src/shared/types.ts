@@ -7,6 +7,7 @@ export type ReactionSource = 'local' | ReactionDownloadSource
 export type DownloadJobState = 'idle' | 'checking' | 'downloading' | 'success' | 'failed' | 'cancelled'
 export type WizardOutcome = 'cancelled' | 'completed'
 export type LibraryViewPreference = 'grid' | 'list'
+export type ImportWizardMode = 'new' | 'show-again' | 'swap-reaction'
 
 export interface MediaFile {
   path: string
@@ -130,6 +131,17 @@ export interface AppPreferences {
   reactionDownloadDirectory: string | null
 }
 
+export interface ImportWizardLaunchOptions {
+  mode?: ImportWizardMode
+  sessionId?: string | null
+}
+
+export interface ImportWizardContext {
+  mode: ImportWizardMode
+  sessionId: string | null
+  movie: MediaFile | null
+}
+
 export interface WatchAlongApi {
   openVideos(): Promise<OpenVideosResult | null>
   selectMovieFile(): Promise<MediaFile | null>
@@ -138,6 +150,7 @@ export interface WatchAlongApi {
   getLibrary(): Promise<SessionLibrary>
   saveActiveSession(patch: Partial<LibrarySession>): Promise<SessionLibrary>
   setSessionMedia(role: MediaRole, path: string, reactionSource?: ReactionSource): Promise<SessionLibrary>
+  replaceSessionMedia(sessionId: string, role: MediaRole, path: string, reactionSource?: ReactionSource): Promise<SessionLibrary>
   setActiveSession(sessionId: string): Promise<SessionLibrary>
   deleteSession(sessionId: string): Promise<SessionLibrary>
   renameSession(sessionId: string, title: string): Promise<SessionLibrary>
@@ -156,7 +169,8 @@ export interface WatchAlongApi {
   cancelDownload(jobId: string): Promise<void>
   onDownloadProgress(callback: DownloadProgressCallback): () => void
   openOnboardingWizard(): Promise<void>
-  openImportWizard(): Promise<void>
+  openImportWizard(options?: ImportWizardLaunchOptions): Promise<void>
+  getImportWizardContext(): Promise<ImportWizardContext>
   finishOnboardingWizard(outcome: WizardOutcome): Promise<void>
   onWizardLifecycle(callback: WizardLifecycleCallback): () => void
   getPreferences(): Promise<AppPreferences>

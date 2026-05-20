@@ -62,13 +62,19 @@ export function SmartReactionInput({ movieReady, onSelectLocal, onDownloaded }: 
   useEffect(() => {
     let mounted = true
     void (async () => {
-      const [detectedBrowsers, status] = await Promise.all([
-        window.watchAlong.detectBrowsers(),
-        window.watchAlong.getSavedPatreonSessionStatus()
-      ])
-      if (mounted) {
-        setBrowsers(detectedBrowsers)
-        setSavedSession(status)
+      try {
+        const [detectedBrowsers, status] = await Promise.all([
+          window.watchAlong.detectBrowsers(),
+          window.watchAlong.getSavedPatreonSessionStatus()
+        ])
+        if (mounted) {
+          setBrowsers(detectedBrowsers)
+          setSavedSession(status)
+        }
+      } catch {
+        if (mounted) {
+          setError('WatchAlong could not check Patreon sign-in options. You can still paste your session_id manually.')
+        }
       }
     })()
 
@@ -102,15 +108,19 @@ export function SmartReactionInput({ movieReady, onSelectLocal, onDownloaded }: 
 
     setError(null)
     setProgress(null)
-    const result = await window.watchAlong.startReactionDownload({ source: 'youtube', url: youtubeUrl.trim() })
-    setJobId(result.jobId)
-    setProgress({
-      jobId: result.jobId,
-      source: 'youtube',
-      state: 'checking',
-      message: 'Checking downloader tools...',
-      percent: null
-    })
+    try {
+      const result = await window.watchAlong.startReactionDownload({ source: 'youtube', url: youtubeUrl.trim() })
+      setJobId(result.jobId)
+      setProgress({
+        jobId: result.jobId,
+        source: 'youtube',
+        state: 'checking',
+        message: 'Checking downloader tools...',
+        percent: null
+      })
+    } catch {
+      setError('WatchAlong could not start that YouTube download. Check the link and try again.')
+    }
   }
 
   const startPatreonDownload = async (sessionSource: PatreonSessionSource): Promise<void> => {
@@ -120,19 +130,23 @@ export function SmartReactionInput({ movieReady, onSelectLocal, onDownloaded }: 
 
     setError(null)
     setProgress(null)
-    const result = await window.watchAlong.startReactionDownload({
-      source: 'patreon',
-      url: patreonUrl.trim(),
-      sessionSource
-    })
-    setJobId(result.jobId)
-    setProgress({
-      jobId: result.jobId,
-      source: 'patreon',
-      state: 'checking',
-      message: 'Checking downloader tools...',
-      percent: null
-    })
+    try {
+      const result = await window.watchAlong.startReactionDownload({
+        source: 'patreon',
+        url: patreonUrl.trim(),
+        sessionSource
+      })
+      setJobId(result.jobId)
+      setProgress({
+        jobId: result.jobId,
+        source: 'patreon',
+        state: 'checking',
+        message: 'Checking downloader tools...',
+        percent: null
+      })
+    } catch {
+      setError('WatchAlong could not start that Patreon download. Check access to the post and try again.')
+    }
   }
 
   const readBrowserSession = async (browser: BrowserDetection): Promise<void> => {
@@ -142,12 +156,17 @@ export function SmartReactionInput({ movieReady, onSelectLocal, onDownloaded }: 
 
     setError(null)
     setBrowserReading(browser.name)
-    const result = await window.watchAlong.extractPatreonSession(browser.name)
-    setBrowserReading(null)
-    if (result.ok && result.token) {
-      await startPatreonDownload({ type: 'browser', browser: browser.name, token: result.token })
-    } else {
-      setError(result.message ?? 'We could not automatically read your Patreon session.')
+    try {
+      const result = await window.watchAlong.extractPatreonSession(browser.name)
+      setBrowserReading(null)
+      if (result.ok && result.token) {
+        await startPatreonDownload({ type: 'browser', browser: browser.name, token: result.token })
+      } else {
+        setError(result.message ?? 'We could not automatically read your Patreon session.')
+      }
+    } catch {
+      setBrowserReading(null)
+      setError('We could not automatically read your Patreon session.')
     }
   }
 
@@ -158,18 +177,36 @@ export function SmartReactionInput({ movieReady, onSelectLocal, onDownloaded }: 
 
     setError(null)
     setLoginWindowOpen(true)
-    const result = await window.watchAlong.openPatreonLoginWindow()
-    setLoginWindowOpen(false)
-    if (result.ok && result.token) {
-      await startPatreonDownload({ type: 'token', token: result.token })
-    } else {
-      setError(result.message ?? 'Patreon sign-in did not return a session.')
+    try {
+      const result = await window.watchAlong.openPatreonLoginWindow()
+      setLoginWindowOpen(false)
+      if (result.ok && result.token) {
+        await startPatreonDownload({ type: 'token', token: result.token })
+      } else {
+        setError(result.message ?? 'Patreon sign-in did not return a session.')
+      }
+    } catch {
+      setLoginWindowOpen(false)
+      setError('Patreon sign-in could not be opened. You can paste your session_id manually.')
     }
   }
 
   const cancelDownload = async (): Promise<void> => {
     if (jobId) {
-      await window.watchAlong.cancelDownload(jobId)
+      try {
+        await window.watchAlong.cancelDownload(jobId)
+      } catch {
+        setError('WatchAlong could not cancel this download. It may finish in the background.')
+      }
+    }
+  }
+
+  const selectLocalReaction = async (): Promise<void> => {
+    setError(null)
+    try {
+      await onSelectLocal()
+    } catch {
+      setError('WatchAlong could not open the reaction picker. Try again when you are ready.')
     }
   }
 
@@ -189,7 +226,7 @@ export function SmartReactionInput({ movieReady, onSelectLocal, onDownloaded }: 
           description="I already downloaded the reaction video. MP4 and WebM work best."
           onClick={() => {
             setActiveCard('local')
-            void onSelectLocal()
+            void selectLocalReaction()
           }}
         />
 

@@ -4,20 +4,24 @@ export type PipCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right
 
 const SNAP_MARGIN = 24
 const SNAP_THRESHOLD = 56
+const MIN_WIDTH = 320
+const MIN_HEIGHT = 180
+const MAX_VIEWPORT_RATIO = 0.55
 
 export function constrainOverlay(
   geometry: OverlayGeometry,
   viewportWidth = window.innerWidth,
   viewportHeight = window.innerHeight
 ): OverlayGeometry {
-  const width = Math.max(320, geometry.width)
-  const height = Math.max(180, geometry.height)
+  const scaled = scaleOverlayToViewport(geometry, viewportWidth, viewportHeight)
+  const width = scaled.width
+  const height = scaled.height
   const maxX = Math.max(0, viewportWidth - width)
   const maxY = Math.max(0, viewportHeight - height)
 
   return {
-    x: clamp(geometry.x, 0, maxX),
-    y: clamp(geometry.y, 0, maxY),
+    x: clamp(scaled.x, 0, maxX),
+    y: clamp(scaled.y, 0, maxY),
     width,
     height
   }
@@ -79,6 +83,24 @@ function getCornerGeometries(
     { corner: 'bottom-right', geometry: { ...geometry, x: right, y: bottom } },
     { corner: 'bottom-left', geometry: { ...geometry, x: SNAP_MARGIN, y: bottom } }
   ]
+}
+
+function scaleOverlayToViewport(
+  geometry: OverlayGeometry,
+  viewportWidth: number,
+  viewportHeight: number
+): OverlayGeometry {
+  const width = Math.max(MIN_WIDTH, geometry.width)
+  const height = Math.max(MIN_HEIGHT, geometry.height)
+  const maxWidth = Math.max(MIN_WIDTH, Math.min(viewportWidth - SNAP_MARGIN * 2, viewportWidth * MAX_VIEWPORT_RATIO))
+  const maxHeight = Math.max(MIN_HEIGHT, Math.min(viewportHeight - SNAP_MARGIN * 2, viewportHeight * MAX_VIEWPORT_RATIO))
+  const scale = Math.min(1, maxWidth / width, maxHeight / height)
+
+  return {
+    ...geometry,
+    width: Math.round(width * scale),
+    height: Math.round(height * scale)
+  }
 }
 
 function clamp(value: number, min: number, max: number): number {

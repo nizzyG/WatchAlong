@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   BrowserName,
   DownloadProgressCallback,
+  ImportWizardLaunchOptions,
   LibrarySession,
   MediaRole,
   ReactionDownloadRequest,
@@ -20,6 +21,8 @@ const api: WatchAlongApi = {
   getLibrary: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-library`),
   saveActiveSession: (patch: Partial<LibrarySession>) => ipcRenderer.invoke(`${IPC_PREFIX}:save-active-session`, patch),
   setSessionMedia: (role, path, reactionSource) => ipcRenderer.invoke(`${IPC_PREFIX}:set-session-media`, role, path, reactionSource),
+  replaceSessionMedia: (sessionId, role, path, reactionSource) =>
+    ipcRenderer.invoke(`${IPC_PREFIX}:replace-session-media`, sessionId, role, path, reactionSource),
   setActiveSession: (sessionId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:set-active-session`, sessionId),
   deleteSession: (sessionId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:delete-session`, sessionId),
   renameSession: (sessionId: string, title: string) => ipcRenderer.invoke(`${IPC_PREFIX}:rename-session`, sessionId, title),
@@ -44,7 +47,8 @@ const api: WatchAlongApi = {
     return () => ipcRenderer.removeListener(`${IPC_PREFIX}:download-progress`, listener)
   },
   openOnboardingWizard: () => ipcRenderer.invoke(`${IPC_PREFIX}:open-onboarding-wizard`),
-  openImportWizard: () => ipcRenderer.invoke(`${IPC_PREFIX}:open-import-wizard`),
+  openImportWizard: (options?: ImportWizardLaunchOptions) => ipcRenderer.invoke(`${IPC_PREFIX}:open-import-wizard`, options),
+  getImportWizardContext: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-import-wizard-context`),
   finishOnboardingWizard: (outcome: WizardOutcome) => ipcRenderer.invoke(`${IPC_PREFIX}:finish-onboarding-wizard`, outcome),
   onWizardLifecycle: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof callback>[0]): void => {

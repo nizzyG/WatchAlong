@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Captions,
   Check,
   ChevronDown,
@@ -15,6 +16,7 @@ import {
   Library as LibraryIcon,
   List,
   Loader2,
+  Lock,
   Maximize,
   MoreHorizontal,
   Pause,
@@ -37,6 +39,7 @@ import { createDefaultLibrary, createDefaultSession, getActiveSession } from '@s
 import type {
   AppPreferences,
   DownloadProgressEvent,
+  ImportWizardLaunchOptions,
   LibrarySession,
   LibraryViewPreference,
   MediaRole,
@@ -78,8 +81,9 @@ const movieSourceRates = [
   { label: 'Reverse', rate: 0.999001 }
 ]
 const CONTROL_IDLE_DELAY_MS = 2400
+const VIEW_FADE_MS = 300
 const APP_VERSION = '0.1.0'
-const ONLINE_HELP_URL: string | null = null
+const ONLINE_HELP_URL = 'https://github.com/nizzyG/WatchAlong#readme'
 const DONATION_URL: string | null = null
 
 export function App(): JSX.Element {
@@ -94,6 +98,7 @@ export function App(): JSX.Element {
   const downloadIndicatorTimerRef = useRef<number | null>(null)
   const commandPanelButtonRef = useRef<HTMLButtonElement>(null)
   const commandPanelReturnFocusRef = useRef<HTMLElement | null>(null)
+  const resumeAfterRepairRef = useRef(false)
 
   const [emptySession] = useState(() => createDefaultSession())
   const [library, setLibrary] = useState<SessionLibrary>(() => createDefaultLibrary())
@@ -122,6 +127,10 @@ export function App(): JSX.Element {
   const [commandPanelOpen, setCommandPanelOpen] = useState(false)
   const [expandedPanelSection, setExpandedPanelSection] = useState<CommandPanelSection>('now-playing')
   const [patreonStatus, setPatreonStatus] = useState<SavedPatreonSessionStatus>({ available: false, canEncrypt: false })
+  const [renameTargetId, setRenameTargetId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<{ sessionId: string; returnToLibrary: boolean } | null>(null)
+  const [viewTransitioning, setViewTransitioning] = useState(false)
 
   const activeSession = useMemo(() => getActiveSession(library), [library])
   const session = activeSession ?? emptySession
@@ -162,26 +171,29 @@ export function App(): JSX.Element {
     setAppView('loading')
     setError(null)
 
-    try {
-      const [loadedLibrary, loadedPreferences] = await Promise.all([
-        window.watchAlong.getLibrary(),
-        window.watchAlong.getPreferences()
-      ])
+    const [libraryResult, preferencesResult] = await Promise.allSettled([
+      window.watchAlong.getLibrary(),
+      window.watchAlong.getPreferences()
+    ])
 
-      const loadedSession = commitLibrary(loadedLibrary)
-      setPreferences(loadedPreferences)
-      setShowWelcome(!loadedPreferences.hasCompletedOnboarding)
-      const shouldOpenPlayer = !loadedPreferences.openLibraryOnLaunch && Boolean(loadedSession)
-      setAppView(shouldOpenPlayer ? 'player' : 'library')
-      setPosition(loadedSession?.lastReactionTimeSeconds ?? 0)
-      setMoviePosition(0)
-      await refreshMediaUrls(shouldOpenPlayer ? loadedSession?.id ?? null : null)
-    } catch (error) {
-      setStartupError(errorMessage(error, 'WatchAlong could not load your library or preferences.'))
-      commitLibrary(createDefaultLibrary())
+    const loadedLibrary = libraryResult.status === 'fulfilled' ? libraryResult.value : createDefaultLibrary()
+    const loadedPreferences = preferencesResult.status === 'fulfilled' ? preferencesResult.value : defaultPreferences
+    const loadedSession = commitLibrary(loadedLibrary)
+    setPreferences(loadedPreferences)
+    setShowWelcome(!loadedPreferences.hasCompletedOnboarding)
+    setPosition(loadedSession?.lastReactionTimeSeconds ?? 0)
+    setMoviePosition(0)
+
+    if (libraryResult.status === 'rejected' || preferencesResult.status === 'rejected') {
+      setStartupError('Something went wrong while loading your library.')
       setAppView('startup-error')
       await refreshMediaUrls(null)
+      return
     }
+
+    const shouldOpenPlayer = !loadedPreferences.openLibraryOnLaunch && Boolean(loadedSession)
+    setAppView(shouldOpenPlayer ? 'player' : 'library')
+    await refreshMediaUrls(shouldOpenPlayer ? loadedSession?.id ?? null : null)
   }, [commitLibrary, refreshMediaUrls])
 
   useEffect(() => {
@@ -352,6 +364,7 @@ export function App(): JSX.Element {
     }
 
     window.addEventListener('resize', onResize)
+    onResize()
     return () => window.removeEventListener('resize', onResize)
   })
 
@@ -588,15 +601,24 @@ export function App(): JSX.Element {
     }
   }, [canPlay, pendingSyncSetup])
 
+  useEffect(() => {
+    if (!canPlay || !resumeAfterRepairRef.current) {
+      return
+    }
+
+    resumeAfterRepairRef.current = false
+    controllerRef.current?.play()
+  }, [canPlay])
+
   const persist = async (patch: Partial<LibrarySession>): Promise<LibrarySession | null> => {
     const next = await window.watchAlong.saveActiveSession(patch)
     return commitLibrary(next)
   }
 
-  const openImportWizard = (): void => {
+  const openImportWizard = (options?: ImportWizardLaunchOptions): void => {
     setCommandPanelOpen(false)
     setControlsIdle(false)
-    void window.watchAlong.openImportWizard()
+    void window.watchAlong.openImportWizard(options)
   }
 
   const navigateToLibrary = async (): Promise<void> => {
@@ -613,7 +635,6 @@ export function App(): JSX.Element {
 
   const openStartupLibrary = async (): Promise<void> => {
     setStartupError(null)
-    commitLibrary(createDefaultLibrary())
     setAppView('library')
     setShowWelcome(false)
     await refreshMediaUrls(null)
@@ -621,11 +642,16 @@ export function App(): JSX.Element {
 
   const startWelcomeImport = (): void => {
     setShowWelcome(false)
-    openImportWizard()
+    openImportWizard({ mode: 'new' })
   }
 
   const locateMissingMedia = async (role: MediaRole): Promise<void> => {
+    if (!activeSession) {
+      return
+    }
+
     setError(null)
+    const shouldResume = syncState === 'playing'
     controllerRef.current?.pause()
     const media = role === 'movie'
       ? await window.watchAlong.selectMovieFile()
@@ -634,7 +660,8 @@ export function App(): JSX.Element {
       return
     }
 
-    const next = await window.watchAlong.setSessionMedia(
+    const next = await window.watchAlong.replaceSessionMedia(
+      activeSession.id,
       role,
       media.path,
       role === 'reaction' ? activeSession?.reactionSource ?? 'local' : undefined
@@ -642,7 +669,7 @@ export function App(): JSX.Element {
     const nextSession = commitLibrary(next)
     setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
     setMoviePosition(0)
-    setPendingSyncSetup(Boolean(nextSession?.reactionPath && nextSession.moviePath))
+    resumeAfterRepairRef.current = shouldResume
     setAppView(nextSession ? 'player' : 'library')
     await refreshMediaUrls(nextSession?.id ?? null)
   }
@@ -670,7 +697,7 @@ export function App(): JSX.Element {
 
     controllerRef.current?.pause()
     if (activeSession?.moviePath) {
-      const next = await window.watchAlong.setSessionMedia('reaction', event.filePath, event.source)
+      const next = await window.watchAlong.replaceSessionMedia(activeSession.id, 'reaction', event.filePath, event.source)
       const nextSession = commitLibrary(next)
       setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
       setMoviePosition(0)
@@ -694,6 +721,11 @@ export function App(): JSX.Element {
     setAppView(nextSession ? 'player' : 'library')
     setCommandPanelOpen(false)
     await refreshMediaUrls(nextSession?.id ?? null)
+  }
+
+  const finishViewTransition = (): void => {
+    setViewTransitioning(true)
+    window.setTimeout(() => setViewTransitioning(false), VIEW_FADE_MS)
   }
 
   const focusPlayerFallback = (): void => {
@@ -827,34 +859,60 @@ export function App(): JSX.Element {
     setSetupMode(false)
     setCommandPanelOpen(false)
     setAppView(nextSession ? 'player' : 'library')
+    if (nextSession) {
+      finishViewTransition()
+    }
     await refreshMediaUrls(nextSession?.id ?? null)
   }
 
-  const renameSession = async (sessionId: string): Promise<void> => {
+  const requestRenameSession = (sessionId: string): void => {
     const current = library.sessions.find((item) => item.id === sessionId)
-    const title = window.prompt('Rename watch history item', current?.title ?? '')
-    if (!title?.trim()) {
-      return
-    }
-
-    commitLibrary(await window.watchAlong.renameSession(sessionId, title.trim()))
+    setRenameTargetId(sessionId)
+    setRenameDraft(current?.title ?? '')
   }
 
-  const deleteSession = async (sessionId: string): Promise<void> => {
-    if (!window.confirm('Remove this watch history item? Local video files will not be deleted.')) {
+  const cancelRenameSession = (): void => {
+    setRenameTargetId(null)
+    setRenameDraft('')
+  }
+
+  const confirmRenameSession = async (): Promise<void> => {
+    if (!renameTargetId || !renameDraft.trim()) {
       return
     }
 
-    const next = await window.watchAlong.deleteSession(sessionId)
+    commitLibrary(await window.watchAlong.renameSession(renameTargetId, renameDraft.trim()))
+    cancelRenameSession()
+  }
+
+  const requestDeleteSession = (sessionId: string, returnToLibrary = false): void => {
+    setDeleteTarget({ sessionId, returnToLibrary })
+  }
+
+  const cancelDeleteSession = (): void => {
+    setDeleteTarget(null)
+  }
+
+  const confirmDeleteSession = async (): Promise<void> => {
+    if (!deleteTarget) {
+      return
+    }
+
+    const shouldReturnToLibrary = deleteTarget.returnToLibrary
+    const next = await window.watchAlong.deleteSession(deleteTarget.sessionId)
     const nextSession = commitLibrary(next)
+    setDeleteTarget(null)
     setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
     setMoviePosition(0)
-    if (!nextSession) {
+    if (!nextSession || shouldReturnToLibrary) {
       setAppView('library')
       await refreshMediaUrls(null)
       return
     }
-    await refreshMediaUrls(nextSession?.id ?? null)
+
+    if (appView === 'player') {
+      await refreshMediaUrls(nextSession.id)
+    }
   }
 
   const openSubtitle = async (): Promise<void> => {
@@ -1128,7 +1186,7 @@ export function App(): JSX.Element {
     <main
       ref={appShellRef}
       tabIndex={-1}
-      className={`app-shell view-${appView} ${controlsIdle ? 'controls-idle' : ''} ${wizardDimmed ? 'wizard-dimmed' : ''} ${commandPanelOpen ? 'command-panel-active' : ''}`}
+      className={`app-shell view-${appView} ${controlsIdle ? 'controls-idle' : ''} ${wizardDimmed ? 'wizard-dimmed' : ''} ${commandPanelOpen ? 'command-panel-active' : ''} ${viewTransitioning ? 'view-transitioning' : ''}`}
     >
       <video
         ref={reactionVideoRef}
@@ -1149,7 +1207,7 @@ export function App(): JSX.Element {
 
       {appView === 'startup-error' && (
         <StartupErrorState
-          message={startupError ?? 'WatchAlong could not load your library or preferences.'}
+          message={startupError ?? 'Something went wrong while loading your library.'}
           onRetry={() => void loadInitialState()}
           onOpenLibrary={() => void openStartupLibrary()}
         />
@@ -1159,10 +1217,10 @@ export function App(): JSX.Element {
         <LibraryHome
           library={library}
           view={preferences.libraryView}
-          onNew={openImportWizard}
+          onNew={() => openImportWizard({ mode: 'new' })}
           onOpenSession={(sessionId) => void switchSession(sessionId)}
-          onRename={(sessionId) => void renameSession(sessionId)}
-          onDelete={(sessionId) => void deleteSession(sessionId)}
+          onRename={requestRenameSession}
+          onDelete={(sessionId) => requestDeleteSession(sessionId)}
         />
       )}
 
@@ -1182,7 +1240,7 @@ export function App(): JSX.Element {
           missingRoles={missingMediaRoles}
           onBackToLibrary={() => void navigateToLibrary()}
           onLocate={(role) => void locateMissingMedia(role)}
-          onRemoveSession={() => void deleteSession(activeSession.id)}
+          onRemoveSession={() => requestDeleteSession(activeSession.id, true)}
         />
       )}
 
@@ -1385,17 +1443,34 @@ export function App(): JSX.Element {
           onExpandedSection={setExpandedPanelSection}
           onClose={closeCommandPanel}
           onSyncSetup={syncNow}
-          onSwapReaction={openImportWizard}
+          onSwapReaction={() => openImportWizard({ mode: 'swap-reaction', sessionId: activeSession?.id ?? null })}
           onCloseSession={() => void navigateToLibrary()}
           onSwitchSession={(sessionId) => void switchSession(sessionId)}
           onViewLibrary={() => void navigateToLibrary()}
-          onNewSession={openImportWizard}
+          onNewSession={() => openImportWizard({ mode: 'new' })}
           onCancelDownload={(jobId) => void window.watchAlong.cancelDownload(jobId)}
           onAttachDownload={(event) => void attachDownloadedReaction(event)}
           onPreference={updatePreference}
           onChooseDownloadDirectory={() => void chooseDownloadDirectory()}
           onForgetPatreon={() => void forgetPatreonSession()}
-          onShowWizard={openImportWizard}
+          onShowWizard={() => openImportWizard({ mode: 'show-again' })}
+        />
+      )}
+
+      {renameTargetId && (
+        <RenameSessionDialog
+          title={renameDraft}
+          onTitleChange={setRenameDraft}
+          onCancel={cancelRenameSession}
+          onConfirm={() => void confirmRenameSession()}
+        />
+      )}
+
+      {deleteTarget && (
+        <DeleteSessionDialog
+          sessionTitle={library.sessions.find((item) => item.id === deleteTarget.sessionId)?.title ?? 'this watchalong'}
+          onCancel={cancelDeleteSession}
+          onConfirm={() => void confirmDeleteSession()}
         />
       )}
 
@@ -1414,6 +1489,79 @@ export function App(): JSX.Element {
   )
 }
 
+function RenameSessionDialog({
+  title,
+  onTitleChange,
+  onCancel,
+  onConfirm
+}: {
+  title: string
+  onTitleChange(value: string): void
+  onCancel(): void
+  onConfirm(): void
+}): JSX.Element {
+  return (
+    <section className="session-dialog-backdrop" aria-label="Rename watchalong">
+      <form
+        className="session-dialog"
+        onSubmit={(event) => {
+          event.preventDefault()
+          onConfirm()
+        }}
+      >
+        <h1>Rename watchalong</h1>
+        <p>Give this session a name that is easy to find in your local library.</p>
+        <label>
+          <span>Title</span>
+          <input
+            autoFocus
+            value={title}
+            onChange={(event) => onTitleChange(event.currentTarget.value)}
+          />
+        </label>
+        <div className="session-dialog-actions">
+          <button className="secondary-button" type="button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="primary-button" type="submit" disabled={!title.trim()}>
+            Save
+          </button>
+        </div>
+      </form>
+    </section>
+  )
+}
+
+function DeleteSessionDialog({
+  sessionTitle,
+  onCancel,
+  onConfirm
+}: {
+  sessionTitle: string
+  onCancel(): void
+  onConfirm(): void
+}): JSX.Element {
+  return (
+    <section className="session-dialog-backdrop" aria-label="Delete watchalong">
+      <div className="session-dialog">
+        <h1>Delete this watchalong?</h1>
+        <p>
+          {sessionTitle} will be removed from your WatchAlong library. Your movie and reaction files stay on this device.
+        </p>
+        <div className="session-dialog-actions">
+          <button className="secondary-button" type="button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="secondary-button danger-button" type="button" onClick={onConfirm}>
+            <Trash2 size={16} aria-hidden />
+            Delete
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function StartupErrorState({
   message,
   onRetry,
@@ -1429,8 +1577,8 @@ function StartupErrorState({
         <div className="startup-error-icon">
           <RefreshCw size={32} aria-hidden />
         </div>
-        <h1>WatchAlong could not start cleanly</h1>
-        <p>{message}</p>
+        <h1>{message}</h1>
+        <p>You can try again, or open the Library with anything WatchAlong could load.</p>
         <div className="startup-error-actions">
           <button className="primary-button" type="button" onClick={onRetry}>
             <RefreshCw size={17} aria-hidden />
@@ -1499,23 +1647,20 @@ function MissingMediaRecovery({
           <FileVideo size={34} aria-hidden />
         </div>
         <div className="missing-media-copy">
-          <h1>Some media files are missing</h1>
-          <p>WatchAlong cannot play this session until the missing file paths are repaired.</p>
+          <h1>A file for this session can&apos;t be found.</h1>
+          <p>Point WatchAlong to the moved file and this session can continue from where you left off.</p>
         </div>
         <div className="missing-media-list">
           {missingRoles.map((role) => (
             <div key={role}>
-              <strong>{role === 'movie' ? 'Movie' : 'Reaction'}</strong>
-              <span>{role === 'movie' ? session.moviePath : session.reactionPath}</span>
+              <AlertTriangle size={17} aria-hidden />
+              <strong>{role === 'movie' ? 'Movie file' : 'Reaction file'}</strong>
+              <span>{fileName((role === 'movie' ? session.moviePath : session.reactionPath) ?? 'Unknown')}</span>
             </div>
           ))}
         </div>
         <p className="media-format-hint">MP4 and WebM work best. MKV/AVI may not play in all cases.</p>
         <div className="missing-media-actions">
-          <button className="secondary-button" type="button" onClick={onBackToLibrary}>
-            <LibraryIcon size={16} aria-hidden />
-            Back to Library
-          </button>
           {missingRoles.includes('movie') && (
             <button className="primary-button" type="button" onClick={() => onLocate('movie')}>
               <Film size={17} aria-hidden />
@@ -1533,6 +1678,9 @@ function MissingMediaRecovery({
             Remove session
           </button>
         </div>
+        <button className="link-button missing-media-library-link" type="button" onClick={onBackToLibrary}>
+          Back to Library
+        </button>
       </div>
     </section>
   )
@@ -1554,7 +1702,10 @@ function LibraryHome({ library, view, onNew, onOpenSession, onRename, onDelete }
   return (
     <section className={`library-home library-home-${view}`} aria-label="WatchAlong Library">
       <header className="library-home-header">
-        <div>
+        <div className="library-home-brand">
+          <span className="library-home-mark" aria-hidden>
+            <Film size={18} />
+          </span>
           <h1>WatchAlong</h1>
           {hasSessions && <p>{library.sessions.length} saved watchalong{library.sessions.length === 1 ? '' : 's'}</p>}
         </div>
@@ -1577,6 +1728,7 @@ function LibraryHome({ library, view, onNew, onOpenSession, onRename, onDelete }
             <Plus size={18} aria-hidden />
             New WatchAlong
           </button>
+          <p className="library-ownership-line">WatchAlong works with your own media files. Nothing leaves this device.</p>
         </div>
       )}
 
@@ -1741,6 +1893,7 @@ function CommandPanel({
   onShowWizard
 }: CommandPanelProps): JSX.Element {
   const progress = reactionDuration > 0 ? Math.min(100, Math.max(0, (position / reactionDuration) * 100)) : 0
+  const [showPatreonLearnMore, setShowPatreonLearnMore] = useState(false)
   const recentSessions = [...library.sessions]
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
     .slice(0, 10)
@@ -1869,23 +2022,28 @@ function CommandPanel({
               </button>
             </label>
 
-            <label className="panel-toggle-row">
+            <div className="panel-toggle-row panel-patreon-storage">
               <span>
-                <strong>Patreon saved session</strong>
+                <strong>
+                  <Lock size={14} aria-hidden />
+                  Patreon saved session
+                </strong>
                 <small>{patreonStatus.available ? 'Saved' : 'Not saved'} / {patreonStatus.canEncrypt ? 'encrypted storage available' : 'encryption unavailable'}</small>
+                {showPatreonLearnMore && (
+                  <small className="panel-learn-more">
+                    WatchAlong stores Patreon sessions only on this device, encrypted with OS storage when available. You can forget it here at any time.
+                  </small>
+                )}
               </span>
-              <input
-                type="checkbox"
-                checked={patreonStatus.available}
-                disabled={!patreonStatus.available}
-                aria-label="Save Patreon session"
-                onChange={(event) => {
-                  if (!event.currentTarget.checked) {
-                    onForgetPatreon()
-                  }
-                }}
-              />
-            </label>
+              <div className="panel-setting-actions">
+                <button className="link-button" type="button" onClick={() => setShowPatreonLearnMore((current) => !current)}>
+                  Learn more
+                </button>
+                <button className="secondary-button" type="button" disabled={!patreonStatus.available} onClick={onForgetPatreon}>
+                  Forget
+                </button>
+              </div>
+            </div>
 
             <label className="panel-toggle-row">
               <span>Open Library on launch</span>
@@ -1946,12 +2104,22 @@ function CommandPanel({
                 Online Help
               </button>
             )}
-            {DONATION_URL && (
-              <button className="secondary-button" type="button" onClick={() => window.open(DONATION_URL, '_blank')}>
-                <Coffee size={16} aria-hidden />
-                Buy the developer a coffee
-              </button>
-            )}
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={!DONATION_URL}
+              title={DONATION_URL ? 'Open donation page' : 'Donation link coming soon.'}
+              aria-describedby="donation-help"
+              onClick={() => {
+                if (DONATION_URL) {
+                  window.open(DONATION_URL, '_blank')
+                }
+              }}
+            >
+              <Coffee size={16} aria-hidden />
+              Buy the developer a coffee
+            </button>
+            {!DONATION_URL && <small id="donation-help">Donation link coming soon.</small>}
           </div>
         </CommandPanelSection>
       </aside>
@@ -2310,8 +2478,4 @@ function roundSeconds(value: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
-}
-
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message.trim().length > 0 ? error.message : fallback
 }

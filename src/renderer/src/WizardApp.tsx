@@ -1,7 +1,7 @@
-import { Check, Disc3, Film, Loader2, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Check, Disc3, Film, Loader2, ShieldCheck, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { SmartReactionInput } from './components/SmartReactionInput'
-import type { MediaFile, ReactionDownloadSource, WizardOutcome } from '@shared/types'
+import type { ImportWizardContext, MediaFile, ReactionDownloadSource, WizardOutcome } from '@shared/types'
 
 type WizardStep = 'movie' | 'reaction' | 'ready'
 
@@ -19,17 +19,25 @@ const stepTitles: Record<WizardStep, string> = {
 
 const closeAnimationMs = 280
 const autoAdvanceMs = 650
+const defaultWizardContext: ImportWizardContext = {
+  mode: 'new',
+  sessionId: null,
+  movie: null
+}
 
 export function WizardApp(): JSX.Element {
   const [step, setStep] = useState<WizardStep>('movie')
+  const [context, setContext] = useState<ImportWizardContext>(defaultWizardContext)
   const [movie, setMovie] = useState<MediaFile | null>(null)
   const [reaction, setReaction] = useState<ReactionSelection | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [closing, setClosing] = useState<WizardOutcome | null>(null)
   const [finishing, setFinishing] = useState(false)
   const autoAdvanceRef = useRef<number | null>(null)
 
   const stepIndex = useMemo(() => ['movie', 'reaction', 'ready'].indexOf(step), [step])
+  const isSwapReaction = context.mode === 'swap-reaction' && Boolean(context.sessionId && movie)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -53,6 +61,37 @@ export function WizardApp(): JSX.Element {
   }, [step])
 
   useEffect(() => {
+    let mounted = true
+    void (async () => {
+      try {
+        const nextContext = await window.watchAlong.getImportWizardContext()
+        if (!mounted) {
+          return
+        }
+
+        setContext(nextContext)
+        if (nextContext.mode === 'swap-reaction' && nextContext.movie) {
+          setMovie(nextContext.movie)
+          setNotice('Movie is already chosen for this session.')
+          autoAdvanceRef.current = window.setTimeout(() => {
+            setStep('reaction')
+            autoAdvanceRef.current = null
+          }, autoAdvanceMs)
+        }
+      } catch {
+        if (mounted) {
+          setContext(defaultWizardContext)
+          setError('WatchAlong could not prepare the import wizard. You can still choose your files manually.')
+        }
+      }
+    })()
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
     return () => {
       if (autoAdvanceRef.current !== null) {
         window.clearTimeout(autoAdvanceRef.current)
@@ -71,39 +110,53 @@ export function WizardApp(): JSX.Element {
   }
 
   const chooseMovie = async (): Promise<void> => {
-    const nextMovie = await window.watchAlong.selectMovieFile()
-    if (!nextMovie) {
+    if (isSwapReaction) {
       return
     }
 
-    setMovie((currentMovie) => {
-      if (currentMovie && reaction) {
-        if (autoAdvanceRef.current !== null) {
-          window.clearTimeout(autoAdvanceRef.current)
-          autoAdvanceRef.current = null
-        }
-        setReaction(null)
-        setNotice('Movie changed. Choose a reaction that matches it.')
-      } else {
-        setNotice(null)
+    try {
+      setError(null)
+      const nextMovie = await window.watchAlong.selectMovieFile()
+      if (!nextMovie) {
+        return
       }
-      return nextMovie
-    })
+
+      setMovie((currentMovie) => {
+        if (currentMovie && reaction) {
+          if (autoAdvanceRef.current !== null) {
+            window.clearTimeout(autoAdvanceRef.current)
+            autoAdvanceRef.current = null
+          }
+          setReaction(null)
+          setNotice('Movie changed. Choose a reaction that matches it.')
+        } else {
+          setNotice(null)
+        }
+        return nextMovie
+      })
+    } catch {
+      setError('WatchAlong could not open the movie picker. Try again when you are ready.')
+    }
   }
 
   const chooseLocalReaction = async (): Promise<void> => {
-    const nextReaction = await window.watchAlong.selectReactionFile()
-    if (!nextReaction) {
-      return
-    }
+    try {
+      setError(null)
+      const nextReaction = await window.watchAlong.selectReactionFile()
+      if (!nextReaction) {
+        return
+      }
 
-    setReaction({
-      path: nextReaction.path,
-      label: nextReaction.name,
-      source: 'local'
-    })
-    setNotice(null)
-    scheduleReadyStep()
+      setReaction({
+        path: nextReaction.path,
+        label: nextReaction.name,
+        source: 'local'
+      })
+      setNotice(null)
+      scheduleReadyStep()
+    } catch {
+      setError('WatchAlong could not open the reaction picker. Try again when you are ready.')
+    }
   }
 
   const handleDownloadedReaction = (
@@ -115,6 +168,7 @@ export function WizardApp(): JSX.Element {
       label: fileName(filePath),
       source: metadata.source
     })
+    setError(null)
     setNotice(null)
     scheduleReadyStep()
   }
@@ -124,10 +178,20 @@ export function WizardApp(): JSX.Element {
       return
     }
 
-    setFinishing(true)
-    await window.watchAlong.createOrSwitchSessionFromPaths(reaction.path, movie.path, reaction.source)
-    await window.watchAlong.completeOnboarding()
-    closeWizard('completed')
+    try {
+      setError(null)
+      setFinishing(true)
+      if (isSwapReaction && context.sessionId) {
+        await window.watchAlong.replaceSessionMedia(context.sessionId, 'reaction', reaction.path, reaction.source)
+      } else {
+        await window.watchAlong.createOrSwitchSessionFromPaths(reaction.path, movie.path, reaction.source)
+        await window.watchAlong.completeOnboarding()
+      }
+      closeWizard('completed')
+    } catch {
+      setFinishing(false)
+      setError('WatchAlong could not save this watchalong. Your files are still safe; please try again.')
+    }
   }
 
   const closeWizard = (outcome: WizardOutcome): void => {
@@ -146,7 +210,7 @@ export function WizardApp(): JSX.Element {
       <header className="wizard-titlebar">
         <span>{stepTitles[step]}</span>
         <button className="wizard-close-button" type="button" aria-label="Close" onClick={() => closeWizard('cancelled')}>
-          X
+          <X size={16} aria-hidden />
         </button>
       </header>
 
@@ -165,12 +229,18 @@ export function WizardApp(): JSX.Element {
             <div className="wizard-copy">
               <p className="wizard-kicker">Your media, your way.</p>
               <h1>Choose Your Movie</h1>
-              <p>WatchAlong works with your own media files - ripped from discs you own, or DRM-free downloads.</p>
+              <p>
+                {isSwapReaction
+                  ? 'This movie is already chosen. WatchAlong will keep it in place and swap only the reaction.'
+                  : 'WatchAlong works with your own media files - ripped from discs you own, or DRM-free downloads.'}
+              </p>
             </div>
-            <button className="primary-button" type="button" onClick={() => void chooseMovie()}>
-              <Film size={18} aria-hidden />
-              Open Movie File
-            </button>
+            {!isSwapReaction && (
+              <button className="primary-button" type="button" onClick={() => void chooseMovie()}>
+                <Film size={18} aria-hidden />
+                Open Movie File
+              </button>
+            )}
             <p className="media-format-hint">MP4 and WebM work best. MKV/AVI may not play in all cases.</p>
             {movie && (
               <div className="wizard-file-pill" aria-live="polite">
@@ -179,6 +249,7 @@ export function WizardApp(): JSX.Element {
               </div>
             )}
             {notice && <p className="wizard-notice">{notice}</p>}
+            {error && <p className="wizard-error"><AlertTriangle size={15} aria-hidden />{error}</p>}
           </div>
 
           <footer className="wizard-actions">
@@ -191,6 +262,12 @@ export function WizardApp(): JSX.Element {
 
       {step === 'reaction' && (
         <section className="wizard-page wizard-reaction-step" aria-label="Add the Reaction">
+          {movie && (
+            <div className="wizard-file-pill wizard-movie-complete" aria-label="Selected movie">
+              <Check size={17} aria-hidden />
+              <span>{movie.name}</span>
+            </div>
+          )}
           <SmartReactionInput
             movieReady={Boolean(movie)}
             onSelectLocal={chooseLocalReaction}
@@ -203,6 +280,7 @@ export function WizardApp(): JSX.Element {
               <span>{reaction.label}</span>
             </div>
           )}
+          {error && <p className="wizard-error"><AlertTriangle size={15} aria-hidden />{error}</p>}
 
           <footer className="wizard-actions">
             <button className="secondary-button" type="button" onClick={() => setStep('movie')}>
@@ -237,6 +315,7 @@ export function WizardApp(): JSX.Element {
               </div>
             </dl>
             <p className="wizard-sendoff">Everything&apos;s loaded and safe. Now let&apos;s find the perfect sync point.</p>
+            {error && <p className="wizard-error"><AlertTriangle size={15} aria-hidden />{error}</p>}
             <div className="wizard-actions wizard-ready-actions">
               <button className="secondary-button" type="button" disabled={finishing} onClick={() => setStep('reaction')}>
                 Back

@@ -48,4 +48,26 @@ describe('SessionStore media drafts', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('replaces media on an existing complete session without creating a draft', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
+    try {
+      const store = new SessionStore(join(dir, 'library.json'), join(dir, 'session.json'))
+
+      const library = store.createOrSwitchSession('C:\\Reactions\\First.mp4', 'C:\\Movies\\First.mp4')
+      const sessionId = library.activeSessionId!
+      const next = store.replaceSessionMedia(sessionId, 'reaction', 'C:\\Reactions\\Second.mp4', 'youtube')
+
+      expect(next.sessions).toHaveLength(1)
+      expect(next.activeSessionId).toBe(sessionId)
+      expect(next.sessions[0]).toMatchObject({
+        id: sessionId,
+        moviePath: 'C:\\Movies\\First.mp4',
+        reactionPath: 'C:\\Reactions\\Second.mp4',
+        reactionSource: 'youtube'
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

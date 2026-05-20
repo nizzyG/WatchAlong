@@ -59,6 +59,21 @@ function createApi(
       }
       return currentLibrary
     }),
+    replaceSessionMedia: vi.fn(async (sessionId, role, path, reactionSource) => {
+      currentLibrary = {
+        ...currentLibrary,
+        activeSessionId: sessionId,
+        sessions: currentLibrary.sessions.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                ...(role === 'movie' ? { moviePath: path } : { reactionPath: path, reactionSource: reactionSource ?? session.reactionSource })
+              }
+            : session
+        )
+      }
+      return currentLibrary
+    }),
     setSessionMedia: vi.fn(async (role, path, reactionSource) => {
       currentLibrary = {
         ...currentLibrary,
@@ -109,6 +124,7 @@ function createApi(
     onDownloadProgress: vi.fn(() => vi.fn()),
     openOnboardingWizard: vi.fn(async () => undefined),
     openImportWizard: vi.fn(async () => undefined),
+    getImportWizardContext: vi.fn(async () => ({ mode: 'new' as const, sessionId: null, movie: null })),
     finishOnboardingWizard: vi.fn(async () => undefined),
     onWizardLifecycle: vi.fn((callback: WizardLifecycleCallback) => {
       wizardLifecycleCallback = callback
@@ -193,7 +209,7 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByLabelText('Startup error')).toBeInTheDocument()
-    expect(screen.getByText('Library file could not be read')).toBeInTheDocument()
+    expect(screen.getByText('Something went wrong while loading your library.')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Retry/i }))
 
@@ -223,25 +239,26 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByLabelText('Missing media recovery')).toBeInTheDocument()
-    expect(screen.getByText('C:\\Videos\\s1-movie.mp4')).toBeInTheDocument()
+    expect(screen.getByText('Movie file')).toBeInTheDocument()
+    expect(screen.getAllByText('s1-movie.mp4').length).toBeGreaterThan(0)
 
     fireEvent.click(screen.getByRole('button', { name: /Locate movie/i }))
 
     await waitFor(() =>
-      expect(api.setSessionMedia).toHaveBeenCalledWith('movie', 'C:\\Movies\\Located movie.mp4', undefined)
+      expect(api.replaceSessionMedia).toHaveBeenCalledWith('s1', 'movie', 'C:\\Movies\\Located movie.mp4', undefined)
     )
   })
 
   it('removes a missing-media session and returns to the library', async () => {
     const api = createApi(createLibrary('s1', [firstSession]), { ...defaultPreferences, openLibraryOnLaunch: false })
     api.getMediaUrl = vi.fn(async (role, sessionId) => role === 'movie' ? null : `watchalong://media/${sessionId}/${role}`)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     window.watchAlong = api
 
     render(<App />)
 
     expect(await screen.findByLabelText('Missing media recovery')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Remove session/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Delete$/i }))
 
     await waitFor(() => expect(api.deleteSession).toHaveBeenCalledWith('s1'))
     expect(await screen.findByText('Your watchalong collection is empty')).toBeInTheDocument()
@@ -292,7 +309,7 @@ describe('App', () => {
     expect(screen.getByLabelText('Welcome to WatchAlong')).toBeInTheDocument()
     expect(api.openOnboardingWizard).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /Get Started/i }))
-    expect(api.openImportWizard).toHaveBeenCalled()
+    expect(api.openImportWizard).toHaveBeenCalledWith({ mode: 'new' })
   })
 
   it('dims, pauses, and resumes playback around a cancelled wizard', async () => {
@@ -355,6 +372,10 @@ describe('App', () => {
 
     await waitFor(() => expect(api.setPreference).toHaveBeenCalledWith('openLibraryOnLaunch', true))
 
+    fireEvent.click(screen.getByRole('button', { name: /Help & About/i }))
+    expect(screen.getByRole('button', { name: /Buy the developer a coffee/i })).toBeDisabled()
+    expect(screen.getByText('Donation link coming soon.')).toBeInTheDocument()
+
     fireEvent.keyDown(window, { code: 'Escape' })
     await waitFor(() => expect(screen.queryByLabelText('WatchAlong Command Panel')).not.toBeInTheDocument())
     await waitFor(() => expect(screen.getByLabelText('Command Panel')).toHaveFocus())
@@ -362,8 +383,6 @@ describe('App', () => {
 
   it('renames and deletes sessions from library card actions', async () => {
     const api = createApi()
-    vi.spyOn(window, 'prompt').mockReturnValue('Renamed session')
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     window.watchAlong = api
 
     render(<App />)
@@ -371,11 +390,14 @@ describe('App', () => {
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
     fireEvent.click(screen.getAllByRole('button', { name: 'More actions' })[0])
     fireEvent.click(screen.getByRole('button', { name: /Rename/i }))
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Renamed session' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }))
 
     await waitFor(() => expect(api.renameSession).toHaveBeenCalledWith('s1', 'Renamed session'))
 
     fireEvent.click(screen.getAllByRole('button', { name: 'More actions' })[0])
     fireEvent.click(screen.getByRole('button', { name: /Delete/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Delete$/i }))
 
     await waitFor(() => expect(api.deleteSession).toHaveBeenCalledWith('s1'))
   })

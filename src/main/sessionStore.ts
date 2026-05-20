@@ -105,6 +105,35 @@ export class SessionStore {
     })
   }
 
+  replaceSessionMedia(
+    sessionId: string,
+    role: MediaRole,
+    filePath: string,
+    reactionSource: ReactionSource = 'local'
+  ): SessionLibrary {
+    const library = this.read()
+    const target = library.sessions.find((session) => session.id === sessionId)
+    if (!target) {
+      return library
+    }
+
+    const now = new Date()
+    const nextSession = normalizeSession({
+      ...target,
+      ...(role === 'movie'
+        ? { moviePath: filePath }
+        : { reactionPath: filePath, reactionSource }),
+      createdAt: target.createdAt,
+      updatedAt: now.toISOString()
+    })
+
+    return this.writeAndReturn({
+      ...library,
+      activeSessionId: sessionId,
+      sessions: library.sessions.map((session) => (session.id === sessionId ? nextSession : session))
+    })
+  }
+
   setActiveSession(sessionId: string): SessionLibrary {
     const library = this.read()
     if (!library.sessions.some((session) => session.id === sessionId)) {

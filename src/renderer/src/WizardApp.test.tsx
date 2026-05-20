@@ -16,7 +16,7 @@ describe('WizardApp', () => {
     render(<WizardApp />)
 
     expect(screen.getAllByText('Choose Your Movie').length).toBeGreaterThan(0)
-    expect(screen.getByRole('button', { name: 'Close' })).toHaveTextContent('X')
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /minimi/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /maximi/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
@@ -82,6 +82,31 @@ describe('WizardApp', () => {
 
     await waitFor(() => expect(window.watchAlong.finishOnboardingWizard).toHaveBeenCalledWith('cancelled'))
   })
+
+  it('starts swap reaction with the current movie complete and replaces only the reaction', async () => {
+    window.watchAlong.getImportWizardContext = vi.fn(async () => ({
+      mode: 'swap-reaction' as const,
+      sessionId: 's1',
+      movie: firstMovie
+    }))
+
+    render(<WizardApp />)
+
+    expect(await screen.findByText('Movie is already chosen for this session.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText('Add the Reaction')).toBeInTheDocument())
+    expect(screen.getByLabelText('Selected movie')).toHaveTextContent('Movie.mp4')
+
+    fireEvent.click(await screen.findByRole('button', { name: /Local file/i }))
+    expect(await screen.findByText("Everything's loaded and safe. Now let's find the perfect sync point.")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Start Sync Setup/i }))
+
+    await waitFor(() =>
+      expect(window.watchAlong.replaceSessionMedia).toHaveBeenCalledWith('s1', 'reaction', reaction.path, 'local')
+    )
+    expect(window.watchAlong.createOrSwitchSessionFromPaths).not.toHaveBeenCalled()
+    await waitFor(() => expect(window.watchAlong.finishOnboardingWizard).toHaveBeenCalledWith('completed'))
+  })
 })
 
 function createApi(): WatchAlongApi {
@@ -97,6 +122,11 @@ function createApi(): WatchAlongApi {
     getLibrary: vi.fn(),
     saveActiveSession: vi.fn(),
     setSessionMedia: vi.fn(),
+    replaceSessionMedia: vi.fn(async () => ({
+      version: 2 as const,
+      activeSessionId: 'session-1',
+      sessions: []
+    })),
     setActiveSession: vi.fn(),
     deleteSession: vi.fn(),
     renameSession: vi.fn(),
@@ -116,6 +146,7 @@ function createApi(): WatchAlongApi {
     onDownloadProgress: vi.fn(() => vi.fn()),
     openOnboardingWizard: vi.fn(async () => undefined),
     openImportWizard: vi.fn(async () => undefined),
+    getImportWizardContext: vi.fn(async () => ({ mode: 'new' as const, sessionId: null, movie: null })),
     finishOnboardingWizard: vi.fn(async () => undefined),
     onWizardLifecycle: vi.fn(() => vi.fn()),
     getPreferences: vi.fn(),

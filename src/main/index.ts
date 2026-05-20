@@ -16,6 +16,8 @@ import { SessionStore } from './sessionStore'
 import type {
   BrowserName,
   AppPreferences,
+  ImportWizardContext,
+  ImportWizardLaunchOptions,
   LibrarySession,
   MediaFile,
   MediaRole,
@@ -48,6 +50,7 @@ let mainWindow: BrowserWindow | null = null
 let wizardWindow: BrowserWindow | null = null
 let wizardCloseOutcome: WizardOutcome | null = null
 let recenterWizardOnParent: (() => void) | null = null
+let importWizardContext: ImportWizardContext = createDefaultWizardContext()
 let sessionStore: SessionStore
 let preferencesStore: PreferencesStore
 let toolResolver: ToolResolver
@@ -79,16 +82,18 @@ function createWindow(): void {
   void loadRenderer(mainWindow)
 }
 
-function openOnboardingWizard(): void {
+function openOnboardingWizard(options?: ImportWizardLaunchOptions): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return
   }
 
   if (wizardWindow && !wizardWindow.isDestroyed()) {
+    importWizardContext = createImportWizardContext(options)
     wizardWindow.focus()
     return
   }
 
+  importWizardContext = createImportWizardContext(options)
   wizardCloseOutcome = null
   sendWizardLifecycle({ type: 'opened' })
 
@@ -97,7 +102,7 @@ function openOnboardingWizard(): void {
     height: 600,
     minWidth: 800,
     minHeight: 600,
-    resizable: true,
+    resizable: false,
     maximizable: false,
     minimizable: false,
     fullscreenable: false,
@@ -156,6 +161,41 @@ function finishOnboardingWizard(outcome: WizardOutcome): void {
     wizardWindow.close()
   } else {
     sendWizardLifecycle({ type: 'closed', outcome })
+  }
+}
+
+function createDefaultWizardContext(): ImportWizardContext {
+  return {
+    mode: 'new',
+    sessionId: null,
+    movie: null
+  }
+}
+
+function createImportWizardContext(options?: ImportWizardLaunchOptions): ImportWizardContext {
+  const mode = options?.mode ?? 'new'
+  if (mode !== 'swap-reaction') {
+    return {
+      mode,
+      sessionId: null,
+      movie: null
+    }
+  }
+
+  const session = options?.sessionId
+    ? sessionStore.getSession(options.sessionId)
+    : sessionStore.getActiveSession()
+  if (!session?.moviePath) {
+    return createDefaultWizardContext()
+  }
+
+  return {
+    mode: 'swap-reaction',
+    sessionId: session.id,
+    movie: {
+      path: session.moviePath,
+      name: basename(session.moviePath)
+    }
   }
 }
 
@@ -267,6 +307,10 @@ function registerIpc(): void {
 
   ipcMain.handle(`${IPC_PREFIX}:set-session-media`, (_event, role: MediaRole, filePath: string, reactionSource?: ReactionSource) => {
     return sessionStore.setSessionMedia(role, filePath, reactionSource)
+  })
+
+  ipcMain.handle(`${IPC_PREFIX}:replace-session-media`, (_event, sessionId: string, role: MediaRole, filePath: string, reactionSource?: ReactionSource) => {
+    return sessionStore.replaceSessionMedia(sessionId, role, filePath, reactionSource)
   })
 
   ipcMain.handle(`${IPC_PREFIX}:create-or-switch-session-from-paths`, (_event, reactionPath: string, moviePath: string, reactionSource?: ReactionSource) => {
@@ -407,11 +451,15 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(`${IPC_PREFIX}:open-onboarding-wizard`, () => {
-    openOnboardingWizard()
+    openOnboardingWizard({ mode: 'new' })
   })
 
-  ipcMain.handle(`${IPC_PREFIX}:open-import-wizard`, () => {
-    openOnboardingWizard()
+  ipcMain.handle(`${IPC_PREFIX}:open-import-wizard`, (_event, options?: ImportWizardLaunchOptions) => {
+    openOnboardingWizard(options)
+  })
+
+  ipcMain.handle(`${IPC_PREFIX}:get-import-wizard-context`, () => {
+    return importWizardContext
   })
 
   ipcMain.handle(`${IPC_PREFIX}:finish-onboarding-wizard`, (_event, outcome: WizardOutcome) => {

@@ -11,6 +11,15 @@ describe('pipGeometry', () => {
     })
   })
 
+  it('scales a fullscreen-sized overlay down for a smaller viewport', () => {
+    expect(constrainOverlay({ x: 0, y: 0, width: 1120, height: 675 }, 1000, 600)).toMatchObject({
+      x: 0,
+      y: 0,
+      width: 548,
+      height: 330
+    })
+  })
+
   it('snaps to a specific corner', () => {
     expect(snapOverlayToCorner({ x: 0, y: 0, width: 320, height: 180 }, 'bottom-right', 1000, 800)).toMatchObject({
       x: 656,
