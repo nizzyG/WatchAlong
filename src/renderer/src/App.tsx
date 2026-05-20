@@ -1,34 +1,57 @@
 import {
   Captions,
   Check,
+  ChevronDown,
+  Clapperboard,
+  Clock3,
+  Coffee,
+  Download,
+  ExternalLink,
   Eye,
-  FolderOpen,
+  FileVideo,
+  Film,
+  Heart,
+  LayoutGrid,
   Library as LibraryIcon,
+  List,
+  Loader2,
   Maximize,
+  MoreHorizontal,
   Pause,
   Pencil,
   Play,
+  Plus,
   RefreshCw,
   RotateCcw,
   RotateCw,
+  Settings,
   SlidersHorizontal,
   Trash2,
   Volume2,
   VolumeX,
+  Youtube,
   X
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createDefaultLibrary, createDefaultSession, getActiveSession } from '@shared/session'
 import type {
+  AppPreferences,
+  DownloadProgressEvent,
   LibrarySession,
+  LibraryViewPreference,
   MediaRole,
   OverlayGeometry,
   PlaybackRate,
+  ReactionDownloadSource,
+  ReactionSource,
+  SavedPatreonSessionStatus,
   SessionLibrary,
-  SyncState
+  SyncState,
+  WizardLifecycleEvent
 } from '@shared/types'
 import { PipOverlay } from './components/PipOverlay'
 import { constrainOverlay } from './components/pipGeometry'
+import { PatreonStorageOffer, SmartReactionInput } from './components/SmartReactionInput'
 import { SyncController, createHtmlVideoAdapter } from './sync/SyncController'
 import { TimelineMapping } from './sync/timeline'
 import { getActiveSubtitleCue, parseSubtitleText, type SubtitleCue } from './subtitles'
@@ -36,10 +59,18 @@ import { getActiveSubtitleCue, parseSubtitleText, type SubtitleCue } from './sub
 type MediaUrls = Record<MediaRole, string | null>
 type MetadataReady = Record<MediaRole, boolean>
 type Durations = Record<MediaRole, number>
+type AppView = 'loading' | 'startup-error' | 'library' | 'player'
+type CommandPanelSection = 'now-playing' | 'library' | 'downloads' | 'preferences' | 'help'
 
 const emptyUrls: MediaUrls = { reaction: null, movie: null }
 const emptyMetadata: MetadataReady = { reaction: false, movie: false }
 const emptyDurations: Durations = { reaction: Number.NaN, movie: Number.NaN }
+const defaultPreferences: AppPreferences = {
+  hasCompletedOnboarding: false,
+  openLibraryOnLaunch: true,
+  libraryView: 'grid',
+  reactionDownloadDirectory: null
+}
 const playbackRates: PlaybackRate[] = [1, 1.25, 1.5, 2]
 const movieSourceRates = [
   { label: 'Matched', rate: 1 },
@@ -47,17 +78,27 @@ const movieSourceRates = [
   { label: 'Reverse', rate: 0.999001 }
 ]
 const CONTROL_IDLE_DELAY_MS = 2400
+const APP_VERSION = '0.1.0'
+const ONLINE_HELP_URL: string | null = null
+const DONATION_URL: string | null = null
 
 export function App(): JSX.Element {
+  const appShellRef = useRef<HTMLElement>(null)
   const reactionVideoRef = useRef<HTMLVideoElement>(null)
   const movieVideoRef = useRef<HTMLVideoElement>(null)
   const controllerRef = useRef<SyncController | null>(null)
   const sessionRef = useRef<LibrarySession>(createDefaultSession())
   const setupModeRef = useRef(false)
   const lastPositionSaveRef = useRef(0)
+  const pausedForWizardRef = useRef(false)
+  const downloadIndicatorTimerRef = useRef<number | null>(null)
+  const commandPanelButtonRef = useRef<HTMLButtonElement>(null)
+  const commandPanelReturnFocusRef = useRef<HTMLElement | null>(null)
 
   const [emptySession] = useState(() => createDefaultSession())
   const [library, setLibrary] = useState<SessionLibrary>(() => createDefaultLibrary())
+  const [preferences, setPreferences] = useState<AppPreferences>(defaultPreferences)
+  const [appView, setAppView] = useState<AppView>('loading')
   const [mediaUrls, setMediaUrls] = useState<MediaUrls>(emptyUrls)
   const [metadataReady, setMetadataReady] = useState<MetadataReady>(emptyMetadata)
   const [durations, setDurations] = useState<Durations>(emptyDurations)
@@ -69,8 +110,18 @@ export function App(): JSX.Element {
   const [controlsIdle, setControlsIdle] = useState(false)
   const [syncState, setSyncState] = useState<SyncState>('empty')
   const [error, setError] = useState<string | null>(null)
+  const [startupError, setStartupError] = useState<string | null>(null)
+  const [showWelcome, setShowWelcome] = useState(false)
   const [restoreToken, setRestoreToken] = useState<string | null>(null)
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([])
+  const [patreonStorageJobId, setPatreonStorageJobId] = useState<string | null>(null)
+  const [pendingSyncSetup, setPendingSyncSetup] = useState(false)
+  const [wizardDimmed, setWizardDimmed] = useState(false)
+  const [downloadIndicator, setDownloadIndicator] = useState<DownloadProgressEvent | null>(null)
+  const [downloadEvents, setDownloadEvents] = useState<DownloadProgressEvent[]>([])
+  const [commandPanelOpen, setCommandPanelOpen] = useState(false)
+  const [expandedPanelSection, setExpandedPanelSection] = useState<CommandPanelSection>('now-playing')
+  const [patreonStatus, setPatreonStatus] = useState<SavedPatreonSessionStatus>({ available: false, canEncrypt: false })
 
   const activeSession = useMemo(() => getActiveSession(library), [library])
   const session = activeSession ?? emptySession
@@ -80,10 +131,12 @@ export function App(): JSX.Element {
     const nextSession = getActiveSession(next)
     if (nextSession) {
       sessionRef.current = nextSession
+    } else {
+      sessionRef.current = emptySession
     }
     setLibrary(next)
     return nextSession
-  }, [])
+  }, [emptySession])
 
   const refreshMediaUrls = useCallback(async (sessionId: string | null): Promise<void> => {
     if (!sessionId) {
@@ -104,29 +157,63 @@ export function App(): JSX.Element {
     setRestoreToken(null)
   }, [])
 
+  const loadInitialState = useCallback(async (): Promise<void> => {
+    setStartupError(null)
+    setAppView('loading')
+    setError(null)
+
+    try {
+      const [loadedLibrary, loadedPreferences] = await Promise.all([
+        window.watchAlong.getLibrary(),
+        window.watchAlong.getPreferences()
+      ])
+
+      const loadedSession = commitLibrary(loadedLibrary)
+      setPreferences(loadedPreferences)
+      setShowWelcome(!loadedPreferences.hasCompletedOnboarding)
+      const shouldOpenPlayer = !loadedPreferences.openLibraryOnLaunch && Boolean(loadedSession)
+      setAppView(shouldOpenPlayer ? 'player' : 'library')
+      setPosition(loadedSession?.lastReactionTimeSeconds ?? 0)
+      setMoviePosition(0)
+      await refreshMediaUrls(shouldOpenPlayer ? loadedSession?.id ?? null : null)
+    } catch (error) {
+      setStartupError(errorMessage(error, 'WatchAlong could not load your library or preferences.'))
+      commitLibrary(createDefaultLibrary())
+      setAppView('startup-error')
+      await refreshMediaUrls(null)
+    }
+  }, [commitLibrary, refreshMediaUrls])
+
   useEffect(() => {
     let mounted = true
 
     void (async () => {
-      const loadedLibrary = await window.watchAlong.getLibrary()
       if (!mounted) {
         return
       }
-
-      const loadedSession = commitLibrary(loadedLibrary)
-      setPosition(loadedSession?.lastReactionTimeSeconds ?? 0)
-      setMoviePosition(0)
-      await refreshMediaUrls(loadedSession?.id ?? null)
+      await loadInitialState()
     })()
 
     return () => {
       mounted = false
     }
-  }, [commitLibrary, refreshMediaUrls])
+  }, [loadInitialState])
 
   useEffect(() => {
     sessionRef.current = session
   }, [session])
+
+  useEffect(() => {
+    let mounted = true
+    void window.watchAlong.getSavedPatreonSessionStatus().then((status) => {
+      if (mounted) {
+        setPatreonStatus(status)
+      }
+    })
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   useEffect(() => {
     setupModeRef.current = setupMode
@@ -271,7 +358,36 @@ export function App(): JSX.Element {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target instanceof HTMLElement ? event.target : null
-      if (target?.closest('input, textarea, select, button')) {
+
+      if (event.code === 'KeyP' && event.ctrlKey && event.shiftKey && appView === 'player' && !setupModeRef.current) {
+        event.preventDefault()
+        toggleCommandPanel(target)
+        return
+      }
+
+      if (commandPanelOpen) {
+        if (event.code === 'Escape') {
+          event.preventDefault()
+          closeCommandPanel()
+          return
+        }
+
+        if (event.code === 'ArrowDown') {
+          event.preventDefault()
+          movePanelFocus(1)
+          return
+        }
+
+        if (event.code === 'ArrowUp') {
+          event.preventDefault()
+          movePanelFocus(-1)
+          return
+        }
+
+        return
+      }
+
+      if (target?.closest('input, textarea, select, button') || appView !== 'player') {
         return
       }
 
@@ -310,7 +426,31 @@ export function App(): JSX.Element {
     return () => window.removeEventListener('keydown', onKeyDown)
   })
 
-  const hasMedia = Boolean(activeSession && mediaUrls.reaction && mediaUrls.movie)
+  useEffect(() => {
+    if (!commandPanelOpen) {
+      return
+    }
+
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('[data-command-panel-close]')?.focus()
+    })
+  }, [commandPanelOpen])
+
+  const hasMedia = appView === 'player' && Boolean(activeSession && mediaUrls.reaction && mediaUrls.movie)
+  const movieReady = Boolean(activeSession?.moviePath)
+  const reactionReady = Boolean(activeSession?.reactionPath)
+  const missingMediaRoles = useMemo<MediaRole[]>(() => {
+    if (appView !== 'player' || !activeSession) {
+      return []
+    }
+
+    return (['movie', 'reaction'] as MediaRole[]).filter((role) => {
+      const path = role === 'movie' ? activeSession.moviePath : activeSession.reactionPath
+      return Boolean(path && !mediaUrls[role])
+    })
+  }, [activeSession, appView, mediaUrls])
+  const hasMissingMedia = missingMediaRoles.length > 0
+  const showSmartInput = !hasMissingMedia && !hasMedia && movieReady && !reactionReady
   const canPlay = hasMedia && metadataReady.reaction && metadataReady.movie
   const isPlaying = syncState === 'playing'
   const reactionDuration = Number.isFinite(durations.reaction) ? durations.reaction : 0
@@ -323,7 +463,7 @@ export function App(): JSX.Element {
     [position, session.movieRateCorrection, session.offsetSeconds]
   )
   const movieStartsAtReaction = Math.max(0, -session.offsetSeconds / session.movieRateCorrection)
-  const shouldAutoHideControls = isPlaying && !setupMode
+  const shouldAutoHideControls = appView === 'player' && isPlaying && !setupMode && !commandPanelOpen
 
   useEffect(() => {
     let timer: number | undefined
@@ -364,9 +504,251 @@ export function App(): JSX.Element {
     }
   }, [shouldAutoHideControls])
 
+  useEffect(() => {
+    const handleWizardLifecycle = async (event: WizardLifecycleEvent): Promise<void> => {
+      if (event.type === 'opened') {
+        setWizardDimmed(true)
+        pausedForWizardRef.current = canPlay && isPlaying
+        if (pausedForWizardRef.current) {
+          controllerRef.current?.pause()
+        }
+        return
+      }
+
+      setWizardDimmed(false)
+      if (event.outcome === 'cancelled') {
+        const shouldResume = pausedForWizardRef.current
+        pausedForWizardRef.current = false
+        if (shouldResume && canPlay) {
+          controllerRef.current?.play()
+        }
+        return
+      }
+
+      pausedForWizardRef.current = false
+      const [nextLibrary, nextPreferences] = await Promise.all([
+        window.watchAlong.getLibrary(),
+        window.watchAlong.getPreferences()
+      ])
+      const nextSession = commitLibrary(nextLibrary)
+      setPreferences(nextPreferences)
+      setShowWelcome(false)
+      setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
+      setMoviePosition(0)
+      setPendingSyncSetup(Boolean(nextSession?.reactionPath && nextSession.moviePath))
+      setAppView(nextSession ? 'player' : 'library')
+      setCommandPanelOpen(false)
+      await refreshMediaUrls(nextSession?.id ?? null)
+    }
+
+    return window.watchAlong.onWizardLifecycle((event) => {
+      void handleWizardLifecycle(event)
+    })
+  }, [canPlay, commitLibrary, isPlaying, refreshMediaUrls])
+
+  useEffect(() => {
+    return window.watchAlong.onDownloadProgress((event) => {
+      if (downloadIndicatorTimerRef.current !== null) {
+        window.clearTimeout(downloadIndicatorTimerRef.current)
+        downloadIndicatorTimerRef.current = null
+      }
+
+      if (event.state === 'cancelled') {
+        setDownloadIndicator(null)
+        setDownloadEvents((current) => current.filter((item) => item.jobId !== event.jobId))
+        return
+      }
+
+      setDownloadIndicator(event)
+      setDownloadEvents((current) => {
+        const next = [event, ...current.filter((item) => item.jobId !== event.jobId)]
+        return next.slice(0, 8)
+      })
+      if (event.state === 'success' || event.state === 'failed') {
+        downloadIndicatorTimerRef.current = window.setTimeout(() => {
+          setDownloadIndicator(null)
+          downloadIndicatorTimerRef.current = null
+        }, 5000)
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (downloadIndicatorTimerRef.current !== null) {
+        window.clearTimeout(downloadIndicatorTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (pendingSyncSetup && canPlay) {
+      setPendingSyncSetup(false)
+      enterSyncSetup()
+    }
+  }, [canPlay, pendingSyncSetup])
+
   const persist = async (patch: Partial<LibrarySession>): Promise<LibrarySession | null> => {
     const next = await window.watchAlong.saveActiveSession(patch)
     return commitLibrary(next)
+  }
+
+  const openImportWizard = (): void => {
+    setCommandPanelOpen(false)
+    setControlsIdle(false)
+    void window.watchAlong.openImportWizard()
+  }
+
+  const navigateToLibrary = async (): Promise<void> => {
+    controllerRef.current?.pause()
+    reactionVideoRef.current?.pause()
+    movieVideoRef.current?.pause()
+    setSetupMode(false)
+    setSetupPlayingRole(null)
+    setCommandPanelOpen(false)
+    setSyncState('paused')
+    setAppView('library')
+    await refreshMediaUrls(null)
+  }
+
+  const openStartupLibrary = async (): Promise<void> => {
+    setStartupError(null)
+    commitLibrary(createDefaultLibrary())
+    setAppView('library')
+    setShowWelcome(false)
+    await refreshMediaUrls(null)
+  }
+
+  const startWelcomeImport = (): void => {
+    setShowWelcome(false)
+    openImportWizard()
+  }
+
+  const locateMissingMedia = async (role: MediaRole): Promise<void> => {
+    setError(null)
+    controllerRef.current?.pause()
+    const media = role === 'movie'
+      ? await window.watchAlong.selectMovieFile()
+      : await window.watchAlong.selectReactionFile()
+    if (!media) {
+      return
+    }
+
+    const next = await window.watchAlong.setSessionMedia(
+      role,
+      media.path,
+      role === 'reaction' ? activeSession?.reactionSource ?? 'local' : undefined
+    )
+    const nextSession = commitLibrary(next)
+    setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
+    setMoviePosition(0)
+    setPendingSyncSetup(Boolean(nextSession?.reactionPath && nextSession.moviePath))
+    setAppView(nextSession ? 'player' : 'library')
+    await refreshMediaUrls(nextSession?.id ?? null)
+  }
+
+  const updatePreference = async <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]): Promise<void> => {
+    const next = await window.watchAlong.setPreference(key, value)
+    setPreferences(next)
+  }
+
+  const chooseDownloadDirectory = async (): Promise<void> => {
+    const directory = await window.watchAlong.selectDownloadDirectory()
+    if (directory) {
+      await updatePreference('reactionDownloadDirectory', directory)
+    }
+  }
+
+  const forgetPatreonSession = async (): Promise<void> => {
+    setPatreonStatus(await window.watchAlong.forgetPatreonSession())
+  }
+
+  const attachDownloadedReaction = async (event: DownloadProgressEvent): Promise<void> => {
+    if (!event.filePath) {
+      return
+    }
+
+    controllerRef.current?.pause()
+    if (activeSession?.moviePath) {
+      const next = await window.watchAlong.setSessionMedia('reaction', event.filePath, event.source)
+      const nextSession = commitLibrary(next)
+      setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
+      setMoviePosition(0)
+      setPendingSyncSetup(true)
+      setAppView('player')
+      setCommandPanelOpen(false)
+      await refreshMediaUrls(nextSession?.id ?? null)
+      return
+    }
+
+    const movie = await window.watchAlong.selectMovieFile()
+    if (!movie) {
+      return
+    }
+
+    const next = await window.watchAlong.createOrSwitchSessionFromPaths(event.filePath, movie.path, event.source)
+    const nextSession = commitLibrary(next)
+    setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
+    setMoviePosition(0)
+    setPendingSyncSetup(Boolean(nextSession?.reactionPath && nextSession.moviePath))
+    setAppView(nextSession ? 'player' : 'library')
+    setCommandPanelOpen(false)
+    await refreshMediaUrls(nextSession?.id ?? null)
+  }
+
+  const focusPlayerFallback = (): void => {
+    if (commandPanelButtonRef.current && !controlsIdle) {
+      commandPanelButtonRef.current.focus()
+      return
+    }
+
+    appShellRef.current?.focus()
+  }
+
+  const openCommandPanel = (returnFocusTarget?: HTMLElement | null): void => {
+    commandPanelReturnFocusRef.current = returnFocusTarget ?? (
+      document.activeElement instanceof HTMLElement ? document.activeElement : commandPanelButtonRef.current
+    )
+    setControlsIdle(false)
+    setCommandPanelOpen(true)
+  }
+
+  const closeCommandPanel = (): void => {
+    setCommandPanelOpen(false)
+    window.requestAnimationFrame(() => {
+      const target = commandPanelReturnFocusRef.current
+      commandPanelReturnFocusRef.current = null
+      if (target && target.isConnected && !target.closest('.command-panel')) {
+        target.focus()
+        return
+      }
+
+      focusPlayerFallback()
+    })
+  }
+
+  const toggleCommandPanel = (returnFocusTarget?: HTMLElement | null): void => {
+    if (commandPanelOpen) {
+      closeCommandPanel()
+      return
+    }
+
+    openCommandPanel(returnFocusTarget)
+  }
+
+  const movePanelFocus = (delta: number): void => {
+    const focusable = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '.command-panel button:not(:disabled), .command-panel input:not(:disabled), .command-panel [tabindex="0"]'
+      )
+    )
+    if (focusable.length === 0) {
+      return
+    }
+
+    const currentIndex = document.activeElement instanceof HTMLElement ? focusable.indexOf(document.activeElement) : -1
+    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + delta + focusable.length) % focusable.length
+    focusable[nextIndex]?.focus()
   }
 
   const openVideos = async (): Promise<void> => {
@@ -379,11 +761,60 @@ export function App(): JSX.Element {
     const nextSession = commitLibrary(result.library)
     setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
     setMoviePosition(0)
+    setAppView(nextSession ? 'player' : 'library')
+    await refreshMediaUrls(nextSession?.id ?? null)
+  }
+
+  const openMovie = async (): Promise<void> => {
+    setError(null)
+    const movie = await window.watchAlong.selectMovieFile()
+    if (!movie) {
+      return
+    }
+
+    controllerRef.current?.pause()
+    const next = await window.watchAlong.setSessionMedia('movie', movie.path)
+    const nextSession = commitLibrary(next)
+    setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
+    setMoviePosition(0)
+    setAppView(nextSession ? 'player' : 'library')
+    await refreshMediaUrls(nextSession?.id ?? null)
+  }
+
+  const openLocalReaction = async (): Promise<void> => {
+    setError(null)
+    const reaction = await window.watchAlong.selectReactionFile()
+    if (!reaction) {
+      return
+    }
+
+    const next = await window.watchAlong.setSessionMedia('reaction', reaction.path, 'local')
+    const nextSession = commitLibrary(next)
+    setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
+    setMoviePosition(0)
+    setPendingSyncSetup(true)
+    setAppView(nextSession ? 'player' : 'library')
+    await refreshMediaUrls(nextSession?.id ?? null)
+  }
+
+  const handleDownloadedReaction = async (
+    filePath: string,
+    metadata: { jobId: string; source: ReactionDownloadSource }
+  ): Promise<void> => {
+    const next = await window.watchAlong.setSessionMedia('reaction', filePath, metadata.source)
+    const nextSession = commitLibrary(next)
+    setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
+    setMoviePosition(0)
+    if (metadata.source === 'patreon') {
+      setPatreonStorageJobId(metadata.jobId)
+    }
+    setPendingSyncSetup(true)
+    setAppView(nextSession ? 'player' : 'library')
     await refreshMediaUrls(nextSession?.id ?? null)
   }
 
   const switchSession = async (sessionId: string): Promise<void> => {
-    if (sessionId === activeSession?.id) {
+    if (sessionId === activeSession?.id && appView === 'player') {
       return
     }
 
@@ -393,6 +824,9 @@ export function App(): JSX.Element {
     const nextSession = commitLibrary(next)
     setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
     setMoviePosition(0)
+    setSetupMode(false)
+    setCommandPanelOpen(false)
+    setAppView(nextSession ? 'player' : 'library')
     await refreshMediaUrls(nextSession?.id ?? null)
   }
 
@@ -415,6 +849,11 @@ export function App(): JSX.Element {
     const nextSession = commitLibrary(next)
     setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
     setMoviePosition(0)
+    if (!nextSession) {
+      setAppView('library')
+      await refreshMediaUrls(null)
+      return
+    }
     await refreshMediaUrls(nextSession?.id ?? null)
   }
 
@@ -531,9 +970,18 @@ export function App(): JSX.Element {
 
   const handleMetadata = (role: MediaRole): void => {
     const element = role === 'reaction' ? reactionVideoRef.current : movieVideoRef.current
-    setDurations((current) => ({ ...current, [role]: element?.duration ?? Number.NaN }))
+    const duration = element?.duration ?? Number.NaN
+    setDurations((current) => ({ ...current, [role]: duration }))
     setMetadataReady((current) => ({ ...current, [role]: true }))
     setSetupPositions((current) => ({ ...current, [role]: element?.currentTime ?? 0 }))
+    if (
+      role === 'reaction' &&
+      activeSession &&
+      Number.isFinite(duration) &&
+      Math.abs((activeSession.reactionDurationSeconds ?? 0) - duration) > 0.5
+    ) {
+      void persist({ reactionDurationSeconds: duration })
+    }
     if (role === 'movie') {
       setMoviePosition(element?.currentTime ?? 0)
     }
@@ -677,7 +1125,11 @@ export function App(): JSX.Element {
   }
 
   return (
-    <main className={`app-shell ${controlsIdle ? 'controls-idle' : ''}`}>
+    <main
+      ref={appShellRef}
+      tabIndex={-1}
+      className={`app-shell view-${appView} ${controlsIdle ? 'controls-idle' : ''} ${wizardDimmed ? 'wizard-dimmed' : ''} ${commandPanelOpen ? 'command-panel-active' : ''}`}
+    >
       <video
         ref={reactionVideoRef}
         className="reaction-video"
@@ -688,14 +1140,50 @@ export function App(): JSX.Element {
         onError={() => handleVideoError('reaction')}
       />
 
-      {!hasMedia && (
-        <section className="empty-state" aria-label="Open videos">
+      {appView === 'loading' && (
+        <section className="empty-state" aria-label="Loading">
+          <Loader2 size={28} aria-hidden className="spin" />
           <h1>WatchAlong</h1>
-          <button className="primary-button" type="button" onClick={openVideos}>
-            <FolderOpen size={18} aria-hidden />
-            Open videos
-          </button>
         </section>
+      )}
+
+      {appView === 'startup-error' && (
+        <StartupErrorState
+          message={startupError ?? 'WatchAlong could not load your library or preferences.'}
+          onRetry={() => void loadInitialState()}
+          onOpenLibrary={() => void openStartupLibrary()}
+        />
+      )}
+
+      {appView === 'library' && (
+        <LibraryHome
+          library={library}
+          view={preferences.libraryView}
+          onNew={openImportWizard}
+          onOpenSession={(sessionId) => void switchSession(sessionId)}
+          onRename={(sessionId) => void renameSession(sessionId)}
+          onDelete={(sessionId) => void deleteSession(sessionId)}
+        />
+      )}
+
+      {appView === 'player' && showSmartInput && (
+        <div className="smart-input-overlay">
+          <SmartReactionInput
+            movieReady={movieReady}
+            onSelectLocal={openLocalReaction}
+            onDownloaded={(filePath, metadata) => void handleDownloadedReaction(filePath, metadata)}
+          />
+        </div>
+      )}
+
+      {appView === 'player' && hasMissingMedia && activeSession && (
+        <MissingMediaRecovery
+          session={activeSession}
+          missingRoles={missingMediaRoles}
+          onBackToLibrary={() => void navigateToLibrary()}
+          onLocate={(role) => void locateMissingMedia(role)}
+          onRemoveSession={() => void deleteSession(activeSession.id)}
+        />
       )}
 
       {hasMedia && (
@@ -725,17 +1213,8 @@ export function App(): JSX.Element {
         </button>
       )}
 
+      {appView === 'player' && (
       <section className={`control-bar ${controlsIdle ? 'control-bar-hidden' : ''}`} aria-label="Playback controls">
-        {library.sessions.length > 0 && (
-          <LibraryPanel
-            library={library}
-            activeSessionId={activeSession?.id ?? null}
-            onSwitch={(sessionId) => void switchSession(sessionId)}
-            onRename={(sessionId) => void renameSession(sessionId)}
-            onDelete={(sessionId) => void deleteSession(sessionId)}
-          />
-        )}
-
         {hasMedia && setupMode && (
           <div className="setup-panel" aria-label="Sync setup">
             <div className="setup-header">
@@ -778,9 +1257,6 @@ export function App(): JSX.Element {
         )}
 
         <div className="control-row">
-          <button className="icon-button" type="button" title="Open videos" aria-label="Open videos" onClick={openVideos}>
-            <FolderOpen size={19} aria-hidden />
-          </button>
           <button
             className="transport-button"
             type="button"
@@ -822,6 +1298,16 @@ export function App(): JSX.Element {
           </button>
           <button className="icon-button" type="button" title="Fullscreen" aria-label="Fullscreen" onClick={toggleFullscreen}>
             <Maximize size={18} aria-hidden />
+          </button>
+          <button
+            className="icon-button command-panel-gear"
+            ref={commandPanelButtonRef}
+            type="button"
+            title="Command Panel"
+            aria-label="Command Panel"
+            onClick={() => toggleCommandPanel(commandPanelButtonRef.current)}
+          >
+            <Settings size={18} aria-hidden />
           </button>
         </div>
 
@@ -884,7 +1370,695 @@ export function App(): JSX.Element {
         </div>
         {error && <div className="error-banner">{error}</div>}
       </section>
+      )}
+
+      {appView === 'player' && commandPanelOpen && (
+        <CommandPanel
+          activeSession={activeSession}
+          library={library}
+          position={position}
+          reactionDuration={reactionDuration}
+          downloads={downloadEvents}
+          preferences={preferences}
+          patreonStatus={patreonStatus}
+          expandedSection={expandedPanelSection}
+          onExpandedSection={setExpandedPanelSection}
+          onClose={closeCommandPanel}
+          onSyncSetup={syncNow}
+          onSwapReaction={openImportWizard}
+          onCloseSession={() => void navigateToLibrary()}
+          onSwitchSession={(sessionId) => void switchSession(sessionId)}
+          onViewLibrary={() => void navigateToLibrary()}
+          onNewSession={openImportWizard}
+          onCancelDownload={(jobId) => void window.watchAlong.cancelDownload(jobId)}
+          onAttachDownload={(event) => void attachDownloadedReaction(event)}
+          onPreference={updatePreference}
+          onChooseDownloadDirectory={() => void chooseDownloadDirectory()}
+          onForgetPatreon={() => void forgetPatreonSession()}
+          onShowWizard={openImportWizard}
+        />
+      )}
+
+      {patreonStorageJobId && (
+        <PatreonStorageOffer jobId={patreonStorageJobId} onDismiss={() => setPatreonStorageJobId(null)} />
+      )}
+
+      {downloadIndicator && <DownloadIndicator event={downloadIndicator} />}
+
+      {showWelcome && appView !== 'loading' && appView !== 'startup-error' && (
+        <WelcomeOverlay onGetStarted={startWelcomeImport} onDismiss={() => setShowWelcome(false)} />
+      )}
+
+      {wizardDimmed && <div className="main-window-dim" aria-hidden />}
     </main>
+  )
+}
+
+function StartupErrorState({
+  message,
+  onRetry,
+  onOpenLibrary
+}: {
+  message: string
+  onRetry(): void
+  onOpenLibrary(): void
+}): JSX.Element {
+  return (
+    <section className="startup-error-state" aria-label="Startup error">
+      <div className="startup-error-card">
+        <div className="startup-error-icon">
+          <RefreshCw size={32} aria-hidden />
+        </div>
+        <h1>WatchAlong could not start cleanly</h1>
+        <p>{message}</p>
+        <div className="startup-error-actions">
+          <button className="primary-button" type="button" onClick={onRetry}>
+            <RefreshCw size={17} aria-hidden />
+            Retry
+          </button>
+          <button className="secondary-button" type="button" onClick={onOpenLibrary}>
+            <LibraryIcon size={16} aria-hidden />
+            Open Library
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function WelcomeOverlay({
+  onGetStarted,
+  onDismiss
+}: {
+  onGetStarted(): void
+  onDismiss(): void
+}): JSX.Element {
+  return (
+    <section className="welcome-backdrop" aria-label="Welcome to WatchAlong">
+      <div className="welcome-card">
+        <div className="welcome-mark">
+          <Film size={38} aria-hidden />
+        </div>
+        <div className="welcome-copy">
+          <h1>Watch reactions alongside your own movies.</h1>
+          <p>
+            WatchAlong keeps everything local. Load a movie file you own, add a full-length reaction, and sync them in one private desktop session.
+          </p>
+        </div>
+        <div className="welcome-actions">
+          <button className="primary-button" type="button" onClick={onGetStarted}>
+            <Plus size={18} aria-hidden />
+            Get Started
+          </button>
+          <button className="secondary-button" type="button" onClick={onDismiss}>
+            Not now
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function MissingMediaRecovery({
+  session,
+  missingRoles,
+  onBackToLibrary,
+  onLocate,
+  onRemoveSession
+}: {
+  session: LibrarySession
+  missingRoles: MediaRole[]
+  onBackToLibrary(): void
+  onLocate(role: MediaRole): void
+  onRemoveSession(): void
+}): JSX.Element {
+  return (
+    <section className="missing-media-backdrop" aria-label="Missing media recovery">
+      <div className="missing-media-card">
+        <div className="missing-media-icon">
+          <FileVideo size={34} aria-hidden />
+        </div>
+        <div className="missing-media-copy">
+          <h1>Some media files are missing</h1>
+          <p>WatchAlong cannot play this session until the missing file paths are repaired.</p>
+        </div>
+        <div className="missing-media-list">
+          {missingRoles.map((role) => (
+            <div key={role}>
+              <strong>{role === 'movie' ? 'Movie' : 'Reaction'}</strong>
+              <span>{role === 'movie' ? session.moviePath : session.reactionPath}</span>
+            </div>
+          ))}
+        </div>
+        <p className="media-format-hint">MP4 and WebM work best. MKV/AVI may not play in all cases.</p>
+        <div className="missing-media-actions">
+          <button className="secondary-button" type="button" onClick={onBackToLibrary}>
+            <LibraryIcon size={16} aria-hidden />
+            Back to Library
+          </button>
+          {missingRoles.includes('movie') && (
+            <button className="primary-button" type="button" onClick={() => onLocate('movie')}>
+              <Film size={17} aria-hidden />
+              Locate movie
+            </button>
+          )}
+          {missingRoles.includes('reaction') && (
+            <button className="primary-button" type="button" onClick={() => onLocate('reaction')}>
+              <FileVideo size={17} aria-hidden />
+              Locate reaction
+            </button>
+          )}
+          <button className="secondary-button danger-button" type="button" onClick={onRemoveSession}>
+            <Trash2 size={16} aria-hidden />
+            Remove session
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+interface LibraryHomeProps {
+  library: SessionLibrary
+  view: LibraryViewPreference
+  onNew(): void
+  onOpenSession(sessionId: string): void
+  onRename(sessionId: string): void
+  onDelete(sessionId: string): void
+}
+
+function LibraryHome({ library, view, onNew, onOpenSession, onRename, onDelete }: LibraryHomeProps): JSX.Element {
+  const hasSessions = library.sessions.length > 0
+  const sessions = [...library.sessions].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+
+  return (
+    <section className={`library-home library-home-${view}`} aria-label="WatchAlong Library">
+      <header className="library-home-header">
+        <div>
+          <h1>WatchAlong</h1>
+          {hasSessions && <p>{library.sessions.length} saved watchalong{library.sessions.length === 1 ? '' : 's'}</p>}
+        </div>
+        {hasSessions && (
+          <button className="primary-button" type="button" onClick={onNew}>
+            <Plus size={18} aria-hidden />
+            New WatchAlong
+          </button>
+        )}
+      </header>
+
+      {!hasSessions && (
+        <div className="library-empty-state">
+          <div className="library-empty-icon">
+            <LibraryIcon size={42} aria-hidden />
+          </div>
+          <h2>Your watchalong collection is empty</h2>
+          <p>Start your first watchalong - it only takes a minute.</p>
+          <button className="primary-button" type="button" onClick={onNew}>
+            <Plus size={18} aria-hidden />
+            New WatchAlong
+          </button>
+        </div>
+      )}
+
+      {hasSessions && (
+        <div className="library-session-grid">
+          {sessions.map((session) => (
+            <LibrarySessionCard
+              key={session.id}
+              session={session}
+              compact={view === 'list'}
+              onOpen={() => onOpenSession(session.id)}
+              onRename={() => onRename(session.id)}
+              onDelete={() => onDelete(session.id)}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function LibrarySessionCard({
+  session,
+  compact,
+  onOpen,
+  onRename,
+  onDelete
+}: {
+  session: LibrarySession
+  compact?: boolean
+  onOpen(): void
+  onRename?(): void
+  onDelete?(): void
+}): JSX.Element {
+  const [actionsOpen, setActionsOpen] = useState(false)
+  const duration = session.reactionDurationSeconds ?? 0
+  const progress = duration > 0 ? Math.min(100, Math.max(0, (session.lastReactionTimeSeconds / duration) * 100)) : 0
+  const showActions = Boolean(onRename || onDelete)
+
+  return (
+    <article className={`library-card ${compact ? 'library-card-compact' : ''}`}>
+      <button className="library-card-main" type="button" onClick={onOpen}>
+        <span className="library-card-thumbnail" aria-hidden>
+          <Film size={compact ? 24 : 38} />
+        </span>
+        <span className="library-card-copy">
+          <strong>{session.title || fileName(session.moviePath ?? session.reactionPath ?? 'Untitled watchalong')}</strong>
+          <small>
+            <ReactionSourceIcon source={session.reactionSource} />
+            {reactionSourceLabel(session.reactionSource)} / {formatRelativeTime(session.updatedAt)}
+          </small>
+        </span>
+      </button>
+      {showActions && (
+        <div className="library-card-actions">
+          <button
+            className="icon-button library-card-menu-button"
+            type="button"
+            aria-label="More actions"
+            title="More actions"
+            aria-expanded={actionsOpen}
+            onClick={() => setActionsOpen((current) => !current)}
+            onBlur={(event) => {
+              if (!event.currentTarget.parentElement?.contains(event.relatedTarget as Node | null)) {
+                setActionsOpen(false)
+              }
+            }}
+          >
+            <MoreHorizontal size={16} aria-hidden />
+          </button>
+          {actionsOpen && (
+            <div
+              className="library-card-menu"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                  setActionsOpen(false)
+                }
+              }}
+            >
+              {onRename && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionsOpen(false)
+                    onRename()
+                  }}
+                >
+                  <Pencil size={14} aria-hidden />
+                  Rename
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionsOpen(false)
+                    onDelete()
+                  }}
+                >
+                  <Trash2 size={14} aria-hidden />
+                  Delete
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      <span className="library-card-progress" aria-hidden>
+        <span style={{ width: `${progress}%` }} />
+      </span>
+    </article>
+  )
+}
+
+interface CommandPanelProps {
+  activeSession: LibrarySession | null
+  library: SessionLibrary
+  position: number
+  reactionDuration: number
+  downloads: DownloadProgressEvent[]
+  preferences: AppPreferences
+  patreonStatus: SavedPatreonSessionStatus
+  expandedSection: CommandPanelSection
+  onExpandedSection(section: CommandPanelSection): void
+  onClose(): void
+  onSyncSetup(): void
+  onSwapReaction(): void
+  onCloseSession(): void
+  onSwitchSession(sessionId: string): void
+  onViewLibrary(): void
+  onNewSession(): void
+  onCancelDownload(jobId: string): void
+  onAttachDownload(event: DownloadProgressEvent): void
+  onPreference<K extends keyof AppPreferences>(key: K, value: AppPreferences[K]): void | Promise<void>
+  onChooseDownloadDirectory(): void
+  onForgetPatreon(): void
+  onShowWizard(): void
+}
+
+function CommandPanel({
+  activeSession,
+  library,
+  position,
+  reactionDuration,
+  downloads,
+  preferences,
+  patreonStatus,
+  expandedSection,
+  onExpandedSection,
+  onClose,
+  onSyncSetup,
+  onSwapReaction,
+  onCloseSession,
+  onSwitchSession,
+  onViewLibrary,
+  onNewSession,
+  onCancelDownload,
+  onAttachDownload,
+  onPreference,
+  onChooseDownloadDirectory,
+  onForgetPatreon,
+  onShowWizard
+}: CommandPanelProps): JSX.Element {
+  const progress = reactionDuration > 0 ? Math.min(100, Math.max(0, (position / reactionDuration) * 100)) : 0
+  const recentSessions = [...library.sessions]
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+    .slice(0, 10)
+  const showDownloads = downloads.length > 0
+
+  return (
+    <div className="command-panel-scrim" onMouseDown={onClose}>
+      <aside className="command-panel" aria-label="WatchAlong Command Panel" onMouseDown={(event) => event.stopPropagation()}>
+        <header className="command-panel-titlebar">
+          <strong>WatchAlong</strong>
+          <button
+            className="icon-button"
+            type="button"
+            title="Close"
+            aria-label="Close Command Panel"
+            data-command-panel-close
+            onClick={onClose}
+          >
+            <X size={17} aria-hidden />
+          </button>
+        </header>
+
+        {activeSession && (
+          <CommandPanelSection
+            id="now-playing"
+            icon={<Clapperboard size={17} aria-hidden />}
+            label="Now Playing"
+            summary={activeSession.title}
+            expanded={expandedSection === 'now-playing'}
+            onToggle={() => onExpandedSection('now-playing')}
+          >
+            <div className="panel-session-summary">
+              <strong>{activeSession.title}</strong>
+              <small>
+                <ReactionSourceIcon source={activeSession.reactionSource} />
+                {reactionSourceLabel(activeSession.reactionSource)}
+              </small>
+              <ReadOnlyProgress value={progress} label={`${formatTime(position)} of ${formatTime(reactionDuration)}`} />
+            </div>
+            <div className="panel-action-grid">
+              <button className="secondary-button" type="button" onClick={onSyncSetup}>
+                <SlidersHorizontal size={16} aria-hidden />
+                Sync Setup
+              </button>
+              <button className="secondary-button" type="button" onClick={onSwapReaction}>
+                <RefreshCw size={16} aria-hidden />
+                Swap Reaction
+              </button>
+              <button className="secondary-button" type="button" onClick={onCloseSession}>
+                <LibraryIcon size={16} aria-hidden />
+                Close Session
+              </button>
+            </div>
+          </CommandPanelSection>
+        )}
+
+        <CommandPanelSection
+          id="library"
+          icon={<LibraryIcon size={17} aria-hidden />}
+          label="Library"
+          summary={`${library.sessions.length} saved`}
+          expanded={expandedSection === 'library'}
+          onToggle={() => onExpandedSection('library')}
+        >
+          <div className="panel-library-list">
+            {recentSessions.map((session) => (
+              <LibrarySessionCard
+                key={session.id}
+                compact
+                session={session}
+                onOpen={() => onSwitchSession(session.id)}
+              />
+            ))}
+            {recentSessions.length === 0 && <p className="panel-muted">No sessions yet.</p>}
+          </div>
+          <div className="panel-action-grid">
+            <button className="secondary-button" type="button" onClick={onViewLibrary}>
+              <LayoutGrid size={16} aria-hidden />
+              View Full Library
+            </button>
+            <button className="secondary-button" type="button" onClick={onNewSession}>
+              <Plus size={16} aria-hidden />
+              New Session
+            </button>
+          </div>
+        </CommandPanelSection>
+
+        {showDownloads && (
+          <CommandPanelSection
+            id="downloads"
+            icon={<Download size={17} aria-hidden />}
+            label="Downloads"
+            summary={`${downloads.length} recent`}
+            expanded={expandedSection === 'downloads'}
+            onToggle={() => onExpandedSection('downloads')}
+          >
+            <div className="panel-download-list">
+              {downloads.map((download) => (
+                <DownloadPanelItem
+                  key={download.jobId}
+                  event={download}
+                  onCancel={() => onCancelDownload(download.jobId)}
+                  onAttach={() => onAttachDownload(download)}
+                />
+              ))}
+            </div>
+          </CommandPanelSection>
+        )}
+
+        <CommandPanelSection
+          id="preferences"
+          icon={<Settings size={17} aria-hidden />}
+          label="Preferences"
+          summary={preferences.openLibraryOnLaunch ? 'Library on launch' : 'Resume on launch'}
+          expanded={expandedSection === 'preferences'}
+          onToggle={() => onExpandedSection('preferences')}
+        >
+          <div className="panel-preferences">
+            <label className="panel-setting-row">
+              <span>
+                <strong>Reaction download location</strong>
+                <small>{preferences.reactionDownloadDirectory ?? 'Default: Videos\\WatchAlong\\Reactions'}</small>
+              </span>
+              <button className="secondary-button" type="button" onClick={onChooseDownloadDirectory}>
+                Change
+              </button>
+            </label>
+
+            <label className="panel-toggle-row">
+              <span>
+                <strong>Patreon saved session</strong>
+                <small>{patreonStatus.available ? 'Saved' : 'Not saved'} / {patreonStatus.canEncrypt ? 'encrypted storage available' : 'encryption unavailable'}</small>
+              </span>
+              <input
+                type="checkbox"
+                checked={patreonStatus.available}
+                disabled={!patreonStatus.available}
+                aria-label="Save Patreon session"
+                onChange={(event) => {
+                  if (!event.currentTarget.checked) {
+                    onForgetPatreon()
+                  }
+                }}
+              />
+            </label>
+
+            <label className="panel-toggle-row">
+              <span>Open Library on launch</span>
+              <input
+                type="checkbox"
+                checked={preferences.openLibraryOnLaunch}
+                onChange={(event) => void onPreference('openLibraryOnLaunch', event.currentTarget.checked)}
+              />
+            </label>
+
+            <div className="panel-segmented" role="group" aria-label="Library view">
+              <button
+                type="button"
+                className={preferences.libraryView === 'grid' ? 'segment-active' : ''}
+                onClick={() => void onPreference('libraryView', 'grid')}
+              >
+                <LayoutGrid size={15} aria-hidden />
+                Grid
+              </button>
+              <button
+                type="button"
+                className={preferences.libraryView === 'list' ? 'segment-active' : ''}
+                onClick={() => void onPreference('libraryView', 'list')}
+              >
+                <List size={15} aria-hidden />
+                List
+              </button>
+            </div>
+
+            <div className="panel-setting-row panel-setting-disabled">
+              <span>
+                <strong>Subtitle defaults</strong>
+                <small>Coming later</small>
+              </span>
+            </div>
+
+            <button className="secondary-button" type="button" onClick={onShowWizard}>
+              <Plus size={16} aria-hidden />
+              Show import wizard again
+            </button>
+          </div>
+        </CommandPanelSection>
+
+        <CommandPanelSection
+          id="help"
+          icon={<Clock3 size={17} aria-hidden />}
+          label="Help & About"
+          summary={`Version ${APP_VERSION}`}
+          expanded={expandedSection === 'help'}
+          onToggle={() => onExpandedSection('help')}
+        >
+          <div className="panel-about">
+            <p>Watch reactions alongside your own movies, perfectly in sync.</p>
+            <p>All data stays local. Patreon cookies are encrypted with OS storage when saved. WatchAlong has no telemetry.</p>
+            {ONLINE_HELP_URL && (
+              <button className="secondary-button" type="button" onClick={() => window.open(ONLINE_HELP_URL, '_blank')}>
+                <ExternalLink size={16} aria-hidden />
+                Online Help
+              </button>
+            )}
+            {DONATION_URL && (
+              <button className="secondary-button" type="button" onClick={() => window.open(DONATION_URL, '_blank')}>
+                <Coffee size={16} aria-hidden />
+                Buy the developer a coffee
+              </button>
+            )}
+          </div>
+        </CommandPanelSection>
+      </aside>
+    </div>
+  )
+}
+
+function CommandPanelSection({
+  id,
+  icon,
+  label,
+  summary,
+  expanded,
+  children,
+  onToggle
+}: {
+  id: CommandPanelSection
+  icon: JSX.Element
+  label: string
+  summary: string
+  expanded: boolean
+  children: ReactNode
+  onToggle(): void
+}): JSX.Element {
+  return (
+    <section className={`command-section ${expanded ? 'command-section-expanded' : ''}`} aria-labelledby={`panel-${id}`}>
+      <button
+        id={`panel-${id}`}
+        className="command-section-header"
+        type="button"
+        aria-expanded={expanded}
+        onClick={onToggle}
+      >
+        {icon}
+        <span>
+          <strong>{label}</strong>
+          <small>{summary}</small>
+        </span>
+        <ChevronDown size={16} aria-hidden />
+      </button>
+      {expanded && <div className="command-section-body">{children}</div>}
+    </section>
+  )
+}
+
+function DownloadPanelItem({
+  event,
+  onCancel,
+  onAttach
+}: {
+  event: DownloadProgressEvent
+  onCancel(): void
+  onAttach(): void
+}): JSX.Element {
+  const working = event.state === 'checking' || event.state === 'downloading'
+  const ready = event.state === 'success' && Boolean(event.filePath)
+
+  return (
+    <div className={`panel-download-item panel-download-${event.state}`}>
+      <div>
+        <strong>{event.filePath ? fileName(event.filePath) : reactionSourceLabel(event.source)}</strong>
+        <small>{ready ? 'Ready' : event.message}</small>
+      </div>
+      {working && (
+        <button className="icon-button" type="button" title="Cancel download" aria-label="Cancel download" onClick={onCancel}>
+          <X size={15} aria-hidden />
+        </button>
+      )}
+      {ready && (
+        <button className="secondary-button" type="button" onClick={onAttach}>
+          <Check size={16} aria-hidden />
+          Attach
+        </button>
+      )}
+      <ReadOnlyProgress value={event.percent ?? (working ? 42 : ready ? 100 : 0)} />
+    </div>
+  )
+}
+
+function ReadOnlyProgress({ value, label }: { value: number; label?: string }): JSX.Element {
+  return (
+    <div className="read-only-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(value)}>
+      {label && <small>{label}</small>}
+      <span aria-hidden>
+        <span style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
+      </span>
+    </div>
+  )
+}
+
+function DownloadIndicator({ event }: { event: DownloadProgressEvent }): JSX.Element {
+  const working = event.state === 'checking' || event.state === 'downloading'
+  const label = event.source === 'youtube' ? 'YouTube reaction' : 'Patreon reaction'
+
+  return (
+    <aside className={`download-indicator download-indicator-${event.state}`} aria-live="polite">
+      <div>
+        <strong>{label}</strong>
+        <span>{event.message}</span>
+      </div>
+      {working && <Loader2 size={17} aria-hidden className="spin" />}
+      {event.percent !== null && (
+        <div className="download-indicator-track" aria-hidden>
+          <span style={{ width: `${event.percent}%` }} />
+        </div>
+      )}
+    </aside>
   )
 }
 
@@ -954,6 +2128,30 @@ function StreamVolume({ label, volume, muted, onVolume, onMute }: StreamVolumePr
       />
     </label>
   )
+}
+
+function ReactionSourceIcon({ source }: { source: ReactionSource }): JSX.Element {
+  if (source === 'youtube') {
+    return <Youtube size={14} aria-hidden />
+  }
+
+  if (source === 'patreon') {
+    return <Heart size={14} aria-hidden />
+  }
+
+  return <FileVideo size={14} aria-hidden />
+}
+
+function reactionSourceLabel(source: ReactionSource): string {
+  if (source === 'youtube') {
+    return 'YouTube'
+  }
+
+  if (source === 'patreon') {
+    return 'Patreon'
+  }
+
+  return 'Local file'
 }
 
 interface SetupScrubberProps {
@@ -1046,6 +2244,41 @@ function formatTime(seconds: number): string {
   return `${pad(minutes)}:${pad(remainingSeconds)}`
 }
 
+function formatRelativeTime(value: string): string {
+  const timestamp = Date.parse(value)
+  if (!Number.isFinite(timestamp)) {
+    return 'Unknown'
+  }
+
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000))
+  if (elapsedSeconds < 60) {
+    return 'Just now'
+  }
+
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60)
+  if (elapsedMinutes < 60) {
+    return `${elapsedMinutes} minute${elapsedMinutes === 1 ? '' : 's'} ago`
+  }
+
+  const elapsedHours = Math.floor(elapsedMinutes / 60)
+  if (elapsedHours < 24) {
+    return `${elapsedHours} hour${elapsedHours === 1 ? '' : 's'} ago`
+  }
+
+  const elapsedDays = Math.floor(elapsedHours / 24)
+  if (elapsedDays < 30) {
+    return `${elapsedDays} day${elapsedDays === 1 ? '' : 's'} ago`
+  }
+
+  const elapsedMonths = Math.floor(elapsedDays / 30)
+  if (elapsedMonths < 12) {
+    return `${elapsedMonths} month${elapsedMonths === 1 ? '' : 's'} ago`
+  }
+
+  const elapsedYears = Math.floor(elapsedMonths / 12)
+  return `${elapsedYears} year${elapsedYears === 1 ? '' : 's'} ago`
+}
+
 function pad(value: number): string {
   return value.toString().padStart(2, '0')
 }
@@ -1077,4 +2310,8 @@ function roundSeconds(value: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message.trim().length > 0 ? error.message : fallback
 }

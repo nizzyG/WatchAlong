@@ -42,6 +42,15 @@
       "out/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "resources/tools",
+        "to": "tools",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "win": {
       "target": "nsis"
     },

@@ -2,13 +2,14 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path'
 import {
   createDefaultLibrary,
+  createSessionFromMedia,
   createSessionFromPaths,
   findMatchingSession,
   getActiveSession,
   normalizeLibrary,
   normalizeSession
 } from '@shared/session'
-import type { LibrarySession, SessionLibrary } from '@shared/types'
+import type { LibrarySession, MediaRole, ReactionSource, SessionLibrary } from '@shared/types'
 
 export class SessionStore {
   constructor(
@@ -33,7 +34,11 @@ export class SessionStore {
     return this.read().sessions.find((session) => session.id === sessionId) ?? null
   }
 
-  createOrSwitchSession(reactionPath: string, moviePath: string): SessionLibrary {
+  createOrSwitchSession(
+    reactionPath: string,
+    moviePath: string,
+    reactionSource: ReactionSource = 'local'
+  ): SessionLibrary {
     const library = this.read()
     const existing = findMatchingSession(library, reactionPath, moviePath)
     const now = new Date()
@@ -42,7 +47,7 @@ export class SessionStore {
       : {
           ...library,
           activeSessionId: null,
-          sessions: [...library.sessions, createSessionFromPaths(reactionPath, moviePath, now)]
+          sessions: [...library.sessions, createSessionFromPaths(reactionPath, moviePath, now, reactionSource)]
         }
 
     if (!existing) {
@@ -50,6 +55,54 @@ export class SessionStore {
     }
 
     return this.writeAndReturn(next)
+  }
+
+  setSessionMedia(role: MediaRole, filePath: string, reactionSource: ReactionSource = 'local'): SessionLibrary {
+    const library = this.read()
+    const active = getActiveSession(library)
+    const pathKey = role === 'reaction' ? 'reactionPath' : 'moviePath'
+    const now = new Date()
+
+    if (!active || (active.reactionPath && active.moviePath)) {
+      const draft = createSessionFromMedia(
+        {
+          [pathKey]: filePath,
+          ...(role === 'reaction' ? { reactionSource } : {})
+        },
+        now
+      )
+      return this.writeAndReturn({
+        ...library,
+        activeSessionId: draft.id,
+        sessions: [...library.sessions, draft]
+      })
+    }
+
+    const nextSession = normalizeSession({
+      ...active,
+      [pathKey]: filePath,
+      ...(role === 'reaction' ? { reactionSource } : {}),
+      title: role === 'movie' ? basenameForTitle(filePath) : active.title,
+      createdAt: active.createdAt,
+      updatedAt: now.toISOString()
+    })
+
+    if (nextSession.reactionPath && nextSession.moviePath) {
+      const existing = findMatchingSession(library, nextSession.reactionPath, nextSession.moviePath)
+      if (existing && existing.id !== active.id) {
+        return this.writeAndReturn({
+          ...library,
+          activeSessionId: existing.id,
+          sessions: library.sessions.filter((session) => session.id !== active.id)
+        })
+      }
+    }
+
+    return this.writeAndReturn({
+      ...library,
+      activeSessionId: active.id,
+      sessions: library.sessions.map((session) => (session.id === active.id ? nextSession : session))
+    })
   }
 
   setActiveSession(sessionId: string): SessionLibrary {
@@ -142,4 +195,8 @@ export class SessionStore {
       return createDefaultLibrary()
     }
   }
+}
+
+function basenameForTitle(filePath: string): string {
+  return filePath.split(/[\\/]/).at(-1) ?? filePath
 }

@@ -1,4 +1,4 @@
-import type { LibrarySession, OverlayGeometry, PlaybackRate, SessionLibrary, SessionData } from './types'
+import type { LibrarySession, OverlayGeometry, PlaybackRate, ReactionSource, SessionLibrary, SessionData } from './types'
 
 export const SESSION_LIBRARY_VERSION = 2
 
@@ -21,6 +21,8 @@ export function createDefaultSession(now = new Date(), patch: Partial<LibrarySes
     id: stringOrNull(patch.id) ?? createSessionId(now),
     title: stringOrDefault(patch.title, defaultSessionTitle(moviePath, reactionPath)),
     reactionPath,
+    reactionSource: normalizeReactionSource(patch.reactionSource),
+    reactionDurationSeconds: nullableFinite(patch.reactionDurationSeconds),
     moviePath,
     subtitlePath: stringOrNull(patch.subtitlePath),
     offsetSeconds: finiteOr(patch.offsetSeconds, 0),
@@ -70,6 +72,8 @@ export function normalizeSession(value: unknown, now = new Date()): SessionData 
     id: stringOrNull(source?.id) ?? fallback.id,
     title: stringOrDefault(source?.title, defaultSessionTitle(moviePath, reactionPath)),
     reactionPath,
+    reactionSource: normalizeReactionSource(source?.reactionSource),
+    reactionDurationSeconds: nullableFinite(source?.reactionDurationSeconds),
     moviePath,
     subtitlePath: stringOrNull(source?.subtitlePath),
     offsetSeconds: finiteOr(source?.offsetSeconds, fallback.offsetSeconds),
@@ -133,9 +137,29 @@ export function getSessionById(library: SessionLibrary, sessionId: string): Libr
   return library.sessions.find((session) => session.id === sessionId) ?? null
 }
 
-export function createSessionFromPaths(reactionPath: string, moviePath: string, now = new Date()): LibrarySession {
+export function createSessionFromPaths(
+  reactionPath: string,
+  moviePath: string,
+  now = new Date(),
+  reactionSource: ReactionSource = 'local'
+): LibrarySession {
   return createDefaultSession(now, {
     reactionPath,
+    reactionSource,
+    moviePath,
+    title: defaultSessionTitle(moviePath, reactionPath)
+  })
+}
+
+export function createSessionFromMedia(
+  media: Partial<Pick<LibrarySession, 'reactionPath' | 'reactionSource' | 'moviePath'>>,
+  now = new Date()
+): LibrarySession {
+  const reactionPath = stringOrNull(media.reactionPath)
+  const moviePath = stringOrNull(media.moviePath)
+  return createDefaultSession(now, {
+    reactionPath,
+    reactionSource: normalizeReactionSource(media.reactionSource),
     moviePath,
     title: defaultSessionTitle(moviePath, reactionPath)
   })
@@ -183,6 +207,14 @@ function createSessionId(now: Date): string {
 
 function finiteOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function nullableFinite(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
+}
+
+function normalizeReactionSource(value: unknown): ReactionSource {
+  return value === 'youtube' || value === 'patreon' || value === 'local' ? value : 'local'
 }
 
 function stringOrNull(value: unknown): string | null {
