@@ -43,10 +43,12 @@ import type {
   LibrarySession,
   LibraryViewPreference,
   MediaRole,
+  MovieWindowGeometryEvent,
   OverlayGeometry,
   PlaybackRate,
   ReactionDownloadSource,
   ReactionSource,
+  RemoteMediaState,
   SavedPatreonSessionStatus,
   SessionLibrary,
   SyncState,
@@ -55,7 +57,8 @@ import type {
 import { PipOverlay } from './components/PipOverlay'
 import { constrainOverlay } from './components/pipGeometry'
 import { PatreonStorageOffer, SmartReactionInput } from './components/SmartReactionInput'
-import { SyncController, createHtmlVideoAdapter } from './sync/SyncController'
+import { SyncController, createHtmlVideoAdapter, type VideoAdapter } from './sync/SyncController'
+import { RemoteVideoAdapter } from './sync/RemoteVideoAdapter'
 import { TimelineMapping } from './sync/timeline'
 import { getActiveSubtitleCue, parseSubtitleText, type SubtitleCue } from './subtitles'
 
@@ -82,6 +85,8 @@ const movieSourceRates = [
 ]
 const CONTROL_IDLE_DELAY_MS = 2400
 const VIEW_FADE_MS = 300
+const MOVIE_WINDOW_TRANSITION_MS = 220
+const MOVIE_WINDOW_GEOMETRY_SAVE_MS = 600
 const APP_VERSION = '0.1.0'
 const ONLINE_HELP_URL = 'https://github.com/nizzyG/WatchAlong#readme'
 const DONATION_URL: string | null = null
@@ -91,9 +96,14 @@ export function App(): JSX.Element {
   const reactionVideoRef = useRef<HTMLVideoElement>(null)
   const movieVideoRef = useRef<HTMLVideoElement>(null)
   const controllerRef = useRef<SyncController | null>(null)
+  const remoteMovieAdapterRef = useRef<RemoteVideoAdapter | null>(null)
   const sessionRef = useRef<LibrarySession>(createDefaultSession())
   const setupModeRef = useRef(false)
   const lastPositionSaveRef = useRef(0)
+  const restoredPopOutSessionRef = useRef<string | null>(null)
+  const pendingMovieWindowGeometryRef = useRef<OverlayGeometry | null>(null)
+  const movieWindowGeometryTimerRef = useRef<number | null>(null)
+  const closingMovieWindowRef = useRef(false)
   const pausedForWizardRef = useRef(false)
   const downloadIndicatorTimerRef = useRef<number | null>(null)
   const commandPanelButtonRef = useRef<HTMLButtonElement>(null)
@@ -131,6 +141,7 @@ export function App(): JSX.Element {
   const [renameDraft, setRenameDraft] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<{ sessionId: string; returnToLibrary: boolean } | null>(null)
   const [viewTransitioning, setViewTransitioning] = useState(false)
+  const [movieWindowActive, setMovieWindowActive] = useState(false)
 
   const activeSession = useMemo(() => getActiveSession(library), [library])
   const session = activeSession ?? emptySession
@@ -146,6 +157,68 @@ export function App(): JSX.Element {
     setLibrary(next)
     return nextSession
   }, [emptySession])
+
+  const getMovieAdapter = useCallback((): VideoAdapter | null => {
+    if (remoteMovieAdapterRef.current) {
+      return remoteMovieAdapterRef.current
+    }
+
+    return movieVideoRef.current ? createHtmlVideoAdapter('movie', movieVideoRef.current) : null
+  }, [])
+
+  const buildController = useCallback((movieAdapter: VideoAdapter): SyncController | null => {
+    const reaction = reactionVideoRef.current
+    if (!reaction) {
+      return null
+    }
+
+    controllerRef.current?.destroy()
+
+    const controller = new SyncController({
+      reaction: createHtmlVideoAdapter('reaction', reaction),
+      movie: movieAdapter,
+      getOffset: () => sessionRef.current.offsetSeconds,
+      getMovieRateCorrection: () => sessionRef.current.movieRateCorrection,
+      setOffset: async (offsetSeconds) => {
+        const next = await window.watchAlong.saveActiveSession({ offsetSeconds })
+        commitLibrary(next)
+      },
+      onState: setSyncState,
+      onPosition: (reactionTime) => {
+        if (!Number.isFinite(reactionTime)) {
+          return
+        }
+
+        setPosition(reactionTime)
+        if (setupModeRef.current) {
+          setSetupPositions((current) => ({ ...current, reaction: reactionTime }))
+          return
+        }
+
+        const currentSession = sessionRef.current
+        const now = Date.now()
+        if (now - lastPositionSaveRef.current > 1500 && currentSession.reactionPath && currentSession.moviePath) {
+          lastPositionSaveRef.current = now
+          void window.watchAlong
+            .saveActiveSession({ lastReactionTimeSeconds: reactionTime })
+            .then(commitLibrary)
+        }
+      },
+      onError: setError
+    })
+
+    controller.attach()
+    controller.setAudio(audioState(sessionRef.current))
+    controller.setPlaybackRate(sessionRef.current.playbackRate)
+    controller.setSetupMode(setupModeRef.current)
+    controllerRef.current = controller
+    return controller
+  }, [commitLibrary])
+
+  const destroyRemoteMovieAdapter = useCallback((): void => {
+    remoteMovieAdapterRef.current?.destroy()
+    remoteMovieAdapterRef.current = null
+  }, [])
 
   const refreshMediaUrls = useCallback(async (sessionId: string | null): Promise<void> => {
     if (!sessionId) {
@@ -233,55 +306,41 @@ export function App(): JSX.Element {
   }, [setupMode])
 
   useEffect(() => {
-    const reaction = reactionVideoRef.current
+    return window.watchAlong.onMovieMediaEvent((event) => {
+      const state = event.state
+      if (event.type === 'loadedmetadata' || event.type === 'durationchange') {
+        setDurations((current) => ({ ...current, movie: state.duration }))
+        setMetadataReady((current) => ({ ...current, movie: true }))
+      }
+
+      if (event.type === 'timeupdate' || event.type === 'seeked' || event.type === 'loadedmetadata') {
+        setMoviePosition(state.currentTime)
+        if (setupModeRef.current) {
+          setSetupPositions((current) => ({ ...current, movie: state.currentTime }))
+        }
+      }
+
+      if (event.type === 'error') {
+        handleVideoError('movie')
+      }
+    })
+  }, [])
+
+  useEffect(() => {
     const movie = movieVideoRef.current
-    if (!reaction || !movie || controllerRef.current) {
+    if (!movie || controllerRef.current) {
       return
     }
 
-    const controller = new SyncController({
-      reaction: createHtmlVideoAdapter('reaction', reaction),
-      movie: createHtmlVideoAdapter('movie', movie),
-      getOffset: () => sessionRef.current.offsetSeconds,
-      getMovieRateCorrection: () => sessionRef.current.movieRateCorrection,
-      setOffset: async (offsetSeconds) => {
-        const next = await window.watchAlong.saveActiveSession({ offsetSeconds })
-        commitLibrary(next)
-      },
-      onState: setSyncState,
-      onPosition: (reactionTime) => {
-        if (!Number.isFinite(reactionTime)) {
-          return
-        }
-
-        setPosition(reactionTime)
-        if (setupModeRef.current) {
-          setSetupPositions((current) => ({ ...current, reaction: reactionTime }))
-          return
-        }
-
-        const currentSession = sessionRef.current
-        const now = Date.now()
-        if (now - lastPositionSaveRef.current > 1500 && currentSession.reactionPath && currentSession.moviePath) {
-          lastPositionSaveRef.current = now
-          void window.watchAlong
-            .saveActiveSession({ lastReactionTimeSeconds: reactionTime })
-            .then(commitLibrary)
-        }
-      },
-      onError: setError
-    })
-
-    controller.attach()
-    controller.setAudio(audioState(sessionRef.current))
-    controller.setPlaybackRate(sessionRef.current.playbackRate)
-    controllerRef.current = controller
+    const controller = buildController(createHtmlVideoAdapter('movie', movie))
 
     return () => {
-      controller.destroy()
-      controllerRef.current = null
+      controller?.destroy()
+      if (controllerRef.current === controller) {
+        controllerRef.current = null
+      }
     }
-  }, [commitLibrary, mediaUrls.movie, mediaUrls.reaction])
+  }, [appView, buildController, mediaUrls.movie, mediaUrls.reaction, movieWindowActive])
 
   useEffect(() => {
     const reaction = reactionVideoRef.current
@@ -293,7 +352,7 @@ export function App(): JSX.Element {
     if (movie && movie.src !== (mediaUrls.movie ?? '')) {
       movie.src = mediaUrls.movie ?? ''
     }
-  }, [mediaUrls])
+  }, [mediaUrls, movieWindowActive])
 
   useEffect(() => {
     controllerRef.current?.setAudio(audioState(session))
@@ -325,9 +384,9 @@ export function App(): JSX.Element {
     controllerRef.current?.setPlaybackRate(session.playbackRate)
     controllerRef.current?.loadSession(session.lastReactionTimeSeconds)
     setPosition(session.lastReactionTimeSeconds)
-    setMoviePosition(movieVideoRef.current?.currentTime ?? 0)
+    setMoviePosition(getMovieAdapter()?.currentTime ?? 0)
     setRestoreToken(token)
-  }, [activeSession, mediaUrls, metadataReady, restoreToken, session])
+  }, [activeSession, getMovieAdapter, mediaUrls, metadataReady, restoreToken, session])
 
   useEffect(() => {
     let mounted = true
@@ -348,6 +407,18 @@ export function App(): JSX.Element {
       mounted = false
     }
   }, [activeSession?.id, activeSession?.subtitlePath])
+
+  useEffect(() => {
+    if (!movieWindowActive) {
+      return
+    }
+
+    void window.watchAlong.sendMovieMediaCommand({
+      id: `subtitle-${Date.now()}`,
+      type: 'setSubtitleText',
+      value: activeSubtitle?.text ?? null
+    })
+  }, [activeSubtitle?.text, movieWindowActive])
 
   useEffect(() => {
     const onResize = (): void => {
@@ -521,7 +592,7 @@ export function App(): JSX.Element {
     const handleWizardLifecycle = async (event: WizardLifecycleEvent): Promise<void> => {
       if (event.type === 'opened') {
         setWizardDimmed(true)
-        pausedForWizardRef.current = canPlay && isPlaying
+        pausedForWizardRef.current = !movieWindowActive && canPlay && isPlaying
         if (pausedForWizardRef.current) {
           controllerRef.current?.pause()
         }
@@ -557,7 +628,7 @@ export function App(): JSX.Element {
     return window.watchAlong.onWizardLifecycle((event) => {
       void handleWizardLifecycle(event)
     })
-  }, [canPlay, commitLibrary, isPlaying, refreshMediaUrls])
+  }, [canPlay, commitLibrary, isPlaying, movieWindowActive, refreshMediaUrls])
 
   useEffect(() => {
     return window.watchAlong.onDownloadProgress((event) => {
@@ -615,6 +686,211 @@ export function App(): JSX.Element {
     return commitLibrary(next)
   }
 
+  const createRemoteMovieAdapter = (initialState: Partial<RemoteMediaState>): RemoteVideoAdapter => {
+    destroyRemoteMovieAdapter()
+    const adapter = new RemoteVideoAdapter(
+      'movie',
+      {
+        sendCommand: (command) => window.watchAlong.sendMovieMediaCommand(command),
+        onEvent: (callback) => window.watchAlong.onMovieMediaEvent(callback)
+      },
+      initialState
+    )
+    remoteMovieAdapterRef.current = adapter
+    return adapter
+  }
+
+  const closeMovieWindowForModeChange = async (): Promise<void> => {
+    closingMovieWindowRef.current = true
+    try {
+      await window.watchAlong.closeMovieWindow({ notifyMainWindow: false })
+    } finally {
+      closingMovieWindowRef.current = false
+    }
+  }
+
+  const stopDetachedMovie = async (): Promise<void> => {
+    if (!movieWindowActive) {
+      return
+    }
+
+    await closeMovieWindowForModeChange()
+    destroyRemoteMovieAdapter()
+    setMovieWindowActive(false)
+    await persist({ isMoviePoppedOut: false })
+  }
+
+  const scheduleMovieWindowGeometryPersist = (geometry: OverlayGeometry): void => {
+    pendingMovieWindowGeometryRef.current = geometry
+    if (movieWindowGeometryTimerRef.current !== null) {
+      return
+    }
+
+    movieWindowGeometryTimerRef.current = window.setTimeout(() => {
+      movieWindowGeometryTimerRef.current = null
+      const pending = pendingMovieWindowGeometryRef.current
+      pendingMovieWindowGeometryRef.current = null
+      const current = sessionRef.current
+      if (pending && current.id && current.isMoviePoppedOut) {
+        void window.watchAlong.saveActiveSession({ movieWindowGeometry: pending }).then(commitLibrary)
+      }
+    }, MOVIE_WINDOW_GEOMETRY_SAVE_MS)
+  }
+
+  const handleMovieWindowGeometry = (event: MovieWindowGeometryEvent): void => {
+    scheduleMovieWindowGeometryPersist(event.geometry)
+  }
+
+  const popOutMovie = async (geometryMode: 'overlay' | 'screen' = 'overlay'): Promise<void> => {
+    if (!activeSession || !mediaUrls.movie) {
+      return
+    }
+
+    const movieAdapter = getMovieAdapter()
+    const reactionTime = reactionVideoRef.current?.currentTime ?? position
+    const movieTime = movieAdapter?.currentTime ?? moviePosition
+    const wasPlaying = syncState === 'playing'
+    const initialGeometry = geometryMode === 'screen' ? session.movieWindowGeometry : session.overlay
+    controllerRef.current?.pause()
+    movieAdapter?.pause()
+
+    const result = await window.watchAlong.openMovieWindow({
+      sessionId: activeSession.id,
+      title: activeSession.title,
+      mediaUrl: mediaUrls.movie,
+      subtitleText: activeSubtitle?.text ?? null,
+      currentTime: movieTime,
+      playbackRate: session.playbackRate * session.movieRateCorrection,
+      volume: session.movieVolume,
+      muted: session.isMovieMuted,
+      geometry: initialGeometry,
+      geometryMode
+    })
+
+    if (!result.opened) {
+      if (wasPlaying && canPlay) {
+        controllerRef.current?.play()
+      }
+      return
+    }
+
+    const remoteAdapter = createRemoteMovieAdapter({
+      ...result.state,
+      currentTime: result.state?.currentTime ?? movieTime,
+      duration: Number.isFinite(durations.movie) ? durations.movie : result.state?.duration ?? Number.NaN,
+      paused: true,
+      playbackRate: session.playbackRate * session.movieRateCorrection,
+      volume: session.movieVolume,
+      muted: session.isMovieMuted
+    })
+    setMovieWindowActive(true)
+    await persist({
+      isMoviePoppedOut: true,
+      movieWindowGeometry: result.geometry
+    })
+    buildController(remoteAdapter)?.loadSession(reactionTime)
+    if (wasPlaying && canPlay) {
+      window.setTimeout(() => controllerRef.current?.play(), MOVIE_WINDOW_TRANSITION_MS)
+    }
+  }
+
+  const popInMovie = async (): Promise<void> => {
+    if (!remoteMovieAdapterRef.current) {
+      await persist({ isMoviePoppedOut: false })
+      setMovieWindowActive(false)
+      return
+    }
+
+    const wasPlaying = syncState === 'playing'
+    const reactionTime = reactionVideoRef.current?.currentTime ?? position
+    controllerRef.current?.pause()
+    await window.watchAlong.sendMovieMediaCommand({ id: `fade-${Date.now()}`, type: 'fadeOut' })
+    closingMovieWindowRef.current = true
+    const result = await window.watchAlong.closeMovieWindow({ notifyMainWindow: false })
+    closingMovieWindowRef.current = false
+    const nextOverlay = constrainOverlay(result.overlay ?? session.overlay)
+    const movieState = result.state ?? remoteMovieAdapterRef.current.snapshot()
+    destroyRemoteMovieAdapter()
+    setMovieWindowActive(false)
+
+    window.requestAnimationFrame(() => {
+      const movie = movieVideoRef.current
+      if (!movie) {
+        return
+      }
+
+      if (movie.src !== (mediaUrls.movie ?? '')) {
+        movie.src = mediaUrls.movie ?? ''
+      }
+      movie.currentTime = movieState.currentTime
+      movie.playbackRate = session.playbackRate * session.movieRateCorrection
+      movie.volume = session.movieVolume
+      movie.muted = session.isMovieMuted
+      const controller = buildController(createHtmlVideoAdapter('movie', movie))
+      controller?.loadSession(reactionTime)
+      if (wasPlaying && canPlay) {
+        window.setTimeout(() => controllerRef.current?.play(), MOVIE_WINDOW_TRANSITION_MS)
+      }
+    })
+
+    await persist({
+      isMoviePoppedOut: false,
+      overlay: nextOverlay,
+      movieWindowGeometry: result.geometry ?? session.movieWindowGeometry
+    })
+  }
+
+  useEffect(() => {
+    const unsubscribeGeometry = window.watchAlong.onMovieWindowGeometry(handleMovieWindowGeometry)
+    const unsubscribePopIn = window.watchAlong.onMovieWindowPopInRequest(() => {
+      void popInMovie()
+    })
+    const unsubscribeClosed = window.watchAlong.onMovieWindowClosed(() => {
+      if (closingMovieWindowRef.current) {
+        return
+      }
+
+      destroyRemoteMovieAdapter()
+      setMovieWindowActive(false)
+      void persist({ isMoviePoppedOut: false })
+      window.requestAnimationFrame(() => {
+        if (movieVideoRef.current) {
+          buildController(createHtmlVideoAdapter('movie', movieVideoRef.current))
+        }
+      })
+    })
+
+    return () => {
+      unsubscribeGeometry()
+      unsubscribePopIn()
+      unsubscribeClosed()
+    }
+  })
+
+  useEffect(() => {
+    return () => {
+      if (movieWindowGeometryTimerRef.current !== null) {
+        window.clearTimeout(movieWindowGeometryTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (
+      appView !== 'player' ||
+      !activeSession?.isMoviePoppedOut ||
+      movieWindowActive ||
+      !mediaUrls.movie ||
+      hasMissingMedia ||
+      restoredPopOutSessionRef.current === activeSession.id
+    ) {
+      return
+    }
+
+    restoredPopOutSessionRef.current = activeSession.id
+    void popOutMovie('screen')
+  })
+
   const openImportWizard = (options?: ImportWizardLaunchOptions): void => {
     setCommandPanelOpen(false)
     setControlsIdle(false)
@@ -624,7 +900,13 @@ export function App(): JSX.Element {
   const navigateToLibrary = async (): Promise<void> => {
     controllerRef.current?.pause()
     reactionVideoRef.current?.pause()
-    movieVideoRef.current?.pause()
+    getMovieAdapter()?.pause()
+    if (movieWindowActive) {
+      await closeMovieWindowForModeChange()
+      destroyRemoteMovieAdapter()
+      setMovieWindowActive(false)
+      await persist({ isMoviePoppedOut: false })
+    }
     setSetupMode(false)
     setSetupPlayingRole(null)
     setCommandPanelOpen(false)
@@ -660,6 +942,7 @@ export function App(): JSX.Element {
       return
     }
 
+    await stopDetachedMovie()
     const next = await window.watchAlong.replaceSessionMedia(
       activeSession.id,
       role,
@@ -696,6 +979,7 @@ export function App(): JSX.Element {
     }
 
     controllerRef.current?.pause()
+    await stopDetachedMovie()
     if (activeSession?.moviePath) {
       const next = await window.watchAlong.replaceSessionMedia(activeSession.id, 'reaction', event.filePath, event.source)
       const nextSession = commitLibrary(next)
@@ -790,6 +1074,7 @@ export function App(): JSX.Element {
       return
     }
 
+    await stopDetachedMovie()
     const nextSession = commitLibrary(result.library)
     setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
     setMoviePosition(0)
@@ -805,6 +1090,7 @@ export function App(): JSX.Element {
     }
 
     controllerRef.current?.pause()
+    await stopDetachedMovie()
     const next = await window.watchAlong.setSessionMedia('movie', movie.path)
     const nextSession = commitLibrary(next)
     setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
@@ -820,6 +1106,7 @@ export function App(): JSX.Element {
       return
     }
 
+    await stopDetachedMovie()
     const next = await window.watchAlong.setSessionMedia('reaction', reaction.path, 'local')
     const nextSession = commitLibrary(next)
     setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
@@ -833,6 +1120,7 @@ export function App(): JSX.Element {
     filePath: string,
     metadata: { jobId: string; source: ReactionDownloadSource }
   ): Promise<void> => {
+    await stopDetachedMovie()
     const next = await window.watchAlong.setSessionMedia('reaction', filePath, metadata.source)
     const nextSession = commitLibrary(next)
     setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
@@ -851,9 +1139,18 @@ export function App(): JSX.Element {
     }
 
     controllerRef.current?.pause()
+    if (movieWindowActive) {
+      await closeMovieWindowForModeChange()
+      destroyRemoteMovieAdapter()
+      setMovieWindowActive(false)
+      await persist({ isMoviePoppedOut: false })
+    }
     setSyncState('paused')
     const next = await window.watchAlong.setActiveSession(sessionId)
-    const nextSession = commitLibrary(next)
+    let nextSession = commitLibrary(next)
+    if (nextSession?.isMoviePoppedOut) {
+      nextSession = commitLibrary(await window.watchAlong.saveActiveSession({ isMoviePoppedOut: false }))
+    }
     setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
     setMoviePosition(0)
     setSetupMode(false)
@@ -899,6 +1196,9 @@ export function App(): JSX.Element {
     }
 
     const shouldReturnToLibrary = deleteTarget.returnToLibrary
+    if (movieWindowActive && deleteTarget.sessionId === activeSession?.id) {
+      await stopDetachedMovie()
+    }
     const next = await window.watchAlong.deleteSession(deleteTarget.sessionId)
     const nextSession = commitLibrary(next)
     setDeleteTarget(null)
@@ -1090,6 +1390,10 @@ export function App(): JSX.Element {
     }
   }
 
+  const toggleReactionFullscreen = (): void => {
+    toggleFullscreen()
+  }
+
   const enterSyncSetup = (): void => {
     if (!canPlay) {
       return
@@ -1097,18 +1401,18 @@ export function App(): JSX.Element {
 
     controllerRef.current?.pause()
     reactionVideoRef.current?.pause()
-    movieVideoRef.current?.pause()
+    getMovieAdapter()?.pause()
     setSetupPlayingRole(null)
     setSetupPositions({
       reaction: reactionVideoRef.current?.currentTime ?? position,
-      movie: movieVideoRef.current?.currentTime ?? 0
+      movie: getMovieAdapter()?.currentTime ?? moviePosition
     })
     setSetupMode(true)
   }
 
   const cancelSyncSetup = (): void => {
     reactionVideoRef.current?.pause()
-    movieVideoRef.current?.pause()
+    getMovieAdapter()?.pause()
     setSetupPlayingRole(null)
     setSetupMode(false)
     controllerRef.current?.setSetupMode(false)
@@ -1117,7 +1421,7 @@ export function App(): JSX.Element {
 
   const saveSyncSetup = async (): Promise<void> => {
     const reaction = reactionVideoRef.current
-    const movie = movieVideoRef.current
+    const movie = getMovieAdapter()
     if (!reaction || !movie) {
       return
     }
@@ -1140,7 +1444,7 @@ export function App(): JSX.Element {
   }
 
   const setIndependentSetupTime = (role: MediaRole, time: number): void => {
-    const element = role === 'reaction' ? reactionVideoRef.current : movieVideoRef.current
+    const element = role === 'reaction' ? reactionVideoRef.current : getMovieAdapter()
     const duration = role === 'reaction' ? durations.reaction : durations.movie
     const nextTime = Math.max(0, Math.min(Number.isFinite(duration) ? duration : Number.MAX_SAFE_INTEGER, time))
     if (element) {
@@ -1164,8 +1468,8 @@ export function App(): JSX.Element {
       return
     }
 
-    const active = role === 'reaction' ? reactionVideoRef.current : movieVideoRef.current
-    const other = role === 'reaction' ? movieVideoRef.current : reactionVideoRef.current
+    const active = role === 'reaction' ? reactionVideoRef.current : getMovieAdapter()
+    const other = role === 'reaction' ? getMovieAdapter() : reactionVideoRef.current
     if (!active) {
       return
     }
@@ -1193,6 +1497,7 @@ export function App(): JSX.Element {
         className="reaction-video"
         playsInline
         preload="metadata"
+        onDoubleClick={toggleReactionFullscreen}
         onLoadedMetadata={() => handleMetadata('reaction')}
         onTimeUpdate={() => handleTimeUpdate('reaction')}
         onError={() => handleVideoError('reaction')}
@@ -1244,14 +1549,17 @@ export function App(): JSX.Element {
         />
       )}
 
-      {hasMedia && (
+      {hasMedia && !movieWindowActive && (
         <PipOverlay
           geometry={session.overlay}
           videoRef={movieVideoRef}
           hidden={session.isPipHidden}
+          poppedOut={false}
           onChange={updateOverlay}
           onCommit={commitOverlay}
           onHide={() => void persist({ isPipHidden: true })}
+          onPopOut={() => void popOutMovie('overlay')}
+          onPopIn={() => void popInMovie()}
           onLoadedMetadata={() => handleMetadata('movie')}
           onTimeUpdate={() => handleTimeUpdate('movie')}
           onVideoError={() => handleVideoError('movie')}
@@ -1259,7 +1567,7 @@ export function App(): JSX.Element {
         />
       )}
 
-      {hasMedia && session.isPipHidden && (
+      {hasMedia && session.isPipHidden && !movieWindowActive && (
         <button
           className="floating-show-pip icon-button"
           type="button"

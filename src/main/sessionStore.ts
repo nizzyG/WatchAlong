@@ -158,6 +158,9 @@ export class SessionStore {
             ...patch,
             id: session.id,
             overlay: patch.overlay ? { ...session.overlay, ...patch.overlay } : session.overlay,
+            movieWindowGeometry: patch.movieWindowGeometry
+              ? { ...session.movieWindowGeometry, ...patch.movieWindowGeometry }
+              : session.movieWindowGeometry,
             createdAt: session.createdAt,
             updatedAt: now.toISOString()
           })

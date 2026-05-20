@@ -21,9 +21,20 @@ import type {
   LibrarySession,
   MediaFile,
   MediaRole,
+  MovieWindowCloseOptions,
+  MovieWindowCloseResult,
+  MovieWindowGeometryEvent,
+  MovieWindowInit,
+  MovieWindowOpenRequest,
+  MovieWindowOpenResult,
   OpenVideosResult,
+  OverlayGeometry,
   ReactionDownloadRequest,
   ReactionSource,
+  RemoteMediaCommand,
+  RemoteMediaCommandResult,
+  RemoteMediaEvent,
+  RemoteMediaState,
   WizardLifecycleEvent,
   WizardOutcome
 } from '@shared/types'
@@ -48,9 +59,16 @@ protocol.registerSchemesAsPrivileged([
 
 let mainWindow: BrowserWindow | null = null
 let wizardWindow: BrowserWindow | null = null
+let movieWindow: BrowserWindow | null = null
 let wizardCloseOutcome: WizardOutcome | null = null
 let recenterWizardOnParent: (() => void) | null = null
 let importWizardContext: ImportWizardContext = createDefaultWizardContext()
+let movieWindowInit: MovieWindowInit | null = null
+let movieWindowGeometry: OverlayGeometry | null = null
+let lastMovieMediaState: RemoteMediaState | null = null
+let closingMovieWindowIntentionally = false
+let resolveMovieWindowReady: (() => void) | null = null
+const pendingMovieCommands = new Map<string, (result: RemoteMediaCommandResult) => void>()
 let sessionStore: SessionStore
 let preferencesStore: PreferencesStore
 let toolResolver: ToolResolver
@@ -77,6 +95,11 @@ function createWindow(): void {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  mainWindow.on('closed', () => {
+    closeMovieWindowWithoutPopIn()
+    mainWindow = null
   })
 
   void loadRenderer(mainWindow)
@@ -214,7 +237,7 @@ function centerWizardOnParent(): void {
   })
 }
 
-async function loadRenderer(targetWindow: BrowserWindow, view?: 'wizard'): Promise<void> {
+async function loadRenderer(targetWindow: BrowserWindow, view?: 'wizard' | 'movie'): Promise<void> {
   if (process.env.ELECTRON_RENDERER_URL) {
     const rendererUrl = new URL(process.env.ELECTRON_RENDERER_URL)
     if (view) {
@@ -243,6 +266,244 @@ function sendToRendererWindows(channel: string, payload: unknown): void {
     if (targetWindow && !targetWindow.isDestroyed()) {
       targetWindow.webContents.send(channel, payload)
     }
+  }
+}
+
+async function openMovieWindow(request: MovieWindowOpenRequest): Promise<MovieWindowOpenResult> {
+  const session = sessionStore.getSession(request.sessionId)
+  if (!session?.moviePath || !existsSync(session.moviePath)) {
+    return {
+      opened: false,
+      geometry: request.geometry,
+      state: lastMovieMediaState,
+      reason: 'missing-media'
+    }
+  }
+
+  await closeMovieWindow({ notifyMainWindow: false })
+
+  const bounds = movieWindowBoundsFromRequest(request)
+  movieWindowGeometry = bounds
+  movieWindowInit = {
+    sessionId: request.sessionId,
+    title: request.title,
+    mediaUrl: request.mediaUrl,
+    subtitleText: request.subtitleText,
+    currentTime: request.currentTime,
+    playbackRate: request.playbackRate,
+    volume: request.volume,
+    muted: request.muted
+  }
+  lastMovieMediaState = {
+    currentTime: request.currentTime,
+    duration: Number.NaN,
+    paused: true,
+    playbackRate: request.playbackRate,
+    readyState: 0,
+    seeking: false,
+    ended: false,
+    volume: request.volume,
+    muted: request.muted
+  }
+
+  movieWindow = new BrowserWindow({
+    ...bounds,
+    minWidth: 320,
+    minHeight: 180,
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    show: false,
+    title: request.title,
+    backgroundColor: '#05070a',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  })
+
+  movieWindow.setMenuBarVisibility(false)
+  movieWindow.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+
+  movieWindow.on('move', notifyMovieWindowGeometry)
+  movieWindow.on('resize', notifyMovieWindowGeometry)
+  movieWindow.on('close', (event) => {
+    if (closingMovieWindowIntentionally) {
+      return
+    }
+
+    event.preventDefault()
+    sendMovieWindowPopInRequest()
+  })
+  movieWindow.on('closed', () => {
+    for (const [id, resolve] of pendingMovieCommands) {
+      resolve({
+        id,
+        ok: false,
+        state: lastMovieMediaState ?? emptyRemoteMediaState(),
+        error: 'Movie window closed.'
+      })
+    }
+    pendingMovieCommands.clear()
+    movieWindow = null
+    movieWindowInit = null
+    resolveMovieWindowReady = null
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(`${IPC_PREFIX}:movie-window-closed`)
+    }
+  })
+  movieWindow.once('ready-to-show', () => {
+    movieWindow?.show()
+  })
+
+  const readyPromise = new Promise<void>((resolve) => {
+    resolveMovieWindowReady = resolve
+  })
+  await loadRenderer(movieWindow, 'movie')
+  await Promise.race([readyPromise, delay(5000)])
+  notifyMovieWindowGeometry()
+
+  return {
+    opened: true,
+    geometry: movieWindowGeometry,
+    state: lastMovieMediaState
+  }
+}
+
+async function closeMovieWindow(options: MovieWindowCloseOptions = {}): Promise<MovieWindowCloseResult> {
+  const geometry = currentMovieWindowGeometry()
+  const overlay = geometry ? movieWindowGeometryToOverlay(geometry) : null
+  const state = lastMovieMediaState
+  closingMovieWindowIntentionally = true
+  try {
+    if (movieWindow && !movieWindow.isDestroyed()) {
+      const closed = new Promise<void>((resolve) => {
+        movieWindow?.once('closed', () => resolve())
+      })
+      movieWindow.close()
+      await closed
+    }
+  } finally {
+    closingMovieWindowIntentionally = false
+  }
+
+  if (options.notifyMainWindow !== false && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(`${IPC_PREFIX}:movie-window-closed`)
+  }
+
+  return { geometry, overlay, state }
+}
+
+function closeMovieWindowWithoutPopIn(): void {
+  void closeMovieWindow({ notifyMainWindow: false })
+}
+
+function notifyMovieWindowGeometry(): void {
+  const geometry = currentMovieWindowGeometry()
+  if (!geometry) {
+    return
+  }
+
+  movieWindowGeometry = geometry
+  const event: MovieWindowGeometryEvent = {
+    geometry,
+    overlay: movieWindowGeometryToOverlay(geometry)
+  }
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(`${IPC_PREFIX}:movie-window-geometry`, event)
+  }
+}
+
+function currentMovieWindowGeometry(): OverlayGeometry | null {
+  if (movieWindow && !movieWindow.isDestroyed()) {
+    const bounds = movieWindow.getBounds()
+    return {
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height
+    }
+  }
+
+  return movieWindowGeometry
+}
+
+function movieWindowBoundsFromRequest(request: MovieWindowOpenRequest): Electron.Rectangle {
+  const geometry = normalizeWindowGeometry(request.geometry)
+  if (request.geometryMode === 'screen' || !mainWindow || mainWindow.isDestroyed()) {
+    return geometry
+  }
+
+  const contentBounds = mainWindow.getContentBounds()
+  return {
+    ...geometry,
+    x: Math.round(contentBounds.x + geometry.x),
+    y: Math.round(contentBounds.y + geometry.y)
+  }
+}
+
+function movieWindowGeometryToOverlay(geometry: OverlayGeometry): OverlayGeometry | null {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return null
+  }
+
+  const contentBounds = mainWindow.getContentBounds()
+  return {
+    x: Math.round(geometry.x - contentBounds.x),
+    y: Math.round(geometry.y - contentBounds.y),
+    width: geometry.width,
+    height: geometry.height
+  }
+}
+
+function normalizeWindowGeometry(geometry: OverlayGeometry): Electron.Rectangle {
+  return {
+    x: Math.round(finiteOr(geometry.x, 24)),
+    y: Math.round(finiteOr(geometry.y, 24)),
+    width: Math.max(320, Math.round(finiteOr(geometry.width, 420))),
+    height: Math.max(180, Math.round(finiteOr(geometry.height, 236)))
+  }
+}
+
+function sendMovieWindowPopInRequest(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(`${IPC_PREFIX}:movie-window-pop-in-requested`)
+  }
+}
+
+function sendMovieMediaCommand(command: RemoteMediaCommand): Promise<RemoteMediaCommandResult> {
+  if (!movieWindow || movieWindow.isDestroyed()) {
+    return Promise.resolve({
+      id: command.id,
+      ok: false,
+      state: lastMovieMediaState ?? emptyRemoteMediaState(),
+      error: 'Movie window is not open.'
+    })
+  }
+
+  return new Promise((resolve) => {
+    pendingMovieCommands.set(command.id, resolve)
+    movieWindow!.webContents.send(`${IPC_PREFIX}:movie-media-command`, command)
+  })
+}
+
+function emptyRemoteMediaState(): RemoteMediaState {
+  return {
+    currentTime: 0,
+    duration: Number.NaN,
+    paused: true,
+    playbackRate: 1,
+    readyState: 0,
+    seeking: false,
+    ended: false,
+    volume: 1,
+    muted: false
   }
 }
 
@@ -337,6 +598,45 @@ function registerIpc(): void {
     }
 
     return `${MEDIA_SCHEME}://media/${encodeURIComponent(sessionId)}/${role}?updated=${encodeURIComponent(session!.updatedAt)}`
+  })
+
+  ipcMain.handle(`${IPC_PREFIX}:open-movie-window`, (_event, request: MovieWindowOpenRequest) => {
+    return openMovieWindow(request)
+  })
+
+  ipcMain.handle(`${IPC_PREFIX}:close-movie-window`, (_event, options?: MovieWindowCloseOptions) => {
+    return closeMovieWindow(options)
+  })
+
+  ipcMain.handle(`${IPC_PREFIX}:request-movie-window-pop-in`, () => {
+    sendMovieWindowPopInRequest()
+  })
+
+  ipcMain.handle(`${IPC_PREFIX}:get-movie-window-init`, () => {
+    return movieWindowInit
+  })
+
+  ipcMain.handle(`${IPC_PREFIX}:movie-window-ready`, () => {
+    resolveMovieWindowReady?.()
+    resolveMovieWindowReady = null
+  })
+
+  ipcMain.handle(`${IPC_PREFIX}:movie-media-command`, (_event, command: RemoteMediaCommand) => {
+    return sendMovieMediaCommand(command)
+  })
+
+  ipcMain.handle(`${IPC_PREFIX}:movie-media-command-result`, (_event, result: RemoteMediaCommandResult) => {
+    lastMovieMediaState = result.state
+    const resolve = pendingMovieCommands.get(result.id)
+    pendingMovieCommands.delete(result.id)
+    resolve?.(result)
+  })
+
+  ipcMain.handle(`${IPC_PREFIX}:movie-media-event`, (_event, event: RemoteMediaEvent) => {
+    lastMovieMediaState = event.state
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(`${IPC_PREFIX}:movie-media-event`, event)
+    }
   })
 
   ipcMain.handle(`${IPC_PREFIX}:open-videos`, async (event): Promise<OpenVideosResult | null> => {
@@ -723,6 +1023,14 @@ function getContentType(filePath: string): string {
     default:
       return 'application/octet-stream'
   }
+}
+
+function finiteOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
 function migrateLegacyUserData(userDataPath: string): void {

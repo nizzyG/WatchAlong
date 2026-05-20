@@ -115,7 +115,7 @@ function createApi(): WatchAlongApi {
     selectMovieFile: vi.fn(async () => firstMovie),
     selectReactionFile: vi.fn(async () => reaction),
     createOrSwitchSessionFromPaths: vi.fn(async () => ({
-      version: 2 as const,
+      version: 3 as const,
       activeSessionId: 'session-1',
       sessions: []
     })),
@@ -123,7 +123,7 @@ function createApi(): WatchAlongApi {
     saveActiveSession: vi.fn(),
     setSessionMedia: vi.fn(),
     replaceSessionMedia: vi.fn(async () => ({
-      version: 2 as const,
+      version: 3 as const,
       activeSessionId: 'session-1',
       sessions: []
     })),
@@ -134,6 +134,19 @@ function createApi(): WatchAlongApi {
     clearSubtitle: vi.fn(),
     getSubtitleText: vi.fn(),
     getMediaUrl: vi.fn(),
+    openMovieWindow: vi.fn(async () => ({ opened: false, geometry: { x: 0, y: 0, width: 320, height: 180 }, state: null })),
+    closeMovieWindow: vi.fn(async () => ({ geometry: null, overlay: null, state: null })),
+    requestMovieWindowPopIn: vi.fn(async () => undefined),
+    getMovieWindowInit: vi.fn(async () => null),
+    movieWindowReady: vi.fn(async () => undefined),
+    sendMovieMediaCommand: vi.fn(async (command) => ({ id: command.id, ok: true, state: remoteState() })),
+    acknowledgeMovieMediaCommand: vi.fn(async () => undefined),
+    reportMovieMediaEvent: vi.fn(async () => undefined),
+    onMovieMediaCommand: vi.fn(() => vi.fn()),
+    onMovieMediaEvent: vi.fn(() => vi.fn()),
+    onMovieWindowGeometry: vi.fn(() => vi.fn()),
+    onMovieWindowPopInRequest: vi.fn(() => vi.fn()),
+    onMovieWindowClosed: vi.fn(() => vi.fn()),
     checkTools: vi.fn(),
     detectBrowsers: vi.fn(async () => []),
     extractPatreonSession: vi.fn(async () => ({ ok: false })),
@@ -158,5 +171,19 @@ function createApi(): WatchAlongApi {
       libraryView: 'grid' as const,
       reactionDownloadDirectory: null
     }))
+  }
+}
+
+function remoteState() {
+  return {
+    currentTime: 0,
+    duration: 120,
+    paused: true,
+    playbackRate: 1,
+    readyState: 4,
+    seeking: false,
+    ended: false,
+    volume: 1,
+    muted: false
   }
 }

@@ -1,14 +1,21 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
-import type { AppPreferences, LibrarySession, SessionLibrary, WatchAlongApi, WizardLifecycleCallback } from '@shared/types'
+import type {
+  AppPreferences,
+  LibrarySession,
+  MovieWindowLifecycleCallback,
+  SessionLibrary,
+  WatchAlongApi,
+  WizardLifecycleCallback
+} from '@shared/types'
 
 const firstSession = createSession('s1', 'First', 0)
 const secondSession = createSession('s2', 'Second', 20)
 
 function createLibrary(activeSessionId: string | null = 's1', sessions: LibrarySession[] = [firstSession, secondSession]): SessionLibrary {
   return {
-    version: 2,
+    version: 3,
     activeSessionId,
     sessions
   }
@@ -24,10 +31,14 @@ const defaultPreferences: AppPreferences = {
 function createApi(
   library = createLibrary(),
   preferences: AppPreferences = defaultPreferences
-): WatchAlongApi & { emitWizardLifecycle(event: Parameters<WizardLifecycleCallback>[0]): void } {
+): WatchAlongApi & {
+  emitWizardLifecycle(event: Parameters<WizardLifecycleCallback>[0]): void
+  emitMovieWindowPopInRequest(): void
+} {
   let currentLibrary = library
   let currentPreferences = preferences
   let wizardLifecycleCallback: WizardLifecycleCallback | null = null
+  let movieWindowPopInCallback: MovieWindowLifecycleCallback | null = null
 
   const api = {
     openVideos: vi.fn(),
@@ -112,6 +123,26 @@ function createApi(
     clearSubtitle: vi.fn(async () => currentLibrary),
     getSubtitleText: vi.fn(),
     getMediaUrl: vi.fn(async (role, sessionId) => `watchalong://media/${sessionId}/${role}`),
+    openMovieWindow: vi.fn(async (request) => ({
+      opened: true,
+      geometry: request.geometry,
+      state: remoteState()
+    })),
+    closeMovieWindow: vi.fn(async () => ({ geometry: null, overlay: null, state: remoteState() })),
+    requestMovieWindowPopIn: vi.fn(async () => undefined),
+    getMovieWindowInit: vi.fn(async () => null),
+    movieWindowReady: vi.fn(async () => undefined),
+    sendMovieMediaCommand: vi.fn(async (command) => ({ id: command.id, ok: true, state: remoteState() })),
+    acknowledgeMovieMediaCommand: vi.fn(async () => undefined),
+    reportMovieMediaEvent: vi.fn(async () => undefined),
+    onMovieMediaCommand: vi.fn(() => vi.fn()),
+    onMovieMediaEvent: vi.fn(() => vi.fn()),
+    onMovieWindowGeometry: vi.fn(() => vi.fn()),
+    onMovieWindowPopInRequest: vi.fn((callback: MovieWindowLifecycleCallback) => {
+      movieWindowPopInCallback = callback
+      return vi.fn()
+    }),
+    onMovieWindowClosed: vi.fn(() => vi.fn()),
     checkTools: vi.fn(async () => ({ ready: true, tools: [] })),
     detectBrowsers: vi.fn(async () => []),
     extractPatreonSession: vi.fn(async () => ({ ok: false })),
@@ -135,17 +166,25 @@ function createApi(
   return Object.assign(api, {
     emitWizardLifecycle(event: Parameters<WizardLifecycleCallback>[0]) {
       wizardLifecycleCallback?.(event)
+    },
+    emitMovieWindowPopInRequest() {
+      movieWindowPopInCallback?.()
     }
-  }) as WatchAlongApi & { emitWizardLifecycle(event: Parameters<WizardLifecycleCallback>[0]): void }
+  }) as unknown as WatchAlongApi & {
+    emitWizardLifecycle(event: Parameters<WizardLifecycleCallback>[0]): void
+    emitMovieWindowPopInRequest(): void
+  }
 }
 
 describe('App', () => {
   let playMock: ReturnType<typeof vi.fn>
   let pauseMock: ReturnType<typeof vi.fn>
+  let fullscreenTargets: Element[]
 
   beforeEach(() => {
     playMock = vi.fn(async () => undefined)
     pauseMock = vi.fn()
+    fullscreenTargets = []
     Object.defineProperty(HTMLMediaElement.prototype, 'play', {
       configurable: true,
       value: playMock
@@ -161,6 +200,17 @@ describe('App', () => {
     Object.defineProperty(HTMLMediaElement.prototype, 'readyState', {
       configurable: true,
       get: () => 4
+    })
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
+      configurable: true,
+      value: vi.fn(function requestFullscreen(this: Element) {
+        fullscreenTargets.push(this)
+        return Promise.resolve()
+      })
+    })
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: vi.fn(async () => undefined)
     })
   })
 
@@ -276,6 +326,54 @@ describe('App', () => {
     fireEvent.click(screen.getByLabelText('Play'))
 
     await waitFor(() => expect(playMock).toHaveBeenCalledTimes(2))
+  })
+
+  it('hides the PiP overlay while popped out and pops back in from the movie window', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    api.closeMovieWindow = vi.fn(async () => ({
+      geometry: { x: 40, y: 50, width: 360, height: 210 },
+      overlay: { x: 12, y: 18, width: 360, height: 210 },
+      state: remoteState({ currentTime: 33 })
+    }))
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+
+    fireEvent.click(screen.getByLabelText('Pop out movie to separate window'))
+
+    await waitFor(() =>
+      expect(api.openMovieWindow).toHaveBeenCalledWith(expect.objectContaining({
+        sessionId: 's1',
+        geometryMode: 'overlay'
+      }))
+    )
+    await waitFor(() => expect(document.querySelector('video.pip-video')).not.toBeInTheDocument())
+    expect(screen.queryByLabelText('Movie picture in picture')).not.toBeInTheDocument()
+    expect(api.saveActiveSession).toHaveBeenCalledWith(expect.objectContaining({ isMoviePoppedOut: true }))
+
+    act(() => api.emitMovieWindowPopInRequest())
+
+    await waitFor(() =>
+      expect(api.saveActiveSession).toHaveBeenCalledWith(expect.objectContaining({
+        isMoviePoppedOut: false,
+        overlay: { x: 12, y: 18, width: 360, height: 210 }
+      }))
+    )
+  })
+
+  it('double-clicking the reaction fullscreens the whole player so PiP remains visible', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+
+    fireEvent.doubleClick(container.querySelector('video.reaction-video')!)
+
+    expect(fullscreenTargets).toEqual([document.documentElement])
   })
 
   it('preserves the current sync point when changing movie source rate', async () => {
@@ -431,6 +529,8 @@ function createSession(
     lastReactionTimeSeconds,
     overlay: { x: 24, y: 24, width: 420, height: 236 },
     isPipHidden: false,
+    isMoviePoppedOut: false,
+    movieWindowGeometry: { x: 24, y: 24, width: 420, height: 236 },
     reactionVolume: 1,
     movieVolume: 1,
     isReactionMuted: false,
@@ -446,5 +546,20 @@ function createSession(
     ...patch,
     reactionSource: patch.reactionSource ?? base.reactionSource,
     reactionDurationSeconds: patch.reactionDurationSeconds ?? base.reactionDurationSeconds
+  }
+}
+
+function remoteState(patch = {}) {
+  return {
+    currentTime: 0,
+    duration: 120,
+    paused: true,
+    playbackRate: 1,
+    readyState: 4,
+    seeking: false,
+    ended: false,
+    volume: 1,
+    muted: false,
+    ...patch
   }
 }

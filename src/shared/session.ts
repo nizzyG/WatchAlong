@@ -1,6 +1,6 @@
 import type { LibrarySession, OverlayGeometry, PlaybackRate, ReactionSource, SessionLibrary, SessionData } from './types'
 
-export const SESSION_LIBRARY_VERSION = 2
+export const SESSION_LIBRARY_VERSION = 3
 
 export const DEFAULT_OVERLAY: OverlayGeometry = {
   x: 24,
@@ -29,6 +29,8 @@ export function createDefaultSession(now = new Date(), patch: Partial<LibrarySes
     lastReactionTimeSeconds: Math.max(0, finiteOr(patch.lastReactionTimeSeconds, 0)),
     overlay: normalizeOverlay(patch.overlay),
     isPipHidden: Boolean(patch.isPipHidden),
+    isMoviePoppedOut: Boolean(patch.isMoviePoppedOut),
+    movieWindowGeometry: normalizeOverlay(patch.movieWindowGeometry ?? patch.overlay),
     reactionVolume: clamp(finiteOr(patch.reactionVolume, legacyVolume), 0, 1),
     movieVolume: clamp(finiteOr(patch.movieVolume, legacyVolume), 0, 1),
     isReactionMuted: Boolean(patch.isReactionMuted),
@@ -80,6 +82,8 @@ export function normalizeSession(value: unknown, now = new Date()): SessionData 
     lastReactionTimeSeconds: Math.max(0, finiteOr(source?.lastReactionTimeSeconds, fallback.lastReactionTimeSeconds)),
     overlay: normalizeOverlay(source?.overlay),
     isPipHidden: Boolean(source?.isPipHidden),
+    isMoviePoppedOut: Boolean(source?.isMoviePoppedOut),
+    movieWindowGeometry: normalizeOverlay(source?.movieWindowGeometry ?? source?.overlay),
     reactionVolume: clamp(finiteOr(source?.reactionVolume, legacyVolume), 0, 1),
     movieVolume: clamp(finiteOr(source?.movieVolume, legacyVolume), 0, 1),
     isReactionMuted: Boolean(source?.isReactionMuted),
@@ -97,6 +101,9 @@ export function mergeSession(session: SessionData, patch: Partial<SessionData>, 
       ...session,
       ...patch,
       overlay: patch.overlay ? { ...session.overlay, ...patch.overlay } : session.overlay,
+      movieWindowGeometry: patch.movieWindowGeometry
+        ? { ...session.movieWindowGeometry, ...patch.movieWindowGeometry }
+        : session.movieWindowGeometry,
       createdAt: session.createdAt,
       updatedAt: now.toISOString()
     },

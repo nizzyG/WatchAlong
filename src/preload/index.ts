@@ -5,6 +5,10 @@ import type {
   ImportWizardLaunchOptions,
   LibrarySession,
   MediaRole,
+  MovieWindowCommandCallback,
+  MovieWindowGeometryCallback,
+  MovieWindowLifecycleCallback,
+  RemoteMediaEventCallback,
   ReactionDownloadRequest,
   WatchAlongApi,
   WizardOutcome
@@ -30,6 +34,49 @@ const api: WatchAlongApi = {
   clearSubtitle: () => ipcRenderer.invoke(`${IPC_PREFIX}:clear-subtitle`),
   getSubtitleText: (sessionId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:get-subtitle-text`, sessionId),
   getMediaUrl: (role: MediaRole, sessionId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:get-media-url`, role, sessionId),
+  openMovieWindow: (request) => ipcRenderer.invoke(`${IPC_PREFIX}:open-movie-window`, request),
+  closeMovieWindow: (options) => ipcRenderer.invoke(`${IPC_PREFIX}:close-movie-window`, options),
+  requestMovieWindowPopIn: () => ipcRenderer.invoke(`${IPC_PREFIX}:request-movie-window-pop-in`),
+  getMovieWindowInit: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-movie-window-init`),
+  movieWindowReady: () => ipcRenderer.invoke(`${IPC_PREFIX}:movie-window-ready`),
+  sendMovieMediaCommand: (command) => ipcRenderer.invoke(`${IPC_PREFIX}:movie-media-command`, command),
+  acknowledgeMovieMediaCommand: (result) => ipcRenderer.invoke(`${IPC_PREFIX}:movie-media-command-result`, result),
+  reportMovieMediaEvent: (event) => ipcRenderer.invoke(`${IPC_PREFIX}:movie-media-event`, event),
+  onMovieMediaCommand: (callback: MovieWindowCommandCallback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<MovieWindowCommandCallback>[0]): void => {
+      callback(payload)
+    }
+    ipcRenderer.on(`${IPC_PREFIX}:movie-media-command`, listener)
+    return () => ipcRenderer.removeListener(`${IPC_PREFIX}:movie-media-command`, listener)
+  },
+  onMovieMediaEvent: (callback: RemoteMediaEventCallback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<RemoteMediaEventCallback>[0]): void => {
+      callback(payload)
+    }
+    ipcRenderer.on(`${IPC_PREFIX}:movie-media-event`, listener)
+    return () => ipcRenderer.removeListener(`${IPC_PREFIX}:movie-media-event`, listener)
+  },
+  onMovieWindowGeometry: (callback: MovieWindowGeometryCallback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<MovieWindowGeometryCallback>[0]): void => {
+      callback(payload)
+    }
+    ipcRenderer.on(`${IPC_PREFIX}:movie-window-geometry`, listener)
+    return () => ipcRenderer.removeListener(`${IPC_PREFIX}:movie-window-geometry`, listener)
+  },
+  onMovieWindowPopInRequest: (callback: MovieWindowLifecycleCallback) => {
+    const listener = (): void => {
+      callback()
+    }
+    ipcRenderer.on(`${IPC_PREFIX}:movie-window-pop-in-requested`, listener)
+    return () => ipcRenderer.removeListener(`${IPC_PREFIX}:movie-window-pop-in-requested`, listener)
+  },
+  onMovieWindowClosed: (callback: MovieWindowLifecycleCallback) => {
+    const listener = (): void => {
+      callback()
+    }
+    ipcRenderer.on(`${IPC_PREFIX}:movie-window-closed`, listener)
+    return () => ipcRenderer.removeListener(`${IPC_PREFIX}:movie-window-closed`, listener)
+  },
   checkTools: () => ipcRenderer.invoke(`${IPC_PREFIX}:check-tools`),
   detectBrowsers: () => ipcRenderer.invoke(`${IPC_PREFIX}:detect-browsers`),
   extractPatreonSession: (browserName: BrowserName) => ipcRenderer.invoke(`${IPC_PREFIX}:extract-patreon-session`, browserName),

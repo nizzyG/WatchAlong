@@ -19,6 +19,11 @@ describe('session helpers', () => {
     expect(session.reactionPath).toBeNull()
     expect(session.playbackRate).toBe(1)
     expect(session.movieRateCorrection).toBe(1)
+    expect(session.isMoviePoppedOut).toBe(false)
+    expect(session.movieWindowGeometry).toMatchObject({
+      width: 320,
+      height: 180
+    })
   })
 
   it('merges overlay patches without dropping existing geometry', () => {
@@ -27,6 +32,18 @@ describe('session helpers', () => {
 
     expect(merged.overlay).toMatchObject({
       x: 88,
+      y: DEFAULT_OVERLAY.y,
+      width: DEFAULT_OVERLAY.width,
+      height: DEFAULT_OVERLAY.height
+    })
+  })
+
+  it('merges movie window geometry patches without dropping existing geometry', () => {
+    const session = createDefaultSession()
+    const merged = mergeSession(session, { movieWindowGeometry: { x: 144 } as typeof DEFAULT_OVERLAY })
+
+    expect(merged.movieWindowGeometry).toMatchObject({
+      x: 144,
       y: DEFAULT_OVERLAY.y,
       width: DEFAULT_OVERLAY.width,
       height: DEFAULT_OVERLAY.height
@@ -42,7 +59,7 @@ describe('session helpers', () => {
       lastReactionTimeSeconds: 90
     })
 
-    expect(library.version).toBe(2)
+    expect(library.version).toBe(3)
     expect(library.sessions).toHaveLength(1)
     expect(library.activeSessionId).toBe(library.sessions[0].id)
     expect(library.sessions[0]).toMatchObject({

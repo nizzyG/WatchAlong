@@ -33,6 +33,8 @@ export interface LibrarySession {
   lastReactionTimeSeconds: number
   overlay: OverlayGeometry
   isPipHidden: boolean
+  isMoviePoppedOut: boolean
+  movieWindowGeometry: OverlayGeometry
   reactionVolume: number
   movieVolume: number
   isReactionMuted: boolean
@@ -46,7 +48,7 @@ export interface LibrarySession {
 export type SessionData = LibrarySession
 
 export interface SessionLibrary {
-  version: 2
+  version: 3
   activeSessionId: string | null
   sessions: LibrarySession[]
 }
@@ -109,6 +111,112 @@ export type DownloadProgressCallback = (event: DownloadProgressEvent) => void
 
 export type WizardLifecycleCallback = (event: WizardLifecycleEvent) => void
 
+export type RemoteMediaEventType =
+  | 'play'
+  | 'pause'
+  | 'seeking'
+  | 'seeked'
+  | 'waiting'
+  | 'canplay'
+  | 'stalled'
+  | 'ended'
+  | 'error'
+  | 'timeupdate'
+  | 'loadedmetadata'
+  | 'durationchange'
+  | 'ratechange'
+  | 'volumechange'
+  | 'loadeddata'
+  | 'canplaythrough'
+
+export interface RemoteMediaState {
+  currentTime: number
+  duration: number
+  paused: boolean
+  playbackRate: number
+  readyState: number
+  seeking: boolean
+  ended: boolean
+  volume: number
+  muted: boolean
+}
+
+export interface RemoteMediaEvent {
+  type: RemoteMediaEventType
+  state: RemoteMediaState
+  error?: string
+}
+
+export type RemoteMediaEventCallback = (event: RemoteMediaEvent) => void
+
+export type RemoteMediaCommand =
+  | { id: string; type: 'setSource'; mediaUrl: string | null; currentTime: number; playbackRate: number; volume: number; muted: boolean; subtitleText: string | null; title: string }
+  | { id: string; type: 'play' }
+  | { id: string; type: 'pause' }
+  | { id: string; type: 'setCurrentTime'; value: number }
+  | { id: string; type: 'setPlaybackRate'; value: number }
+  | { id: string; type: 'setVolume'; value: number }
+  | { id: string; type: 'setMuted'; value: boolean }
+  | { id: string; type: 'setSubtitleText'; value: string | null }
+  | { id: string; type: 'fadeOut' }
+
+export interface RemoteMediaCommandResult {
+  id: string
+  ok: boolean
+  state: RemoteMediaState
+  error?: string
+}
+
+export interface MovieWindowOpenRequest {
+  sessionId: string
+  title: string
+  mediaUrl: string
+  subtitleText: string | null
+  currentTime: number
+  playbackRate: number
+  volume: number
+  muted: boolean
+  geometry: OverlayGeometry
+  geometryMode: 'overlay' | 'screen'
+}
+
+export interface MovieWindowOpenResult {
+  opened: boolean
+  geometry: OverlayGeometry
+  state: RemoteMediaState | null
+  reason?: string
+}
+
+export interface MovieWindowCloseOptions {
+  notifyMainWindow?: boolean
+}
+
+export interface MovieWindowCloseResult {
+  geometry: OverlayGeometry | null
+  overlay: OverlayGeometry | null
+  state: RemoteMediaState | null
+}
+
+export interface MovieWindowGeometryEvent {
+  geometry: OverlayGeometry
+  overlay: OverlayGeometry | null
+}
+
+export interface MovieWindowInit {
+  sessionId: string
+  title: string
+  mediaUrl: string
+  subtitleText: string | null
+  currentTime: number
+  playbackRate: number
+  volume: number
+  muted: boolean
+}
+
+export type MovieWindowGeometryCallback = (event: MovieWindowGeometryEvent) => void
+export type MovieWindowLifecycleCallback = () => void
+export type MovieWindowCommandCallback = (command: RemoteMediaCommand) => void
+
 export type WizardLifecycleEvent =
   | { type: 'opened' }
   | { type: 'closed'; outcome: WizardOutcome }
@@ -158,6 +266,19 @@ export interface WatchAlongApi {
   clearSubtitle(): Promise<SessionLibrary>
   getSubtitleText(sessionId: string): Promise<string | null>
   getMediaUrl(role: MediaRole, sessionId: string): Promise<string | null>
+  openMovieWindow(request: MovieWindowOpenRequest): Promise<MovieWindowOpenResult>
+  closeMovieWindow(options?: MovieWindowCloseOptions): Promise<MovieWindowCloseResult>
+  requestMovieWindowPopIn(): Promise<void>
+  getMovieWindowInit(): Promise<MovieWindowInit | null>
+  movieWindowReady(): Promise<void>
+  sendMovieMediaCommand(command: RemoteMediaCommand): Promise<RemoteMediaCommandResult>
+  acknowledgeMovieMediaCommand(result: RemoteMediaCommandResult): Promise<void>
+  reportMovieMediaEvent(event: RemoteMediaEvent): Promise<void>
+  onMovieMediaCommand(callback: MovieWindowCommandCallback): () => void
+  onMovieMediaEvent(callback: RemoteMediaEventCallback): () => void
+  onMovieWindowGeometry(callback: MovieWindowGeometryCallback): () => void
+  onMovieWindowPopInRequest(callback: MovieWindowLifecycleCallback): () => void
+  onMovieWindowClosed(callback: MovieWindowLifecycleCallback): () => void
   checkTools(): Promise<ToolCheckResult>
   detectBrowsers(): Promise<BrowserDetection[]>
   extractPatreonSession(browserName: BrowserName): Promise<PatreonSessionExtractionResult>

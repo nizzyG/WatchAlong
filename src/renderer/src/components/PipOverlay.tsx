@@ -1,4 +1,4 @@
-import { EyeOff, GripHorizontal, Magnet, Maximize2 } from 'lucide-react'
+import { ExternalLink, EyeOff, GripHorizontal, Magnet, Maximize2 } from 'lucide-react'
 import type { RefObject } from 'react'
 import type { OverlayGeometry } from '@shared/types'
 import { constrainOverlay, nextPipCorner, snapOverlayToCorner, snapOverlayToNearestCorner } from './pipGeometry'
@@ -7,9 +7,12 @@ interface PipOverlayProps {
   geometry: OverlayGeometry
   videoRef: RefObject<HTMLVideoElement>
   hidden: boolean
+  poppedOut?: boolean
   onChange(geometry: OverlayGeometry): void
   onCommit(geometry: OverlayGeometry): void
   onHide(): void
+  onPopOut(): void
+  onPopIn(): void
   onLoadedMetadata(): void
   onTimeUpdate(): void
   onVideoError(): void
@@ -23,9 +26,12 @@ export function PipOverlay({
   geometry,
   videoRef,
   hidden,
+  poppedOut = false,
   onChange,
   onCommit,
   onHide,
+  onPopOut,
+  onPopIn,
   onLoadedMetadata,
   onTimeUpdate,
   onVideoError,
@@ -116,29 +122,54 @@ export function PipOverlay({
         <button className="icon-button" type="button" title="Snap movie" aria-label="Snap movie" onClick={cycleSnapCorner}>
           <Magnet size={16} aria-hidden />
         </button>
+        {poppedOut ? (
+          <button
+            className="pip-popout-status"
+            type="button"
+            title="Pop movie back in"
+            aria-label="Pop movie back in"
+            onClick={onPopIn}
+          >
+            Movie is popped out.
+          </button>
+        ) : (
+          <button
+            className="icon-button"
+            type="button"
+            title="Pop out movie to separate window."
+            aria-label="Pop out movie to separate window"
+            onClick={onPopOut}
+          >
+            <ExternalLink size={16} aria-hidden />
+          </button>
+        )}
         <button className="icon-button" type="button" title="Hide movie" aria-label="Hide movie" onClick={onHide}>
           <EyeOff size={17} aria-hidden />
         </button>
       </div>
-      <video
-        ref={videoRef}
-        className="pip-video"
-        playsInline
-        preload="metadata"
-        onLoadedMetadata={onLoadedMetadata}
-        onTimeUpdate={onTimeUpdate}
-        onError={onVideoError}
-      />
-      {subtitleText && <div className="pip-subtitles">{subtitleText}</div>}
-      <button
-        className="pip-resize"
-        type="button"
-        title="Resize movie"
-        aria-label="Resize movie"
-        onPointerDown={beginResize}
-      >
-        <Maximize2 size={16} aria-hidden />
-      </button>
+      {!poppedOut && (
+        <>
+          <video
+            ref={videoRef}
+            className="pip-video"
+            playsInline
+            preload="metadata"
+            onLoadedMetadata={onLoadedMetadata}
+            onTimeUpdate={onTimeUpdate}
+            onError={onVideoError}
+          />
+          {subtitleText && <div className="pip-subtitles">{subtitleText}</div>}
+          <button
+            className="pip-resize"
+            type="button"
+            title="Resize movie"
+            aria-label="Resize movie"
+            onPointerDown={beginResize}
+          >
+            <Maximize2 size={16} aria-hidden />
+          </button>
+        </>
+      )}
     </section>
   )
 }
