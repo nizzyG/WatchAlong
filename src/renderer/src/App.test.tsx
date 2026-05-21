@@ -4,6 +4,7 @@ import { App } from './App'
 import type {
   AppPreferences,
   LibrarySession,
+  MovieWindowClosedEvent,
   MovieWindowLifecycleCallback,
   SessionLibrary,
   WatchAlongApi,
@@ -34,11 +35,13 @@ function createApi(
 ): WatchAlongApi & {
   emitWizardLifecycle(event: Parameters<WizardLifecycleCallback>[0]): void
   emitMovieWindowPopInRequest(): void
+  emitMovieWindowClosed(event?: MovieWindowClosedEvent): void
 } {
   let currentLibrary = library
   let currentPreferences = preferences
   let wizardLifecycleCallback: WizardLifecycleCallback | null = null
   let movieWindowPopInCallback: MovieWindowLifecycleCallback | null = null
+  let movieWindowClosedCallback: MovieWindowLifecycleCallback | null = null
 
   const api = {
     openVideos: vi.fn(),
@@ -142,7 +145,10 @@ function createApi(
       movieWindowPopInCallback = callback
       return vi.fn()
     }),
-    onMovieWindowClosed: vi.fn(() => vi.fn()),
+    onMovieWindowClosed: vi.fn((callback: MovieWindowLifecycleCallback) => {
+      movieWindowClosedCallback = callback
+      return vi.fn()
+    }),
     checkTools: vi.fn(async () => ({ ready: true, tools: [] })),
     detectBrowsers: vi.fn(async () => []),
     extractPatreonSession: vi.fn(async () => ({ ok: false })),
@@ -169,10 +175,14 @@ function createApi(
     },
     emitMovieWindowPopInRequest() {
       movieWindowPopInCallback?.()
+    },
+    emitMovieWindowClosed(event?: MovieWindowClosedEvent) {
+      movieWindowClosedCallback?.(event)
     }
   }) as unknown as WatchAlongApi & {
     emitWizardLifecycle(event: Parameters<WizardLifecycleCallback>[0]): void
     emitMovieWindowPopInRequest(): void
+    emitMovieWindowClosed(event?: MovieWindowClosedEvent): void
   }
 }
 
@@ -452,6 +462,74 @@ describe('App', () => {
     fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
     expect(await screen.findByText('Sync setup')).toBeInTheDocument()
+  })
+
+  it('closes a popped-out movie before loading completed wizard media', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+    fireEvent.click(screen.getByLabelText('Pop out movie to separate window'))
+    await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalled())
+    await waitFor(() => expect(document.querySelector('video.pip-video')).not.toBeInTheDocument())
+
+    await api.createOrSwitchSessionFromPaths('C:\\Reactions\\Wizard.mp4', 'C:\\Movies\\Wizard.mp4', 'local')
+    vi.mocked(api.closeMovieWindow).mockClear()
+    vi.mocked(api.getMediaUrl).mockClear()
+
+    act(() => api.emitWizardLifecycle({ type: 'closed', outcome: 'completed' }))
+
+    await waitFor(() => expect(api.closeMovieWindow).toHaveBeenCalledWith({ notifyMainWindow: false }))
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 'wizard-session'))
+    expect(vi.mocked(api.closeMovieWindow).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(api.getMediaUrl).mock.invocationCallOrder[0]
+    )
+    expect(await screen.findByLabelText('Movie picture in picture')).toBeInTheDocument()
+  })
+
+  it('keeps a popped-out movie active when the wizard is cancelled', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+    fireEvent.click(screen.getByLabelText('Pop out movie to separate window'))
+    await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalled())
+    await waitFor(() => expect(document.querySelector('video.pip-video')).not.toBeInTheDocument())
+    vi.mocked(api.closeMovieWindow).mockClear()
+
+    act(() => api.emitWizardLifecycle({ type: 'opened' }))
+    act(() => api.emitWizardLifecycle({ type: 'closed', outcome: 'cancelled' }))
+
+    await waitFor(() => expect(container.querySelector('.main-window-dim')).not.toBeInTheDocument())
+    expect(api.closeMovieWindow).not.toHaveBeenCalled()
+    expect(document.querySelector('video.pip-video')).not.toBeInTheDocument()
+  })
+
+  it('returns an unresponsive movie window to PiP with a helpful message', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+    fireEvent.click(screen.getByLabelText('Pop out movie to separate window'))
+    await waitFor(() => expect(document.querySelector('video.pip-video')).not.toBeInTheDocument())
+
+    act(() => api.emitMovieWindowClosed({ reason: 'unresponsive' }))
+
+    expect(
+      await screen.findByText(
+        'The movie window stopped responding. It has been moved back to the main window. You can pop it out again from the PiP toolbar.'
+      )
+    ).toBeInTheDocument()
+    expect(await screen.findByLabelText('Movie picture in picture')).toBeInTheDocument()
   })
 
   it('opens and closes the command panel with Ctrl+Shift+P, manages focus, and persists preferences', async () => {

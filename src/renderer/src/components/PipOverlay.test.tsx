@@ -76,6 +76,35 @@ describe('PipOverlay', () => {
     expect(onPopOut).toHaveBeenCalledTimes(1)
   })
 
+  it('does not drag from local PiP toolbar buttons', () => {
+    const onChange = vi.fn()
+    const onCommit = vi.fn()
+    render(
+      <PipOverlay
+        geometry={{ x: 10, y: 10, width: 320, height: 180 }}
+        videoRef={createRef<HTMLVideoElement>()}
+        hidden={false}
+        onChange={onChange}
+        onCommit={onCommit}
+        onHide={vi.fn()}
+        onPopOut={vi.fn()}
+        onPopIn={vi.fn()}
+        onLoadedMetadata={vi.fn()}
+        onTimeUpdate={vi.fn()}
+        onVideoError={vi.fn()}
+      />
+    )
+
+    for (const label of ['Snap movie', 'Pop out movie to separate window', 'Hide movie']) {
+      fireEvent(screen.getByLabelText(label), new MouseEvent('pointerdown', { button: 0, clientX: 10, clientY: 10, bubbles: true }))
+      window.dispatchEvent(new MouseEvent('pointermove', { clientX: 30, clientY: 35 }))
+      window.dispatchEvent(new MouseEvent('pointerup'))
+    }
+
+    expect(onChange).not.toHaveBeenCalled()
+    expect(onCommit).not.toHaveBeenCalled()
+  })
+
   it('shows a pop-in indicator without rendering local movie video when popped out', () => {
     const onPopIn = vi.fn()
     render(
@@ -100,6 +129,39 @@ describe('PipOverlay', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Pop movie back in' }))
     expect(onPopIn).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not drag from the popped-out status button', () => {
+    const onChange = vi.fn()
+    const onCommit = vi.fn()
+    render(
+      <PipOverlay
+        geometry={{ x: 10, y: 10, width: 320, height: 180 }}
+        videoRef={createRef<HTMLVideoElement>()}
+        hidden={false}
+        poppedOut
+        onChange={onChange}
+        onCommit={onCommit}
+        onHide={vi.fn()}
+        onPopOut={vi.fn()}
+        onPopIn={vi.fn()}
+        onLoadedMetadata={vi.fn()}
+        onTimeUpdate={vi.fn()}
+        onVideoError={vi.fn()}
+      />
+    )
+
+    fireEvent(screen.getByRole('button', { name: 'Pop movie back in' }), new MouseEvent('pointerdown', {
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+      bubbles: true
+    }))
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 30, clientY: 35 }))
+    window.dispatchEvent(new MouseEvent('pointerup'))
+
+    expect(onChange).not.toHaveBeenCalled()
+    expect(onCommit).not.toHaveBeenCalled()
   })
 
   it('does not fullscreen from a local PiP movie double-click', () => {

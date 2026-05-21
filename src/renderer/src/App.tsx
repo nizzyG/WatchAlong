@@ -87,6 +87,9 @@ const CONTROL_IDLE_DELAY_MS = 2400
 const VIEW_FADE_MS = 300
 const MOVIE_WINDOW_TRANSITION_MS = 220
 const MOVIE_WINDOW_GEOMETRY_SAVE_MS = 600
+const MOVIE_WINDOW_COMMAND_TIMEOUT_ERROR = 'Movie window stopped responding.'
+const MOVIE_WINDOW_UNRESPONSIVE_MESSAGE =
+  'The movie window stopped responding. It has been moved back to the main window. You can pop it out again from the PiP toolbar.'
 const APP_VERSION = '0.1.0'
 const ONLINE_HELP_URL = 'https://github.com/nizzyG/WatchAlong#readme'
 const DONATION_URL: string | null = null
@@ -610,11 +613,20 @@ export function App(): JSX.Element {
       }
 
       pausedForWizardRef.current = false
+      if (movieWindowActive) {
+        await closeMovieWindowForModeChange()
+        destroyRemoteMovieAdapter()
+        restoredPopOutSessionRef.current = sessionRef.current.id
+        setMovieWindowActive(false)
+      }
       const [nextLibrary, nextPreferences] = await Promise.all([
         window.watchAlong.getLibrary(),
         window.watchAlong.getPreferences()
       ])
-      const nextSession = commitLibrary(nextLibrary)
+      let nextSession = commitLibrary(nextLibrary)
+      if (nextSession?.isMoviePoppedOut) {
+        nextSession = commitLibrary(await window.watchAlong.saveActiveSession({ isMoviePoppedOut: false }))
+      }
       setPreferences(nextPreferences)
       setShowWelcome(false)
       setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
@@ -716,6 +728,7 @@ export function App(): JSX.Element {
 
     await closeMovieWindowForModeChange()
     destroyRemoteMovieAdapter()
+    restoredPopOutSessionRef.current = sessionRef.current.id
     setMovieWindowActive(false)
     await persist({ isMoviePoppedOut: false })
   }
@@ -796,6 +809,7 @@ export function App(): JSX.Element {
 
   const popInMovie = async (): Promise<void> => {
     if (!remoteMovieAdapterRef.current) {
+      restoredPopOutSessionRef.current = sessionRef.current.id
       await persist({ isMoviePoppedOut: false })
       setMovieWindowActive(false)
       return
@@ -804,13 +818,17 @@ export function App(): JSX.Element {
     const wasPlaying = syncState === 'playing'
     const reactionTime = reactionVideoRef.current?.currentTime ?? position
     controllerRef.current?.pause()
-    await window.watchAlong.sendMovieMediaCommand({ id: `fade-${Date.now()}`, type: 'fadeOut' })
+    const fadeResult = await window.watchAlong.sendMovieMediaCommand({ id: `fade-${Date.now()}`, type: 'fadeOut' })
+    if (!fadeResult.ok && fadeResult.error === MOVIE_WINDOW_COMMAND_TIMEOUT_ERROR) {
+      setError(MOVIE_WINDOW_UNRESPONSIVE_MESSAGE)
+    }
     closingMovieWindowRef.current = true
     const result = await window.watchAlong.closeMovieWindow({ notifyMainWindow: false })
     closingMovieWindowRef.current = false
     const nextOverlay = constrainOverlay(result.overlay ?? session.overlay)
     const movieState = result.state ?? remoteMovieAdapterRef.current.snapshot()
     destroyRemoteMovieAdapter()
+    restoredPopOutSessionRef.current = sessionRef.current.id
     setMovieWindowActive(false)
 
     window.requestAnimationFrame(() => {
@@ -845,12 +863,16 @@ export function App(): JSX.Element {
     const unsubscribePopIn = window.watchAlong.onMovieWindowPopInRequest(() => {
       void popInMovie()
     })
-    const unsubscribeClosed = window.watchAlong.onMovieWindowClosed(() => {
+    const unsubscribeClosed = window.watchAlong.onMovieWindowClosed((event) => {
+      if (event?.reason === 'unresponsive') {
+        setError(MOVIE_WINDOW_UNRESPONSIVE_MESSAGE)
+      }
       if (closingMovieWindowRef.current) {
         return
       }
 
       destroyRemoteMovieAdapter()
+      restoredPopOutSessionRef.current = sessionRef.current.id
       setMovieWindowActive(false)
       void persist({ isMoviePoppedOut: false })
       window.requestAnimationFrame(() => {
@@ -1734,7 +1756,12 @@ export function App(): JSX.Element {
             </button>
           )}
         </div>
-        {error && <div className="error-banner">{error}</div>}
+        {error && (
+          <div className="error-banner">
+            {error === MOVIE_WINDOW_UNRESPONSIVE_MESSAGE && <ExternalLink size={15} aria-hidden />}
+            <span>{error}</span>
+          </div>
+        )}
       </section>
       )}
 
@@ -2339,7 +2366,7 @@ function CommandPanel({
                 <small>{patreonStatus.available ? 'Saved' : 'Not saved'} / {patreonStatus.canEncrypt ? 'encrypted storage available' : 'encryption unavailable'}</small>
                 {showPatreonLearnMore && (
                   <small className="panel-learn-more">
-                    WatchAlong stores Patreon sessions only on this device, encrypted with OS storage when available. You can forget it here at any time.
+                    Your Patreon session is used only to authenticate downloads directly with Patreon. It's never sent to WatchAlong or any third party, and it's stored on your device only if you choose to save it.
                   </small>
                 )}
               </span>

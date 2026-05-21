@@ -657,20 +657,33 @@ input:disabled {
   left: 0;
   z-index: 2;
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) 32px minmax(32px, auto) 36px;
+  grid-template-columns: minmax(0, 1fr) 32px minmax(32px, auto) 36px;
   align-items: center;
   gap: 4px;
   height: 34px;
   padding: 0 5px 0 9px;
   color: #e7eef7;
   background: rgba(4, 7, 10, 0.68);
-  cursor: move;
+  cursor: default;
   opacity: 1;
   transition: opacity 180ms ease;
   user-select: none;
 }
 
-.pip-titlebar span {
+.pip-drag-handle {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+  cursor: grab;
+}
+
+.pip-drag-handle:active {
+  cursor: grabbing;
+}
+
+.pip-drag-handle span {
   overflow: hidden;
   font-size: 13px;
   font-weight: 620;
@@ -1153,6 +1166,10 @@ input:disabled {
   background: linear-gradient(135deg, #f47d31, #bd3434);
 }
 
+.browser-safari .browser-icon {
+  background: linear-gradient(135deg, #5cb7f2, #2d68d8);
+}
+
 .browser-opera .browser-icon {
   background: linear-gradient(135deg, #e3354b, #821a2a);
 }
@@ -1169,6 +1186,18 @@ input:disabled {
 
 .browser-missing {
   opacity: 0.42;
+}
+
+.browser-manual-only {
+  opacity: 0.72;
+}
+
+.browser-manual-only:hover {
+  opacity: 0.86;
+}
+
+.browser-safari .browser-icon {
+  opacity: 0.62;
 }
 
 .saved-session-button {
@@ -2570,6 +2599,9 @@ input:disabled {
 }
 
 .error-banner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   padding: 9px 10px;
   border-radius: 7px;
   color: #ffe3e3;
@@ -2578,12 +2610,16 @@ input:disabled {
   font-size: 13px;
 }
 
+.error-banner svg {
+  flex: 0 0 auto;
+}
+
 @media (max-width: 1100px) {
   .control-row {
     grid-template-columns: 38px 38px 38px minmax(84px, auto) minmax(120px, 1fr) auto auto 38px 38px;
   }
 
-  .secondary-button {
+  .control-row .secondary-button {
     width: 38px;
     padding: 0;
     font-size: 0;

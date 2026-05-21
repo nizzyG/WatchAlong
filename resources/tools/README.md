@@ -7,11 +7,16 @@ Expected layout:
 ```text
 resources/tools/
   yt-dlp/
-    yt-dlp.exe or yt-dlp.cmd
+    yt-dlp.exe (Windows)
+    yt-dlp_macos (macOS)
   ffmpeg/
-    ffmpeg.exe
+    ffmpeg.exe (Windows)
+    ffmpeg-darwin-arm64 (macOS Apple Silicon)
+    ffmpeg-darwin-x64 (macOS Intel)
   node/
-    node.exe
+    node.exe (Windows)
+    node-darwin-arm64 (macOS Apple Silicon)
+    node-darwin-x64 (macOS Intel)
   patreon-dl/
     node_modules/patreon-dl/bin/patreon-dl.js
     node_modules/patreon-dl/dist/...

@@ -7,9 +7,10 @@
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
+    "postinstall": "npm ci --prefix resources/tools/patreon-dl",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
-    "build": "npm run typecheck && electron-vite build",
+    "build": "npm run postinstall && npm run typecheck && electron-vite build",
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {
@@ -24,9 +25,9 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
-    "electron": "^31.3.1",
+    "electron": "^42.0.0",
     "electron-builder": "^25.0.5",
-    "electron-vite": "^2.3.0",
+    "electron-vite": "^5.0.0",
     "jsdom": "^24.1.1",
     "typescript": "^5.5.4",
     "vite": "^5.4.2",
@@ -43,6 +44,10 @@
       "package.json"
     ],
     "extraResources": [
+      {
+        "from": "ATTRIBUTION.md",
+        "to": "ATTRIBUTION.md"
+      },
       {
         "from": "resources/tools",
         "to": "tools",

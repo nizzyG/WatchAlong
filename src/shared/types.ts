@@ -1,7 +1,8 @@
 export type MediaRole = 'reaction' | 'movie'
 export type PlaybackRate = 1 | 1.25 | 1.5 | 2
 export type ToolName = 'yt-dlp' | 'ffmpeg' | 'node' | 'patreon-dl'
-export type BrowserName = 'chrome' | 'firefox' | 'edge' | 'brave' | 'opera'
+export type BrowserName = 'firefox' | 'chrome' | 'edge' | 'brave' | 'safari' | 'opera'
+export type BrowserExtractionMode = 'automatic' | 'best-effort' | 'manual-only'
 export type ReactionDownloadSource = 'youtube' | 'patreon'
 export type ReactionSource = 'local' | ReactionDownloadSource
 export type DownloadJobState = 'idle' | 'checking' | 'downloading' | 'success' | 'failed' | 'cancelled'
@@ -80,6 +81,8 @@ export interface BrowserDetection {
   label: string
   installed: boolean
   extractionSupported: boolean
+  extractionMode: BrowserExtractionMode
+  subtitle?: string
   paths: string[]
 }
 
@@ -202,6 +205,10 @@ export interface MovieWindowGeometryEvent {
   overlay: OverlayGeometry | null
 }
 
+export interface MovieWindowClosedEvent {
+  reason?: 'unresponsive'
+}
+
 export interface MovieWindowInit {
   sessionId: string
   title: string
@@ -214,7 +221,7 @@ export interface MovieWindowInit {
 }
 
 export type MovieWindowGeometryCallback = (event: MovieWindowGeometryEvent) => void
-export type MovieWindowLifecycleCallback = () => void
+export type MovieWindowLifecycleCallback = (event?: MovieWindowClosedEvent) => void
 export type MovieWindowCommandCallback = (command: RemoteMediaCommand) => void
 
 export type WizardLifecycleEvent =

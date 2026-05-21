@@ -1,7 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol, shell } from 'electron'
-import { copyFileSync, createReadStream, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
-import { basename, extname, join } from 'node:path'
-import { Readable } from 'node:stream'
+import { app, BrowserWindow, dialog, ipcMain, protocol, screen, shell } from 'electron'
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import {
+  ensureVisibleWindowBounds,
+  MOVIE_WINDOW_MIN_HEIGHT,
+  MOVIE_WINDOW_MIN_WIDTH,
+  PendingMovieCommandTracker
+} from './movieWindowHelpers'
 import {
   detectBrowsers,
   DownloadManager,
@@ -11,6 +16,7 @@ import {
   PatreonSessionVault,
   ToolResolver
 } from './mediaServices'
+import { createMediaResponse } from './mediaRange'
 import { PreferencesStore } from './preferencesStore'
 import { SessionStore } from './sessionStore'
 import type {
@@ -21,6 +27,7 @@ import type {
   LibrarySession,
   MediaFile,
   MediaRole,
+  MovieWindowClosedEvent,
   MovieWindowCloseOptions,
   MovieWindowCloseResult,
   MovieWindowGeometryEvent,
@@ -68,7 +75,12 @@ let movieWindowGeometry: OverlayGeometry | null = null
 let lastMovieMediaState: RemoteMediaState | null = null
 let closingMovieWindowIntentionally = false
 let resolveMovieWindowReady: (() => void) | null = null
-const pendingMovieCommands = new Map<string, (result: RemoteMediaCommandResult) => void>()
+let movieWindowClosedEvent: MovieWindowClosedEvent | undefined
+let shouldNotifyMovieWindowClosed = true
+const pendingMovieCommands = new PendingMovieCommandTracker({
+  getState: () => lastMovieMediaState ?? emptyRemoteMediaState(),
+  onTimeout: () => closeUnresponsiveMovieWindow()
+})
 let sessionStore: SessionStore
 let preferencesStore: PreferencesStore
 let toolResolver: ToolResolver
@@ -341,20 +353,16 @@ async function openMovieWindow(request: MovieWindowOpenRequest): Promise<MovieWi
     sendMovieWindowPopInRequest()
   })
   movieWindow.on('closed', () => {
-    for (const [id, resolve] of pendingMovieCommands) {
-      resolve({
-        id,
-        ok: false,
-        state: lastMovieMediaState ?? emptyRemoteMediaState(),
-        error: 'Movie window closed.'
-      })
-    }
-    pendingMovieCommands.clear()
+    pendingMovieCommands.resolveAll('Movie window closed.')
     movieWindow = null
     movieWindowInit = null
     resolveMovieWindowReady = null
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(`${IPC_PREFIX}:movie-window-closed`)
+    const closedEvent = movieWindowClosedEvent
+    const notifyMainWindow = shouldNotifyMovieWindowClosed
+    movieWindowClosedEvent = undefined
+    shouldNotifyMovieWindowClosed = true
+    if (notifyMainWindow) {
+      sendMovieWindowClosed(closedEvent)
     }
   })
   movieWindow.once('ready-to-show', () => {
@@ -379,21 +387,26 @@ async function closeMovieWindow(options: MovieWindowCloseOptions = {}): Promise<
   const geometry = currentMovieWindowGeometry()
   const overlay = geometry ? movieWindowGeometryToOverlay(geometry) : null
   const state = lastMovieMediaState
+  const notifyMainWindow = options.notifyMainWindow !== false
+  const targetWindow = movieWindow
   closingMovieWindowIntentionally = true
   try {
-    if (movieWindow && !movieWindow.isDestroyed()) {
+    if (targetWindow && !targetWindow.isDestroyed()) {
+      shouldNotifyMovieWindowClosed = notifyMainWindow
       const closed = new Promise<void>((resolve) => {
-        movieWindow?.once('closed', () => resolve())
+        targetWindow.once('closed', () => resolve())
       })
-      movieWindow.close()
+      targetWindow.close()
       await closed
+    } else if (notifyMainWindow) {
+      sendMovieWindowClosed(movieWindowClosedEvent)
+      movieWindowClosedEvent = undefined
     }
   } finally {
     closingMovieWindowIntentionally = false
-  }
-
-  if (options.notifyMainWindow !== false && mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(`${IPC_PREFIX}:movie-window-closed`)
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      shouldNotifyMovieWindowClosed = true
+    }
   }
 
   return { geometry, overlay, state }
@@ -436,16 +449,19 @@ function currentMovieWindowGeometry(): OverlayGeometry | null {
 
 function movieWindowBoundsFromRequest(request: MovieWindowOpenRequest): Electron.Rectangle {
   const geometry = normalizeWindowGeometry(request.geometry)
+  let bounds: Electron.Rectangle
   if (request.geometryMode === 'screen' || !mainWindow || mainWindow.isDestroyed()) {
-    return geometry
+    bounds = geometry
+  } else {
+    const contentBounds = mainWindow.getContentBounds()
+    bounds = {
+      ...geometry,
+      x: Math.round(contentBounds.x + geometry.x),
+      y: Math.round(contentBounds.y + geometry.y)
+    }
   }
 
-  const contentBounds = mainWindow.getContentBounds()
-  return {
-    ...geometry,
-    x: Math.round(contentBounds.x + geometry.x),
-    y: Math.round(contentBounds.y + geometry.y)
-  }
+  return ensureVisibleWindowBounds(bounds, screen.getAllDisplays(), screen.getPrimaryDisplay())
 }
 
 function movieWindowGeometryToOverlay(geometry: OverlayGeometry): OverlayGeometry | null {
@@ -466,8 +482,14 @@ function normalizeWindowGeometry(geometry: OverlayGeometry): Electron.Rectangle 
   return {
     x: Math.round(finiteOr(geometry.x, 24)),
     y: Math.round(finiteOr(geometry.y, 24)),
-    width: Math.max(320, Math.round(finiteOr(geometry.width, 420))),
-    height: Math.max(180, Math.round(finiteOr(geometry.height, 236)))
+    width: Math.max(MOVIE_WINDOW_MIN_WIDTH, Math.round(finiteOr(geometry.width, 420))),
+    height: Math.max(MOVIE_WINDOW_MIN_HEIGHT, Math.round(finiteOr(geometry.height, 236)))
+  }
+}
+
+function sendMovieWindowClosed(event?: MovieWindowClosedEvent): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(`${IPC_PREFIX}:movie-window-closed`, event)
   }
 }
 
@@ -475,6 +497,11 @@ function sendMovieWindowPopInRequest(): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(`${IPC_PREFIX}:movie-window-pop-in-requested`)
   }
+}
+
+function closeUnresponsiveMovieWindow(): void {
+  movieWindowClosedEvent = { reason: 'unresponsive' }
+  void closeMovieWindow()
 }
 
 function sendMovieMediaCommand(command: RemoteMediaCommand): Promise<RemoteMediaCommandResult> {
@@ -488,7 +515,7 @@ function sendMovieMediaCommand(command: RemoteMediaCommand): Promise<RemoteMedia
   }
 
   return new Promise((resolve) => {
-    pendingMovieCommands.set(command.id, resolve)
+    pendingMovieCommands.add(command.id, resolve)
     movieWindow!.webContents.send(`${IPC_PREFIX}:movie-media-command`, command)
   })
 }
@@ -627,9 +654,7 @@ function registerIpc(): void {
 
   ipcMain.handle(`${IPC_PREFIX}:movie-media-command-result`, (_event, result: RemoteMediaCommandResult) => {
     lastMovieMediaState = result.state
-    const resolve = pendingMovieCommands.get(result.id)
-    pendingMovieCommands.delete(result.id)
-    resolve?.(result)
+    pendingMovieCommands.resolve(result)
   })
 
   ipcMain.handle(`${IPC_PREFIX}:movie-media-event`, (_event, event: RemoteMediaEvent) => {
@@ -783,7 +808,7 @@ function openPatreonLoginWindow(parent: BrowserWindow): Promise<{ ok: boolean; t
         partition,
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false
+        sandbox: true
       }
     })
 
@@ -828,11 +853,18 @@ function openPatreonLoginWindow(parent: BrowserWindow): Promise<{ ok: boolean; t
     }
 
     loginWindow.webContents.setWindowOpenHandler(({ url }) => {
-      if (isPatreonUrl(url)) {
+      if (isAllowedPatreonLoginUrl(url)) {
         void loginWindow.loadURL(url)
-        return { action: 'deny' }
+      } else {
+        openExternalUrl(url)
       }
-      return { action: 'allow' }
+      return { action: 'deny' }
+    })
+    loginWindow.webContents.on('will-navigate', (event, url) => {
+      if (!isAllowedPatreonLoginUrl(url)) {
+        event.preventDefault()
+        openExternalUrl(url)
+      }
     })
     loginSession.cookies.on('changed', onCookieChanged)
     loginWindow.webContents.on('did-navigate', () => void checkCookies())
@@ -845,12 +877,23 @@ function openPatreonLoginWindow(parent: BrowserWindow): Promise<{ ok: boolean; t
   })
 }
 
-function isPatreonUrl(rawUrl: string): boolean {
+function isAllowedPatreonLoginUrl(rawUrl: string): boolean {
   try {
     const url = new URL(rawUrl)
-    return url.protocol === 'https:' && (url.hostname === 'patreon.com' || url.hostname.endsWith('.patreon.com'))
+    return url.protocol === 'https:' && (url.hostname === 'patreon.com' || url.hostname === 'www.patreon.com')
   } catch {
     return false
+  }
+}
+
+function openExternalUrl(rawUrl: string): void {
+  try {
+    const url = new URL(rawUrl)
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      void shell.openExternal(rawUrl)
+    }
+  } catch {
+    // Ignore malformed popup/navigation targets.
   }
 }
 
@@ -940,89 +983,6 @@ function getMediaPath(session: LibrarySession | null, role: MediaRole): string |
   }
 
   return role === 'reaction' ? session.reactionPath : session.moviePath
-}
-
-function createMediaResponse(filePath: string, rangeHeader: string | null): Response {
-  const fileStat = statSync(filePath)
-  const fileSize = fileStat.size
-  const contentType = getContentType(filePath)
-  const baseHeaders = {
-    'Accept-Ranges': 'bytes',
-    'Content-Type': contentType
-  }
-
-  if (rangeHeader) {
-    const range = parseRange(rangeHeader, fileSize)
-    if (!range) {
-      return new Response(null, {
-        status: 416,
-        headers: {
-          ...baseHeaders,
-          'Content-Range': `bytes */${fileSize}`
-        }
-      })
-    }
-
-    const { start, end } = range
-    const chunkSize = end - start + 1
-    return new Response(nodeStreamToBody(createReadStream(filePath, { start, end })), {
-      status: 206,
-      headers: {
-        ...baseHeaders,
-        'Content-Length': String(chunkSize),
-        'Content-Range': `bytes ${start}-${end}/${fileSize}`
-      }
-    })
-  }
-
-  return new Response(nodeStreamToBody(createReadStream(filePath)), {
-    status: 200,
-    headers: {
-      ...baseHeaders,
-      'Content-Length': String(fileSize)
-    }
-  })
-}
-
-function parseRange(rangeHeader: string, fileSize: number): { start: number; end: number } | null {
-  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader)
-  if (!match) {
-    return null
-  }
-
-  let start = match[1] ? Number.parseInt(match[1], 10) : 0
-  let end = match[2] ? Number.parseInt(match[2], 10) : fileSize - 1
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0) {
-    return null
-  }
-
-  end = Math.min(end, fileSize - 1)
-  if (start > end) {
-    return null
-  }
-
-  return { start, end }
-}
-
-function nodeStreamToBody(stream: Readable): BodyInit {
-  return Readable.toWeb(stream) as unknown as BodyInit
-}
-
-function getContentType(filePath: string): string {
-  switch (extname(filePath).toLowerCase()) {
-    case '.mp4':
-    case '.m4v':
-      return 'video/mp4'
-    case '.mov':
-      return 'video/quicktime'
-    case '.webm':
-      return 'video/webm'
-    case '.ogv':
-    case '.ogg':
-      return 'video/ogg'
-    default:
-      return 'application/octet-stream'
-  }
 }
 
 function finiteOr(value: unknown, fallback: number): number {

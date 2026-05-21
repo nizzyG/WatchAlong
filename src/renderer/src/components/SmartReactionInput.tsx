@@ -9,8 +9,8 @@ import {
   ShieldCheck,
   X
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import type {
   BrowserDetection,
   BrowserName,
@@ -34,10 +34,11 @@ interface PatreonStorageOfferProps {
 }
 
 const browserGlyphs: Record<BrowserName, string> = {
-  chrome: 'C',
   firefox: 'F',
+  chrome: 'C',
   edge: 'E',
   brave: 'B',
+  safari: 'S',
   opera: 'O'
 }
 
@@ -48,6 +49,7 @@ export function SmartReactionInput({ movieReady, onSelectLocal, onDownloaded }: 
   const [manualSessionId, setManualSessionId] = useState('')
   const [browsers, setBrowsers] = useState<BrowserDetection[]>([])
   const [browserReading, setBrowserReading] = useState<BrowserName | null>(null)
+  const [manualGuideBrowser, setManualGuideBrowser] = useState<BrowserName | null>(null)
   const [loginWindowOpen, setLoginWindowOpen] = useState(false)
   const [savedSession, setSavedSession] = useState<SavedPatreonSessionStatus>({ available: false, canEncrypt: false })
   const [jobId, setJobId] = useState<string | null>(null)
@@ -57,7 +59,7 @@ export function SmartReactionInput({ movieReady, onSelectLocal, onDownloaded }: 
   const validYoutubeUrl = useMemo(() => isValidYouTubeUrl(youtubeUrl), [youtubeUrl])
   const validPatreonUrl = useMemo(() => isValidPatreonPostUrl(patreonUrl), [patreonUrl])
   const isWorking = progress?.state === 'checking' || progress?.state === 'downloading'
-  const firefoxBrowser = useMemo(() => browsers.find((b) => b.name === 'firefox') ?? null, [browsers])
+  const manualSessionInputRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -154,7 +156,15 @@ export function SmartReactionInput({ movieReady, onSelectLocal, onDownloaded }: 
       return
     }
 
+    if (browser.extractionMode === 'manual-only') {
+      setManualGuideBrowser(browser.name)
+      setError(`${browser.label} requires manual Patreon session entry. Paste your session_id to continue.`)
+      window.setTimeout(() => manualSessionInputRef.current?.focus(), 0)
+      return
+    }
+
     setError(null)
+    setManualGuideBrowser(browser.name)
     setBrowserReading(browser.name)
     try {
       const result = await window.watchAlong.extractPatreonSession(browser.name)
@@ -290,7 +300,9 @@ export function SmartReactionInput({ movieReady, onSelectLocal, onDownloaded }: 
                 </div>
                 <div className="privacy-badge">
                   <Lock size={15} aria-hidden />
-                  Your cookies never leave your device. We only access the Patreon session.
+                  <span>
+                    Your Patreon session is used only to authenticate downloads directly with Patreon. It's never sent to WatchAlong or any third party, and it's stored on your device only if you choose to save it.
+                  </span>
                 </div>
 
                 {savedSession.available && !isWorking && (
@@ -322,27 +334,39 @@ export function SmartReactionInput({ movieReady, onSelectLocal, onDownloaded }: 
                     </button>
                     <small className="login-hint">Works with any browser - opens a secure sign-in window</small>
 
-                    {firefoxBrowser && firefoxBrowser.installed && (
-                      <>
-                        <div className="tier-divider"><span>or</span></div>
-                        <button
-                          className="secondary-button firefox-instant"
-                          type="button"
-                          disabled={isWorking || browserReading !== null}
-                          onClick={() => void readBrowserSession(firefoxBrowser)}
-                        >
-                          <span className="browser-icon firefox-icon" aria-hidden>F</span>
-                          {browserReading === 'firefox' ? 'Reading Firefox session...' : 'Use my Firefox login'}
-                          <span className="recommended-badge">Recommended</span>
-                        </button>
-                        <small className="login-hint">Instant setup - uses your existing Firefox Patreon login</small>
-                      </>
-                    )}
+                    <div className="tier-divider"><span>or use an existing browser session</span></div>
+                    <div className="browser-row" aria-label="Browser sessions">
+                      {browsers.map((browser) => {
+                        const statusText = browser.installed ? browser.subtitle : 'Not found'
+                        const manualOnly = browser.extractionMode === 'manual-only'
+                        return (
+                          <button
+                            key={browser.name}
+                            className={[
+                              'browser-choice',
+                              `browser-${browser.name}`,
+                              browser.installed ? '' : 'browser-missing',
+                              manualOnly ? 'browser-manual-only' : ''
+                            ].filter(Boolean).join(' ')}
+                            type="button"
+                            disabled={!browser.installed || isWorking || browserReading !== null}
+                            onClick={() => void readBrowserSession(browser)}
+                          >
+                            <span className="browser-icon" aria-hidden>{browserGlyphs[browser.name]}</span>
+                            <span>{browser.label}</span>
+                            {statusText && <small>{statusText}</small>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <small className="login-hint">Firefox is the most reliable automatic option. Manual entry works across all browsers.</small>
 
                     <div className="tier-divider"><span>or paste your session_id</span></div>
                     <ManualPatreonFallback
                       value={manualSessionId}
                       disabled={isWorking}
+                      guideBrowser={manualGuideBrowser}
+                      inputRef={manualSessionInputRef}
                       onChange={setManualSessionId}
                       onSubmit={() => void startPatreonDownload({ type: 'manual', sessionId: manualSessionId })}
                     />
@@ -467,25 +491,34 @@ function ReactionCard({
 function ManualPatreonFallback({
   value,
   disabled,
+  guideBrowser,
+  inputRef,
   onChange,
   onSubmit
 }: {
   value: string
   disabled: boolean
+  guideBrowser: BrowserName | null
+  inputRef: RefObject<HTMLTextAreaElement>
   onChange(value: string): void
   onSubmit(): void
 }): JSX.Element {
+  const developerToolsStep = guideBrowser === 'safari'
+    ? 'Enable the Develop menu in Safari > Settings/Preferences > Advanced, then open Web Inspector from the Develop menu.'
+    : 'Press F12 to open Developer Tools, then click the Application tab (Chrome/Edge) or Storage tab (Firefox).'
+
   return (
     <div className="manual-fallback">
       <p>Grab your session_id manually in a few clicks:</p>
       <ol>
         <li>Open Patreon in your browser and log in if needed.</li>
-        <li>Press F12 to open Developer Tools, then click the Application tab (Chrome/Edge) or Storage tab (Firefox).</li>
+        <li>{developerToolsStep}</li>
         <li>In the left sidebar, find Cookies &gt; https://www.patreon.com. Double-click the session_id row and copy the Value.</li>
       </ol>
       <label>
         <span>session_id</span>
         <textarea
+          ref={inputRef}
           value={value}
           placeholder="Paste your session_id here"
           rows={2}

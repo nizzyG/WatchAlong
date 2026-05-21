@@ -68,6 +68,10 @@ export function PipOverlay({
     window.addEventListener('pointerup', up, { once: true })
   }
 
+  const stopToolbarPointerDown = (event: React.PointerEvent): void => {
+    event.stopPropagation()
+  }
+
   const beginResize = (event: React.PointerEvent): void => {
     if (event.button && event.button !== 0) {
       return
@@ -116,10 +120,19 @@ export function PipOverlay({
       aria-label="Movie picture in picture"
       aria-hidden={hidden}
     >
-      <div className="pip-titlebar" onPointerDown={beginDrag}>
-        <GripHorizontal size={16} aria-hidden />
-        <span>Movie</span>
-        <button className="icon-button" type="button" title="Snap movie" aria-label="Snap movie" onClick={cycleSnapCorner}>
+      <div className="pip-titlebar">
+        <div className="pip-drag-handle" onPointerDown={beginDrag}>
+          <GripHorizontal size={16} aria-hidden />
+          <span>Movie</span>
+        </div>
+        <button
+          className="icon-button"
+          type="button"
+          title="Snap movie"
+          aria-label="Snap movie"
+          onPointerDown={stopToolbarPointerDown}
+          onClick={cycleSnapCorner}
+        >
           <Magnet size={16} aria-hidden />
         </button>
         {poppedOut ? (
@@ -128,6 +141,7 @@ export function PipOverlay({
             type="button"
             title="Pop movie back in"
             aria-label="Pop movie back in"
+            onPointerDown={stopToolbarPointerDown}
             onClick={onPopIn}
           >
             Movie is popped out.
@@ -138,12 +152,20 @@ export function PipOverlay({
             type="button"
             title="Pop out movie to separate window."
             aria-label="Pop out movie to separate window"
+            onPointerDown={stopToolbarPointerDown}
             onClick={onPopOut}
           >
             <ExternalLink size={16} aria-hidden />
           </button>
         )}
-        <button className="icon-button" type="button" title="Hide movie" aria-label="Hide movie" onClick={onHide}>
+        <button
+          className="icon-button"
+          type="button"
+          title="Hide movie"
+          aria-label="Hide movie"
+          onPointerDown={stopToolbarPointerDown}
+          onClick={onHide}
+        >
           <EyeOff size={17} aria-hidden />
         </button>
       </div>

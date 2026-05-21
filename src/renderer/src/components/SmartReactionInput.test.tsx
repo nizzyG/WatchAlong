@@ -4,11 +4,52 @@ import { isValidPatreonPostUrl, PatreonStorageOffer, SmartReactionInput } from '
 import type { BrowserDetection, PatreonSessionExtractionResult, WatchAlongApi } from '@shared/types'
 
 const browsers: BrowserDetection[] = [
-  { name: 'chrome', label: 'Chrome', installed: false, extractionSupported: false, paths: [] },
-  { name: 'firefox', label: 'Firefox', installed: true, extractionSupported: true, paths: ['firefox.exe'] },
-  { name: 'edge', label: 'Edge', installed: true, extractionSupported: false, paths: ['msedge.exe'] },
-  { name: 'brave', label: 'Brave', installed: false, extractionSupported: false, paths: [] },
-  { name: 'opera', label: 'Opera', installed: false, extractionSupported: false, paths: [] }
+  { name: 'firefox', label: 'Firefox', installed: true, extractionSupported: true, extractionMode: 'automatic', paths: ['firefox.exe'] },
+  {
+    name: 'chrome',
+    label: 'Chrome',
+    installed: true,
+    extractionSupported: false,
+    extractionMode: 'manual-only',
+    subtitle: 'Manual entry needed',
+    paths: ['chrome.exe']
+  },
+  {
+    name: 'edge',
+    label: 'Edge',
+    installed: true,
+    extractionSupported: false,
+    extractionMode: 'manual-only',
+    subtitle: 'Manual entry needed',
+    paths: ['msedge.exe']
+  },
+  {
+    name: 'brave',
+    label: 'Brave',
+    installed: false,
+    extractionSupported: false,
+    extractionMode: 'manual-only',
+    subtitle: 'Manual entry needed',
+    paths: []
+  },
+  {
+    name: 'safari',
+    label: 'Safari',
+    installed: false,
+    extractionSupported: false,
+    extractionMode: 'manual-only',
+    subtitle: 'Rarely works - manual entry needed',
+    paths: []
+  },
+  {
+    name: 'opera',
+    label: 'Opera',
+    installed: false,
+    extractionSupported: false,
+    extractionMode: 'manual-only',
+    subtitle: 'Manual entry needed',
+    paths: []
+  }
 ]
 
 describe('SmartReactionInput', () => {
@@ -40,6 +81,23 @@ describe('SmartReactionInput', () => {
     expect(screen.getByRole('button', { name: /Sign in to Patreon/i })).toHaveClass('login-window-primary')
   })
 
+  it('shows accurate Patreon session privacy copy', async () => {
+    render(<SmartReactionInput movieReady onSelectLocal={vi.fn()} onDownloaded={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Patreon post/i }))
+    fireEvent.change(screen.getByPlaceholderText('https://www.patreon.com/posts/...'), {
+      target: { value: 'https://www.patreon.com/posts/example-123' }
+    })
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Your Patreon session is used only to authenticate downloads directly with Patreon. It's never sent to WatchAlong or any third party, and it's stored on your device only if you choose to save it."
+        )
+      ).toBeInTheDocument()
+    })
+  })
+
   it('starts the Patreon download with the token returned by the sign-in window', async () => {
     window.watchAlong.openPatreonLoginWindow = vi.fn(async () => ({ ok: true, token: 'patreon-token' }))
 
@@ -61,7 +119,7 @@ describe('SmartReactionInput', () => {
     )
   })
 
-  it('shows Firefox instant-setup with Recommended badge when installed', async () => {
+  it('shows browser session choices with platform policy labels', async () => {
     render(<SmartReactionInput movieReady onSelectLocal={vi.fn()} onDownloaded={vi.fn()} />)
 
     fireEvent.click(screen.getByRole('button', { name: /Patreon post/i }))
@@ -69,8 +127,9 @@ describe('SmartReactionInput', () => {
       target: { value: 'https://www.patreon.com/posts/example-123' }
     })
 
-    await waitFor(() => expect(screen.getByText('Recommended')).toBeInTheDocument())
-    expect(screen.getByRole('button', { name: /Use my Firefox login/i })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Firefox$/i })).toBeInTheDocument())
+    expect(screen.getAllByText('Manual entry needed')).toHaveLength(2)
+    expect(screen.getAllByText('Not found')).toHaveLength(3)
   })
 
   it('renders the manual session_id paste area always visible', async () => {
@@ -95,10 +154,94 @@ describe('SmartReactionInput', () => {
       target: { value: 'https://www.patreon.com/posts/example-123' }
     })
 
-    await waitFor(() => screen.getByRole('button', { name: /Use my Firefox login/i }))
-    fireEvent.click(screen.getByRole('button', { name: /Use my Firefox login/i }))
+    await waitFor(() => screen.getByRole('button', { name: /^Firefox$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Firefox$/i }))
 
     expect(await screen.findByText('Reading Patreon session from Firefox...')).toBeInTheDocument()
+  })
+
+  it('keeps Windows Chromium manual-only without attempting extraction', async () => {
+    render(<SmartReactionInput movieReady onSelectLocal={vi.fn()} onDownloaded={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Patreon post/i }))
+    fireEvent.change(screen.getByPlaceholderText('https://www.patreon.com/posts/...'), {
+      target: { value: 'https://www.patreon.com/posts/example-123' }
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: /Chrome Manual entry needed/i }))
+
+    expect(window.watchAlong.extractPatreonSession).not.toHaveBeenCalled()
+    expect(screen.getByText(/Chrome requires manual Patreon session entry/i)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByPlaceholderText('Paste your session_id here')).toHaveFocus())
+  })
+
+  it('attempts macOS Chromium best-effort extraction while labeling it May not work', async () => {
+    window.watchAlong.detectBrowsers = vi.fn(async (): Promise<BrowserDetection[]> => [
+      { name: 'firefox', label: 'Firefox', installed: true, extractionSupported: true, extractionMode: 'automatic', paths: ['/Applications/Firefox.app'] },
+      {
+        name: 'chrome',
+        label: 'Chrome',
+        installed: true,
+        extractionSupported: true,
+        extractionMode: 'best-effort',
+        subtitle: 'May not work',
+        paths: ['/Applications/Google Chrome.app']
+      },
+      { name: 'edge', label: 'Edge', installed: false, extractionSupported: true, extractionMode: 'best-effort', subtitle: 'May not work', paths: [] },
+      { name: 'brave', label: 'Brave', installed: false, extractionSupported: true, extractionMode: 'best-effort', subtitle: 'May not work', paths: [] },
+      {
+        name: 'safari',
+        label: 'Safari',
+        installed: true,
+        extractionSupported: false,
+        extractionMode: 'manual-only',
+        subtitle: 'Rarely works - manual entry needed',
+        paths: ['/Applications/Safari.app']
+      },
+      { name: 'opera', label: 'Opera', installed: false, extractionSupported: true, extractionMode: 'best-effort', subtitle: 'May not work', paths: [] }
+    ])
+
+    render(<SmartReactionInput movieReady onSelectLocal={vi.fn()} onDownloaded={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Patreon post/i }))
+    fireEvent.change(screen.getByPlaceholderText('https://www.patreon.com/posts/...'), {
+      target: { value: 'https://www.patreon.com/posts/example-123' }
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: /Chrome May not work/i }))
+
+    await waitFor(() => expect(window.watchAlong.extractPatreonSession).toHaveBeenCalledWith('chrome'))
+  })
+
+  it('shows Safari-specific manual Web Inspector guidance after Safari is selected', async () => {
+    window.watchAlong.detectBrowsers = vi.fn(async (): Promise<BrowserDetection[]> => [
+      { name: 'firefox', label: 'Firefox', installed: true, extractionSupported: true, extractionMode: 'automatic', paths: ['/Applications/Firefox.app'] },
+      { name: 'chrome', label: 'Chrome', installed: false, extractionSupported: true, extractionMode: 'best-effort', subtitle: 'May not work', paths: [] },
+      { name: 'edge', label: 'Edge', installed: false, extractionSupported: true, extractionMode: 'best-effort', subtitle: 'May not work', paths: [] },
+      { name: 'brave', label: 'Brave', installed: false, extractionSupported: true, extractionMode: 'best-effort', subtitle: 'May not work', paths: [] },
+      {
+        name: 'safari',
+        label: 'Safari',
+        installed: true,
+        extractionSupported: false,
+        extractionMode: 'manual-only',
+        subtitle: 'Rarely works - manual entry needed',
+        paths: ['/Applications/Safari.app']
+      },
+      { name: 'opera', label: 'Opera', installed: false, extractionSupported: true, extractionMode: 'best-effort', subtitle: 'May not work', paths: [] }
+    ])
+
+    render(<SmartReactionInput movieReady onSelectLocal={vi.fn()} onDownloaded={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Patreon post/i }))
+    fireEvent.change(screen.getByPlaceholderText('https://www.patreon.com/posts/...'), {
+      target: { value: 'https://www.patreon.com/posts/example-123' }
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: /Safari Rarely works/i }))
+
+    expect(screen.getByText(/Enable the Develop menu in Safari/i)).toBeInTheDocument()
+    expect(window.watchAlong.extractPatreonSession).not.toHaveBeenCalled()
   })
 
   it('shows saved session confirmation prompt when a saved session exists', async () => {

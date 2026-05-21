@@ -15,6 +15,7 @@ import { basename, dirname, extname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type {
   BrowserDetection,
+  BrowserExtractionMode,
   BrowserName,
   DownloadProgressEvent,
   PatreonSessionSource,
@@ -27,6 +28,11 @@ import type {
 } from '@shared/types'
 
 type ProgressSink = (event: DownloadProgressEvent) => void
+type SpawnDownloadProcess = (
+  command: string,
+  args: string[],
+  options: { windowsHide: boolean }
+) => ChildProcessWithoutNullStreams
 
 interface RunningDownload {
   child: ChildProcessWithoutNullStreams
@@ -35,50 +41,149 @@ interface RunningDownload {
 }
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov', '.webm', '.mkv', '.avi'])
-const BROWSERS: Array<{ name: BrowserName; label: string; paths: string[] }> = [
-  {
-    name: 'chrome',
-    label: 'Chrome',
-    paths: [
-      join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'Google\\Chrome\\Application\\chrome.exe'),
-      join(process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'Google\\Chrome\\Application\\chrome.exe'),
-      join(process.env.LOCALAPPDATA ?? '', 'Google\\Chrome\\Application\\chrome.exe')
-    ]
-  },
-  {
-    name: 'firefox',
-    label: 'Firefox',
-    paths: [
-      join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'Mozilla Firefox\\firefox.exe'),
-      join(process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'Mozilla Firefox\\firefox.exe')
-    ]
-  },
-  {
-    name: 'edge',
-    label: 'Edge',
-    paths: [
-      join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'Microsoft\\Edge\\Application\\msedge.exe'),
-      join(process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'Microsoft\\Edge\\Application\\msedge.exe')
-    ]
-  },
-  {
-    name: 'brave',
-    label: 'Brave',
-    paths: [
-      join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'BraveSoftware\\Brave-Browser\\Application\\brave.exe'),
-      join(process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'BraveSoftware\\Brave-Browser\\Application\\brave.exe'),
-      join(process.env.LOCALAPPDATA ?? '', 'BraveSoftware\\Brave-Browser\\Application\\brave.exe')
-    ]
-  },
-  {
-    name: 'opera',
-    label: 'Opera',
-    paths: [
-      join(process.env.LOCALAPPDATA ?? '', 'Programs\\Opera\\opera.exe'),
-      join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'Opera\\launcher.exe')
+type ToolExecutableName = Exclude<ToolName, 'patreon-dl'>
+
+interface BrowserDefinition {
+  name: BrowserName
+  label: string
+  paths: string[]
+}
+
+const CHROMIUM_BROWSERS = new Set<BrowserName>(['chrome', 'edge', 'brave', 'opera'])
+
+function browserLabelFromName(browserName: BrowserName): string {
+  return getBrowserDefinitions().find((browser) => browser.name === browserName)?.label ?? browserName
+}
+
+export function getPlatformToolFilename(
+  toolName: ToolExecutableName,
+  platform: NodeJS.Platform = process.platform,
+  arch: NodeJS.Architecture = process.arch
+): string {
+  if (platform === 'win32') {
+    return {
+      'yt-dlp': 'yt-dlp.exe',
+      ffmpeg: 'ffmpeg.exe',
+      node: 'node.exe'
+    }[toolName]
+  }
+
+  if (platform === 'darwin') {
+    const darwinArch = arch === 'arm64' ? 'arm64' : 'x64'
+    return {
+      'yt-dlp': 'yt-dlp_macos',
+      ffmpeg: `ffmpeg-darwin-${darwinArch}`,
+      node: `node-darwin-${darwinArch}`
+    }[toolName]
+  }
+
+  return {
+    'yt-dlp': 'yt-dlp',
+    ffmpeg: 'ffmpeg',
+    node: 'node'
+  }[toolName]
+}
+
+export function getBrowserExtractionMode(
+  browserName: BrowserName,
+  platform: NodeJS.Platform = process.platform
+): BrowserExtractionMode {
+  if (browserName === 'firefox') {
+    return 'automatic'
+  }
+
+  if (platform === 'darwin' && CHROMIUM_BROWSERS.has(browserName)) {
+    return 'best-effort'
+  }
+
+  return 'manual-only'
+}
+
+function getBrowserSubtitle(browserName: BrowserName, platform: NodeJS.Platform): string | undefined {
+  const mode = getBrowserExtractionMode(browserName, platform)
+  if (mode === 'best-effort') {
+    return 'May not work'
+  }
+
+  if (browserName === 'safari') {
+    return 'Rarely works - manual entry needed'
+  }
+
+  if (mode === 'manual-only') {
+    return 'Manual entry needed'
+  }
+
+  return undefined
+}
+
+export function getBrowserDefinitions(
+  platform: NodeJS.Platform = process.platform,
+  homeDirectory: string = homedir()
+): BrowserDefinition[] {
+  const appPath = (name: string): string => `/Applications/${name}`
+  const userAppPath = (name: string): string => `${homeDirectory}/Applications/${name}`
+
+  if (platform === 'darwin') {
+    return [
+      { name: 'firefox', label: 'Firefox', paths: [appPath('Firefox.app'), userAppPath('Firefox.app')] },
+      { name: 'chrome', label: 'Chrome', paths: [appPath('Google Chrome.app'), userAppPath('Google Chrome.app')] },
+      { name: 'edge', label: 'Edge', paths: [appPath('Microsoft Edge.app'), userAppPath('Microsoft Edge.app')] },
+      { name: 'brave', label: 'Brave', paths: [appPath('Brave Browser.app'), userAppPath('Brave Browser.app')] },
+      {
+        name: 'safari',
+        label: 'Safari',
+        paths: [appPath('Safari.app'), '/System/Applications/Safari.app', userAppPath('Safari.app')]
+      },
+      { name: 'opera', label: 'Opera', paths: [appPath('Opera.app'), userAppPath('Opera.app')] }
     ]
   }
-]
+
+  return [
+    {
+      name: 'firefox',
+      label: 'Firefox',
+      paths: [
+        join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'Mozilla Firefox\\firefox.exe'),
+        join(process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'Mozilla Firefox\\firefox.exe')
+      ]
+    },
+    {
+      name: 'chrome',
+      label: 'Chrome',
+      paths: [
+        join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'Google\\Chrome\\Application\\chrome.exe'),
+        join(process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'Google\\Chrome\\Application\\chrome.exe'),
+        join(process.env.LOCALAPPDATA ?? '', 'Google\\Chrome\\Application\\chrome.exe')
+      ]
+    },
+    {
+      name: 'edge',
+      label: 'Edge',
+      paths: [
+        join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'Microsoft\\Edge\\Application\\msedge.exe'),
+        join(process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'Microsoft\\Edge\\Application\\msedge.exe')
+      ]
+    },
+    {
+      name: 'brave',
+      label: 'Brave',
+      paths: [
+        join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'BraveSoftware\\Brave-Browser\\Application\\brave.exe'),
+        join(process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'BraveSoftware\\Brave-Browser\\Application\\brave.exe'),
+        join(process.env.LOCALAPPDATA ?? '', 'BraveSoftware\\Brave-Browser\\Application\\brave.exe')
+      ]
+    },
+    { name: 'safari', label: 'Safari', paths: [] },
+    {
+      name: 'opera',
+      label: 'Opera',
+      paths: [
+        join(process.env.LOCALAPPDATA ?? '', 'Programs\\Opera\\opera.exe'),
+        join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'Opera\\launcher.exe')
+      ]
+    }
+  ]
+}
 
 export class ToolResolver {
   async checkTools(): Promise<ToolCheckResult> {
@@ -96,22 +201,15 @@ export class ToolResolver {
   }
 
   getYtDlpPath(): string | null {
-    return firstExisting([
-      resourcePath('tools', 'yt-dlp', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'),
-      resourcePath('tools', 'yt-dlp', process.platform === 'win32' ? 'yt-dlp.cmd' : 'yt-dlp.sh')
-    ])
+    return firstExisting([resourcePath('tools', 'yt-dlp', getPlatformToolFilename('yt-dlp'))])
   }
 
   getFfmpegPath(): string | null {
-    return firstExisting([
-      resourcePath('tools', 'ffmpeg', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
-    ])
+    return firstExisting([resourcePath('tools', 'ffmpeg', getPlatformToolFilename('ffmpeg'))])
   }
 
   getNodePath(): string | null {
-    return firstExisting([
-      resourcePath('tools', 'node', process.platform === 'win32' ? 'node.exe' : 'node')
-    ])
+    return firstExisting([resourcePath('tools', 'node', getPlatformToolFilename('node'))])
   }
 
   getPatreonCliPath(): string | null {
@@ -254,12 +352,14 @@ export class PatreonSessionVault {
 export class DownloadManager {
   private readonly running = new Map<string, RunningDownload>()
   private readonly completedCookies = new Map<string, string>()
+  private readonly cancelledJobs = new Set<string>()
 
   constructor(
     private readonly tools: ToolResolver,
     private readonly vault: PatreonSessionVault,
     private readonly emitProgress: ProgressSink,
-    private readonly getDownloadDirectory: () => string | null = () => null
+    private readonly getDownloadDirectory: () => string | null = () => null,
+    private readonly spawnProcess: SpawnDownloadProcess = spawn
   ) {}
 
   start(request: ReactionDownloadRequest): StartDownloadResult {
@@ -274,6 +374,7 @@ export class DownloadManager {
       return
     }
 
+    this.cancelledJobs.add(jobId)
     running.child.kill()
     this.emit(jobId, running.source, 'cancelled', 'Download cancelled.', null)
     this.running.delete(jobId)
@@ -375,7 +476,7 @@ export class DownloadManager {
   ): Promise<void> {
     this.emit(jobId, source, 'downloading', source === 'youtube' ? 'Downloading reaction video...' : 'Downloading Patreon post...', null)
 
-    const child = spawn(command, args, { windowsHide: true })
+    const child = this.spawnProcess(command, args, { windowsHide: true })
     this.running.set(jobId, { child, cookie, source })
 
     let lastPath: string | null = null
@@ -408,32 +509,53 @@ export class DownloadManager {
     child.stderr.on('data', onText)
 
     await new Promise<void>((resolvePromise) => {
-      child.on('close', (code) => {
-        this.running.delete(jobId)
-        if (code === 0) {
-          const filePath = normalizeCompletedPath(lastPath) ?? findNewestMediaFile(downloadDir)
-          if (filePath) {
-            if (source === 'patreon' && cookie) {
-              this.completedCookies.set(jobId, cookie)
-            }
-            this.emit(jobId, source, 'success', 'Reaction video ready.', 100, filePath)
-          } else {
-            this.emit(jobId, source, 'failed', 'No playable video file was found in the download.', null, undefined, sanitizeOutput(output))
-          }
-        } else if (code !== null) {
-          const message =
-            source === 'youtube'
-              ? 'This video could not be downloaded. It may be private or restricted.'
-              : 'The Patreon post could not be downloaded. Check the subscription or session and try again.'
-          this.emit(jobId, source, 'failed', message, null, undefined, sanitizeOutput(output))
+      let settled = false
+      const finish = (callback: () => void): void => {
+        if (settled) {
+          return
         }
+
+        settled = true
+        callback()
         resolvePromise()
+      }
+
+      child.on('close', (code) => {
+        finish(() => {
+          const wasCancelled = this.cancelledJobs.delete(jobId)
+          this.running.delete(jobId)
+          if (wasCancelled) {
+            return
+          }
+
+          if (code === 0) {
+            const filePath = normalizeCompletedPath(lastPath) ?? findNewestMediaFile(downloadDir)
+            if (filePath) {
+              if (source === 'patreon' && cookie) {
+                this.completedCookies.set(jobId, cookie)
+              }
+              this.emit(jobId, source, 'success', 'Reaction video ready.', 100, filePath)
+            } else {
+              this.emit(jobId, source, 'failed', 'No playable video file was found in the download.', null, undefined, sanitizeOutput(output))
+            }
+          } else if (code !== null) {
+            const message =
+              source === 'youtube'
+                ? 'This video could not be downloaded. It may be private or restricted.'
+                : 'The Patreon post could not be downloaded. Check the subscription or session and try again.'
+            this.emit(jobId, source, 'failed', message, null, undefined, sanitizeOutput(output))
+          }
+        })
       })
 
       child.on('error', (error) => {
-        this.running.delete(jobId)
-        this.emit(jobId, source, 'failed', error.message, null, undefined, error.message)
-        resolvePromise()
+        finish(() => {
+          const wasCancelled = this.cancelledJobs.delete(jobId)
+          this.running.delete(jobId)
+          if (!wasCancelled) {
+            this.emit(jobId, source, 'failed', error.message, null, undefined, error.message)
+          }
+        })
       })
     })
   }
@@ -451,30 +573,40 @@ export class DownloadManager {
   }
 }
 
-export function canExtractNatively(browserName: BrowserName): boolean {
-  return browserName === 'firefox'
+export function canExtractNatively(browserName: BrowserName, platform: NodeJS.Platform = process.platform): boolean {
+  return getBrowserExtractionMode(browserName, platform) !== 'manual-only'
 }
 
-export function detectBrowsers(): BrowserDetection[] {
-  return BROWSERS.map((browser) => ({
-    name: browser.name,
-    label: browser.label,
-    installed: browser.paths.some((browserPath) => existsSync(browserPath)),
-    extractionSupported: canExtractNatively(browser.name),
-    paths: browser.paths.filter((browserPath) => existsSync(browserPath))
-  }))
+export function detectBrowsers(
+  platform: NodeJS.Platform = process.platform,
+  pathExists: (path: string) => boolean = existsSync
+): BrowserDetection[] {
+  return getBrowserDefinitions(platform).map((browser) => {
+    const paths = browser.paths.filter((browserPath) => pathExists(browserPath))
+    const extractionMode = getBrowserExtractionMode(browser.name, platform)
+    return {
+      name: browser.name,
+      label: browser.label,
+      installed: paths.length > 0,
+      extractionSupported: extractionMode !== 'manual-only',
+      extractionMode,
+      subtitle: getBrowserSubtitle(browser.name, platform),
+      paths
+    }
+  })
 }
 
 export async function extractPatreonSession(
   browserName: BrowserName,
   tools: ToolResolver,
-  vault: PatreonSessionVault
+  vault: PatreonSessionVault,
+  platform: NodeJS.Platform = process.platform
 ): Promise<{ ok: boolean; token?: string; message?: string }> {
-  if (!canExtractNatively(browserName)) {
-    const browserLabel = BROWSERS.find((b) => b.name === browserName)?.label ?? browserName
+  if (getBrowserExtractionMode(browserName, platform) === 'manual-only') {
+    const browserLabel = browserLabelFromName(browserName)
     return {
       ok: false,
-      message: `${browserLabel} uses App-Bound Encryption which prevents automatic cookie reading. Use the Patreon sign-in window or paste your session_id manually.`
+      message: `${browserLabel} requires manual Patreon session entry in WatchAlong. Paste your session_id to continue.`
     }
   }
 
@@ -684,7 +816,7 @@ function sanitizeOutput(output: string): string {
 }
 
 export function humanizeCookieExtractionError(browserName: BrowserName, output: string): string {
-  const browserLabel = BROWSERS.find((browser) => browser.name === browserName)?.label ?? browserName
+  const browserLabel = browserLabelFromName(browserName)
   if (/could not copy chrome cookie database|file is locked|locked or in use|database is locked/i.test(output)) {
     return `${browserLabel} is blocking cookie access. This is usually caused by browser encryption or a locked database. Use the Patreon sign-in window or paste session_id manually.`
   }

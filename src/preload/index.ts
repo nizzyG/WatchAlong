@@ -71,8 +71,8 @@ const api: WatchAlongApi = {
     return () => ipcRenderer.removeListener(`${IPC_PREFIX}:movie-window-pop-in-requested`, listener)
   },
   onMovieWindowClosed: (callback: MovieWindowLifecycleCallback) => {
-    const listener = (): void => {
-      callback()
+    const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<MovieWindowLifecycleCallback>[0]): void => {
+      callback(payload)
     }
     ipcRenderer.on(`${IPC_PREFIX}:movie-window-closed`, listener)
     return () => ipcRenderer.removeListener(`${IPC_PREFIX}:movie-window-closed`, listener)
