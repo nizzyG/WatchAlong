@@ -595,7 +595,7 @@ export function App(): JSX.Element {
     const handleWizardLifecycle = async (event: WizardLifecycleEvent): Promise<void> => {
       if (event.type === 'opened') {
         setWizardDimmed(true)
-        pausedForWizardRef.current = !movieWindowActive && canPlay && isPlaying
+        pausedForWizardRef.current = canPlay && isPlaying
         if (pausedForWizardRef.current) {
           controllerRef.current?.pause()
         }

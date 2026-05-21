@@ -267,6 +267,25 @@ describe('SmartReactionInput', () => {
     expect(screen.getByText(/Electron safeStorage/i)).toBeInTheDocument()
   })
 
+  it('discards the completed Patreon session when the storage offer is dismissed', async () => {
+    const onDismiss = vi.fn()
+    render(<PatreonStorageOffer jobId="job-1" onDismiss={onDismiss} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Dismiss/i }))
+
+    await waitFor(() => expect(window.watchAlong.discardLastPatreonSession).toHaveBeenCalledWith('job-1'))
+    expect(onDismiss).toHaveBeenCalled()
+  })
+
+  it('saves the completed Patreon session when the storage toggle is enabled', async () => {
+    render(<PatreonStorageOffer jobId="job-1" onDismiss={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Save/i }))
+
+    await waitFor(() => expect(window.watchAlong.saveLastPatreonSession).toHaveBeenCalledWith('job-1'))
+    expect(window.watchAlong.discardLastPatreonSession).not.toHaveBeenCalled()
+  })
+
   it('rejects Patreon lookalike domains while accepting Patreon post URLs', () => {
     expect(isValidPatreonPostUrl('https://www.patreon.com/posts/example-123')).toBe(true)
     expect(isValidPatreonPostUrl('https://patreon.com/posts/example-123')).toBe(true)
@@ -311,6 +330,7 @@ function createApi(): WatchAlongApi {
     openPatreonLoginWindow: vi.fn(async () => ({ ok: false })),
     getSavedPatreonSessionStatus: vi.fn(async () => ({ available: false, canEncrypt: true })),
     saveLastPatreonSession: vi.fn(async () => ({ available: true, canEncrypt: true })),
+    discardLastPatreonSession: vi.fn(async () => ({ available: false, canEncrypt: true })),
     forgetPatreonSession: vi.fn(async () => ({ available: false, canEncrypt: true })),
     startReactionDownload: vi.fn(async () => ({ jobId: 'job-1' })),
     cancelDownload: vi.fn(async () => undefined),

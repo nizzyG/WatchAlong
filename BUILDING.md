@@ -14,7 +14,7 @@ Install dependencies from the repository root:
 npm install
 ```
 
-The root install also runs `npm ci --prefix resources/tools/patreon-dl` so the bundled Patreon downloader has its own reproducible dependency tree.
+The root install also runs `npm ci --omit=dev --prefix resources/tools/patreon-dl` so the bundled Patreon downloader has its own reproducible production dependency tree.
 
 Build the app:
 

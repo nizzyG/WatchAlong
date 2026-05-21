@@ -153,6 +153,7 @@ function createApi(): WatchAlongApi {
     openPatreonLoginWindow: vi.fn(async () => ({ ok: false })),
     getSavedPatreonSessionStatus: vi.fn(async () => ({ available: false, canEncrypt: true })),
     saveLastPatreonSession: vi.fn(async () => ({ available: true, canEncrypt: true })),
+    discardLastPatreonSession: vi.fn(async () => ({ available: false, canEncrypt: true })),
     forgetPatreonSession: vi.fn(async () => ({ available: false, canEncrypt: true })),
     startReactionDownload: vi.fn(async () => ({ jobId: 'job-1' })),
     cancelDownload: vi.fn(async () => undefined),

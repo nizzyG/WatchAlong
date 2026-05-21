@@ -6,6 +6,7 @@ import type {
   LibrarySession,
   MovieWindowClosedEvent,
   MovieWindowLifecycleCallback,
+  RemoteMediaEventCallback,
   SessionLibrary,
   WatchAlongApi,
   WizardLifecycleCallback
@@ -155,6 +156,7 @@ function createApi(
     openPatreonLoginWindow: vi.fn(async () => ({ ok: false })),
     getSavedPatreonSessionStatus: vi.fn(async () => ({ available: false, canEncrypt: true })),
     saveLastPatreonSession: vi.fn(async () => ({ available: true, canEncrypt: true })),
+    discardLastPatreonSession: vi.fn(async () => ({ available: false, canEncrypt: true })),
     forgetPatreonSession: vi.fn(async () => ({ available: false, canEncrypt: true })),
     startReactionDownload: vi.fn(async () => ({ jobId: 'job-1' })),
     cancelDownload: vi.fn(async () => undefined),
@@ -509,6 +511,61 @@ describe('App', () => {
     await waitFor(() => expect(container.querySelector('.main-window-dim')).not.toBeInTheDocument())
     expect(api.closeMovieWindow).not.toHaveBeenCalled()
     expect(document.querySelector('video.pip-video')).not.toBeInTheDocument()
+  })
+
+  it('pauses and resumes a playing popped-out movie around a cancelled wizard', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    let movieMediaCallback: RemoteMediaEventCallback | null = null
+    api.onMovieMediaEvent = vi.fn((callback: RemoteMediaEventCallback) => {
+      movieMediaCallback = callback
+      return vi.fn()
+    })
+    api.sendMovieMediaCommand = vi.fn(async (command) => {
+      const state = remoteState({
+        currentTime: command.type === 'setCurrentTime' ? command.value : 0,
+        paused: command.type !== 'play',
+        seeking: false
+      })
+      if (command.type === 'setCurrentTime') {
+        queueMicrotask(() => movieMediaCallback?.({ type: 'seeked', state }))
+      } else if (command.type === 'play') {
+        queueMicrotask(() => movieMediaCallback?.({ type: 'play', state }))
+      } else if (command.type === 'pause') {
+        queueMicrotask(() => movieMediaCallback?.({ type: 'pause', state }))
+      }
+      return { id: command.id, ok: true, state }
+    })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+    fireEvent.click(screen.getByLabelText('Play'))
+    await waitFor(() => expect(playMock).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByLabelText('Pause')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByLabelText('Pop out movie to separate window'))
+    await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(api.sendMovieMediaCommand).toHaveBeenCalledWith(expect.objectContaining({ type: 'setCurrentTime' }))
+    )
+    await waitFor(() =>
+      expect(api.sendMovieMediaCommand).toHaveBeenCalledWith(expect.objectContaining({ type: 'play' }))
+    )
+    vi.mocked(api.sendMovieMediaCommand).mockClear()
+
+    act(() => api.emitWizardLifecycle({ type: 'opened' }))
+    await waitFor(() =>
+      expect(api.sendMovieMediaCommand).toHaveBeenCalledWith(expect.objectContaining({ type: 'pause' }))
+    )
+
+    vi.mocked(api.sendMovieMediaCommand).mockClear()
+    act(() => api.emitWizardLifecycle({ type: 'closed', outcome: 'cancelled' }))
+    await waitFor(() =>
+      expect(api.sendMovieMediaCommand).toHaveBeenCalledWith(expect.objectContaining({ type: 'play' }))
+    )
+    expect(api.closeMovieWindow).not.toHaveBeenCalled()
   })
 
   it('returns an unresponsive movie window to PiP with a helpful message', async () => {

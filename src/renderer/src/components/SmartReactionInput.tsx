@@ -419,12 +419,22 @@ export function PatreonStorageOffer({ jobId, onDismiss }: PatreonStorageOfferPro
   const [status, setStatus] = useState<SavedPatreonSessionStatus | null>(null)
 
   const toggle = async (): Promise<void> => {
-    const next = !enabled
-    setEnabled(next)
-    if (next) {
-      setStatus(await window.watchAlong.saveLastPatreonSession(jobId))
+    if (!enabled) {
+      const nextStatus = await window.watchAlong.saveLastPatreonSession(jobId)
+      setStatus(nextStatus)
+      setEnabled(nextStatus.available)
     } else {
-      setStatus(await window.watchAlong.forgetPatreonSession())
+      const nextStatus = await window.watchAlong.forgetPatreonSession()
+      setStatus(nextStatus)
+      setEnabled(false)
+    }
+  }
+
+  const dismiss = async (): Promise<void> => {
+    try {
+      await window.watchAlong.discardLastPatreonSession(jobId)
+    } finally {
+      onDismiss()
     }
   }
 
@@ -450,7 +460,7 @@ export function PatreonStorageOffer({ jobId, onDismiss }: PatreonStorageOfferPro
       <button className="link-button" type="button" onClick={() => setLearnMore((current) => !current)}>
         Learn more
       </button>
-      <button className="icon-button" type="button" title="Dismiss" aria-label="Dismiss" onClick={onDismiss}>
+      <button className="icon-button" type="button" title="Dismiss" aria-label="Dismiss" onClick={() => void dismiss()}>
         <X size={16} aria-hidden />
       </button>
     </aside>

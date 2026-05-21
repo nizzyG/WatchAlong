@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
-    "postinstall": "npm ci --prefix resources/tools/patreon-dl",
+    "postinstall": "npm ci --omit=dev --prefix resources/tools/patreon-dl",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "build": "npm run postinstall && npm run typecheck && electron-vite build",
@@ -47,21 +47,85 @@
       {
         "from": "ATTRIBUTION.md",
         "to": "ATTRIBUTION.md"
-      },
-      {
-        "from": "resources/tools",
-        "to": "tools",
-        "filter": [
-          "**/*"
-        ]
       }
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "extraResources": [
+        {
+          "from": "resources/tools/yt-dlp",
+          "to": "tools/yt-dlp",
+          "filter": [
+            "yt-dlp.exe"
+          ]
+        },
+        {
+          "from": "resources/tools/ffmpeg",
+          "to": "tools/ffmpeg",
+          "filter": [
+            "ffmpeg.exe",
+            "ffprobe.exe"
+          ]
+        },
+        {
+          "from": "resources/tools/node",
+          "to": "tools/node",
+          "filter": [
+            "node.exe"
+          ]
+        },
+        {
+          "from": "resources/tools/patreon-dl",
+          "to": "tools/patreon-dl",
+          "filter": [
+            "package.json",
+            "node_modules/**/*",
+            "!node_modules/.bin{,/**/*}",
+            "!node_modules/**/{test,tests,__tests__,example,examples,coverage,doc,docs,scripts}{,/**/*}",
+            "!node_modules/**/*.{map,ts,tsx,md,markdown}",
+            "!node_modules/**/{package-lock.json,yarn.lock,pnpm-lock.yaml,npm-shrinkwrap.json}"
+          ]
+        }
+      ]
     },
     "mac": {
       "target": "dmg",
-      "category": "public.app-category.video"
+      "category": "public.app-category.video",
+      "extraResources": [
+        {
+          "from": "resources/tools/yt-dlp",
+          "to": "tools/yt-dlp",
+          "filter": [
+            "yt-dlp_macos"
+          ]
+        },
+        {
+          "from": "resources/tools/ffmpeg",
+          "to": "tools/ffmpeg",
+          "filter": [
+            "ffmpeg-darwin-${arch}"
+          ]
+        },
+        {
+          "from": "resources/tools/node",
+          "to": "tools/node",
+          "filter": [
+            "node-darwin-${arch}"
+          ]
+        },
+        {
+          "from": "resources/tools/patreon-dl",
+          "to": "tools/patreon-dl",
+          "filter": [
+            "package.json",
+            "node_modules/**/*",
+            "!node_modules/.bin{,/**/*}",
+            "!node_modules/**/{test,tests,__tests__,example,examples,coverage,doc,docs,scripts}{,/**/*}",
+            "!node_modules/**/*.{map,ts,tsx,md,markdown}",
+            "!node_modules/**/{package-lock.json,yarn.lock,pnpm-lock.yaml,npm-shrinkwrap.json}"
+          ]
+        }
+      ]
     }
   }
 }

@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -260,8 +260,105 @@ describe('media services', () => {
       expect(states).not.toContain('failed')
       expect(states).not.toContain('success')
     })
+
+    it('passes Patreon cookies through a temporary config file and clears them after save', async () => {
+      const child = createFakeChildProcess()
+      const cookie = 'session_id=private-cookie'
+      const { manager, vault, spawnProcess } = createPatreonDownloadManager(child, tempDir, cookie)
+
+      const { jobId } = manager.start({ source: 'patreon', url: 'https://www.patreon.com/posts/example-123', sessionSource: { type: 'manual', sessionId: cookie } })
+      await vi.advanceTimersByTimeAsync(25)
+
+      const args = spawnProcess.mock.calls[0][1]
+      const configPath = valueAfter(args, '--config-file')
+      const outDir = valueAfter(args, '--out-dir')
+      expect(args).not.toContain(cookie)
+      expect(args).not.toContain('--cookie')
+      expect(readFileSync(configPath, 'utf8')).toContain(cookie)
+
+      writeFileSync(join(outDir, 'reaction.mp4'), 'video')
+      child.emit('close', 0)
+      await flushPromises()
+
+      expect(existsSync(configPath)).toBe(false)
+      expect(manager.saveLastPatreonSession(jobId)).toEqual({ available: true, canEncrypt: true })
+      expect(vault.save).toHaveBeenCalledWith(cookie)
+      manager.saveLastPatreonSession(jobId)
+      expect(vault.save).toHaveBeenCalledTimes(1)
+    })
+
+    it('deletes the Patreon temp config and does not retain cookies after failure', async () => {
+      const child = createFakeChildProcess()
+      const cookie = 'session_id=failing-cookie'
+      const { manager, vault, spawnProcess } = createPatreonDownloadManager(child, tempDir, cookie)
+
+      const { jobId } = manager.start({ source: 'patreon', url: 'https://www.patreon.com/posts/example-123', sessionSource: { type: 'manual', sessionId: cookie } })
+      await vi.advanceTimersByTimeAsync(25)
+
+      const configPath = valueAfter(spawnProcess.mock.calls[0][1], '--config-file')
+      child.emit('close', 1)
+      await flushPromises()
+
+      expect(existsSync(configPath)).toBe(false)
+      manager.saveLastPatreonSession(jobId)
+      expect(vault.save).not.toHaveBeenCalled()
+    })
+
+    it('deletes the Patreon temp config and retained cookie when cancelled or discarded', async () => {
+      const child = createFakeChildProcess()
+      const cookie = 'session_id=discard-cookie'
+      const { manager, vault, spawnProcess } = createPatreonDownloadManager(child, tempDir, cookie)
+
+      const { jobId } = manager.start({ source: 'patreon', url: 'https://www.patreon.com/posts/example-123', sessionSource: { type: 'manual', sessionId: cookie } })
+      await vi.advanceTimersByTimeAsync(25)
+
+      const configPath = valueAfter(spawnProcess.mock.calls[0][1], '--config-file')
+      expect(existsSync(configPath)).toBe(true)
+      manager.cancel(jobId)
+      child.emit('close', 1)
+      await flushPromises()
+
+      expect(existsSync(configPath)).toBe(false)
+      expect(manager.discardLastPatreonSession(jobId)).toEqual({ available: false, canEncrypt: true })
+      manager.saveLastPatreonSession(jobId)
+      expect(vault.save).not.toHaveBeenCalled()
+    })
   })
 })
+
+function createPatreonDownloadManager(child: ReturnType<typeof createFakeChildProcess>, tempDir: string, cookie: string) {
+  const vault = {
+    resolve: vi.fn(() => cookie),
+    save: vi.fn(() => ({ available: true, canEncrypt: true })),
+    status: vi.fn(() => ({ available: false, canEncrypt: true }))
+  }
+  const spawnProcess = vi.fn((_command: string, _args: string[]) => child as never)
+  const manager = new DownloadManager(
+    {
+      getPatreonCliPath: () => 'patreon-dl.js',
+      getPatreonDistPath: () => 'dist/cli/index.js',
+      getNodePath: () => 'node',
+      getFfmpegPath: () => null
+    } as ToolResolver,
+    vault as never,
+    () => undefined,
+    () => tempDir,
+    spawnProcess as never
+  )
+
+  return { manager, vault, spawnProcess }
+}
+
+function valueAfter(args: string[], flag: string): string {
+  const index = args.indexOf(flag)
+  expect(index).toBeGreaterThanOrEqual(0)
+  return args[index + 1]
+}
+
+async function flushPromises(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+}
 
 function createFakeChildProcess(): EventEmitter & {
   stdout: EventEmitter

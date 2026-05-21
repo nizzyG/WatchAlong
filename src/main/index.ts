@@ -765,6 +765,10 @@ function registerIpc(): void {
     return downloadManager.saveLastPatreonSession(jobId)
   })
 
+  ipcMain.handle(`${IPC_PREFIX}:discard-last-patreon-session`, (_event, jobId: string) => {
+    return downloadManager.discardLastPatreonSession(jobId)
+  })
+
   ipcMain.handle(`${IPC_PREFIX}:forget-patreon-session`, () => patreonVault.forget())
 
   ipcMain.handle(`${IPC_PREFIX}:start-reaction-download`, (_event, request: ReactionDownloadRequest) => {

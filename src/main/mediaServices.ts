@@ -2,6 +2,7 @@ import { app, safeStorage } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import {
   existsSync,
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -36,8 +37,8 @@ type SpawnDownloadProcess = (
 
 interface RunningDownload {
   child: ChildProcessWithoutNullStreams
-  cookie: string | null
   source: 'youtube' | 'patreon'
+  cleanup?: () => void
 }
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov', '.webm', '.mkv', '.avi'])
@@ -376,6 +377,8 @@ export class DownloadManager {
 
     this.cancelledJobs.add(jobId)
     running.child.kill()
+    running.cleanup?.()
+    this.completedCookies.delete(jobId)
     this.emit(jobId, running.source, 'cancelled', 'Download cancelled.', null)
     this.running.delete(jobId)
   }
@@ -383,9 +386,18 @@ export class DownloadManager {
   saveLastPatreonSession(jobId: string): SavedPatreonSessionStatus {
     const cookie = this.completedCookies.get(jobId)
     if (cookie) {
-      return this.vault.save(cookie)
+      try {
+        return this.vault.save(cookie)
+      } finally {
+        this.completedCookies.delete(jobId)
+      }
     }
 
+    return this.vault.status()
+  }
+
+  discardLastPatreonSession(jobId: string): SavedPatreonSessionStatus {
+    this.completedCookies.delete(jobId)
     return this.vault.status()
   }
 
@@ -456,14 +468,15 @@ export class DownloadManager {
     }
 
     const downloadDir = createDownloadDir('patreon', this.getDownloadDirectory())
-    const args = [cliPath, '--no-prompt', '--log-level', 'info', '--out-dir', downloadDir, '--cookie', cookie]
+    const cookieConfig = createPatreonCookieConfig(cookie)
+    const args = [cliPath, '--no-prompt', '--log-level', 'info', '--out-dir', downloadDir, '--config-file', cookieConfig.path]
     const ffmpegPath = this.tools.getFfmpegPath()
     if (ffmpegPath) {
       args.push('--ffmpeg', ffmpegPath)
     }
     args.push(url)
 
-    await this.spawnDownload(jobId, 'patreon', nodePath, args, downloadDir, cookie)
+    await this.spawnDownload(jobId, 'patreon', nodePath, args, downloadDir, cookie, cookieConfig.cleanup)
   }
 
   private async spawnDownload(
@@ -472,12 +485,13 @@ export class DownloadManager {
     command: string,
     args: string[],
     downloadDir: string,
-    cookie: string | null
+    cookie: string | null,
+    cleanup?: () => void
   ): Promise<void> {
     this.emit(jobId, source, 'downloading', source === 'youtube' ? 'Downloading reaction video...' : 'Downloading Patreon post...', null)
 
     const child = this.spawnProcess(command, args, { windowsHide: true })
-    this.running.set(jobId, { child, cookie, source })
+    this.running.set(jobId, { child, source, cleanup })
 
     let lastPath: string | null = null
     let output = ''
@@ -516,6 +530,7 @@ export class DownloadManager {
         }
 
         settled = true
+        cleanup?.()
         callback()
         resolvePromise()
       }
@@ -765,6 +780,25 @@ function createDownloadDir(source: 'youtube' | 'patreon', preferredRoot: string 
   const dir = join(preferredRoot ?? getDefaultReactionDownloadDirectory(), source, randomUUID())
   mkdirSync(dir, { recursive: true })
   return dir
+}
+
+function createPatreonCookieConfig(cookie: string): { path: string; cleanup: () => void } {
+  const tempDir = mkdtempSync(join(tmpdir(), 'watchalong-patreon-dl-'))
+  const configPath = join(tempDir, 'patreon-dl.conf')
+  const singleLineCookie = cookie.replace(/[\r\n]/g, '')
+
+  try {
+    writeFileSync(configPath, `[downloader]\ncookie = "${singleLineCookie}"\n`, { encoding: 'utf8', mode: 0o600 })
+    chmodSync(configPath, 0o600)
+  } catch (error) {
+    rmSync(tempDir, { recursive: true, force: true })
+    throw error
+  }
+
+  return {
+    path: configPath,
+    cleanup: () => rmSync(tempDir, { recursive: true, force: true })
+  }
 }
 
 function findNewestMediaFile(root: string): string | null {

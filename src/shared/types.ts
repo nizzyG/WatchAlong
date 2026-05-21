@@ -292,6 +292,7 @@ export interface WatchAlongApi {
   openPatreonLoginWindow(): Promise<PatreonSessionExtractionResult>
   getSavedPatreonSessionStatus(): Promise<SavedPatreonSessionStatus>
   saveLastPatreonSession(jobId: string): Promise<SavedPatreonSessionStatus>
+  discardLastPatreonSession(jobId: string): Promise<SavedPatreonSessionStatus>
   forgetPatreonSession(): Promise<SavedPatreonSessionStatus>
   startReactionDownload(request: ReactionDownloadRequest): Promise<StartDownloadResult>
   cancelDownload(jobId: string): Promise<void>

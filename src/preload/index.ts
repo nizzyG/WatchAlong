@@ -83,6 +83,7 @@ const api: WatchAlongApi = {
   openPatreonLoginWindow: () => ipcRenderer.invoke(`${IPC_PREFIX}:open-patreon-login-window`),
   getSavedPatreonSessionStatus: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-saved-patreon-session-status`),
   saveLastPatreonSession: (jobId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:save-last-patreon-session`, jobId),
+  discardLastPatreonSession: (jobId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:discard-last-patreon-session`, jobId),
   forgetPatreonSession: () => ipcRenderer.invoke(`${IPC_PREFIX}:forget-patreon-session`),
   startReactionDownload: (request: ReactionDownloadRequest) => ipcRenderer.invoke(`${IPC_PREFIX}:start-reaction-download`, request),
   cancelDownload: (jobId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:cancel-download`, jobId),
