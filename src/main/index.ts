@@ -858,12 +858,35 @@ function openPatreonLoginWindow(parent: BrowserWindow): Promise<{ ok: boolean; t
 
     loginWindow.webContents.setWindowOpenHandler(({ url }) => {
       if (isAllowedPatreonLoginUrl(url)) {
-        void loginWindow.loadURL(url)
-      } else {
-        openExternalUrl(url)
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            parent: loginWindow,
+            backgroundColor: '#05070a',
+            autoHideMenuBar: true
+          }
+        }
       }
+      openExternalUrl(url)
       return { action: 'deny' }
     })
+
+    loginWindow.webContents.on('did-create-window', (popupWindow) => {
+      popupWindow.webContents.setWindowOpenHandler(({ url }) => {
+        if (isAllowedPatreonLoginUrl(url)) {
+          return { action: 'allow' }
+        }
+        openExternalUrl(url)
+        return { action: 'deny' }
+      })
+      popupWindow.webContents.on('will-navigate', (event, url) => {
+        if (!isAllowedPatreonLoginUrl(url)) {
+          event.preventDefault()
+          openExternalUrl(url)
+        }
+      })
+    })
+
     loginWindow.webContents.on('will-navigate', (event, url) => {
       if (!isAllowedPatreonLoginUrl(url)) {
         event.preventDefault()
@@ -884,7 +907,16 @@ function openPatreonLoginWindow(parent: BrowserWindow): Promise<{ ok: boolean; t
 function isAllowedPatreonLoginUrl(rawUrl: string): boolean {
   try {
     const url = new URL(rawUrl)
-    return url.protocol === 'https:' && (url.hostname === 'patreon.com' || url.hostname === 'www.patreon.com')
+    if (url.protocol !== 'https:') {
+      return false
+    }
+    const host = url.hostname
+    return (
+      host === 'patreon.com' ||
+      host === 'www.patreon.com' ||
+      host.endsWith('.google.com') ||
+      host.endsWith('.apple.com')
+    )
   } catch {
     return false
   }

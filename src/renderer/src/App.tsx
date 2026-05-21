@@ -112,6 +112,9 @@ export function App(): JSX.Element {
   const commandPanelButtonRef = useRef<HTMLButtonElement>(null)
   const commandPanelReturnFocusRef = useRef<HTMLElement | null>(null)
   const resumeAfterRepairRef = useRef(false)
+  const canPlayRef = useRef(false)
+  const isPlayingRef = useRef(false)
+  const persistRef = useRef<typeof persist>(null as unknown as typeof persist)
 
   const [emptySession] = useState(() => createDefaultSession())
   const [library, setLibrary] = useState<SessionLibrary>(() => createDefaultLibrary())
@@ -423,6 +426,8 @@ export function App(): JSX.Element {
     })
   }, [activeSubtitle?.text, movieWindowActive])
 
+
+
   useEffect(() => {
     const onResize = (): void => {
       const current = sessionRef.current
@@ -433,15 +438,22 @@ export function App(): JSX.Element {
         nextOverlay.width !== current.overlay.width ||
         nextOverlay.height !== current.overlay.height
       ) {
-        void persist({ overlay: nextOverlay })
+        void persistRef.current({ overlay: nextOverlay })
       }
     }
 
     window.addEventListener('resize', onResize)
     onResize()
     return () => window.removeEventListener('resize', onResize)
-  })
+  }, [])
 
+  // Effect intentionally omits a dependency array so the keydown handler always
+  // captures the latest closure values (commandPanelOpen, appView, callbacks).
+  // This means shortcuts like Space (play/pause) always reflect the current
+  // syncState without delay. The tradeoff is listener re-registration on every
+  // render, which is acceptable given addEventListener/removeEventListener churn
+  // is cheap and the alternative (refs for every captured value) would add
+  // significant complexity.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target instanceof HTMLElement ? event.target : null
@@ -540,6 +552,8 @@ export function App(): JSX.Element {
   const showSmartInput = !hasMissingMedia && !hasMedia && movieReady && !reactionReady
   const canPlay = hasMedia && metadataReady.reaction && metadataReady.movie
   const isPlaying = syncState === 'playing'
+  canPlayRef.current = canPlay
+  isPlayingRef.current = isPlaying
   const reactionDuration = Number.isFinite(durations.reaction) ? durations.reaction : 0
   const displayOffset = useMemo(() => signedSeconds(session.offsetSeconds), [session.offsetSeconds])
   const effectiveOffset = useMemo(
@@ -595,7 +609,7 @@ export function App(): JSX.Element {
     const handleWizardLifecycle = async (event: WizardLifecycleEvent): Promise<void> => {
       if (event.type === 'opened') {
         setWizardDimmed(true)
-        pausedForWizardRef.current = canPlay && isPlaying
+        pausedForWizardRef.current = canPlayRef.current && isPlayingRef.current
         if (pausedForWizardRef.current) {
           controllerRef.current?.pause()
         }
@@ -606,7 +620,7 @@ export function App(): JSX.Element {
       if (event.outcome === 'cancelled') {
         const shouldResume = pausedForWizardRef.current
         pausedForWizardRef.current = false
-        if (shouldResume && canPlay) {
+        if (shouldResume && canPlayRef.current) {
           controllerRef.current?.play()
         }
         return
@@ -640,7 +654,7 @@ export function App(): JSX.Element {
     return window.watchAlong.onWizardLifecycle((event) => {
       void handleWizardLifecycle(event)
     })
-  }, [canPlay, commitLibrary, isPlaying, movieWindowActive, refreshMediaUrls])
+  }, [commitLibrary, movieWindowActive, refreshMediaUrls])
 
   useEffect(() => {
     return window.watchAlong.onDownloadProgress((event) => {
@@ -697,6 +711,7 @@ export function App(): JSX.Element {
     const next = await window.watchAlong.saveActiveSession(patch)
     return commitLibrary(next)
   }
+  persistRef.current = persist
 
   const createRemoteMovieAdapter = (initialState: Partial<RemoteMediaState>): RemoteVideoAdapter => {
     destroyRemoteMovieAdapter()
@@ -858,10 +873,17 @@ export function App(): JSX.Element {
     })
   }
 
+  const popInMovieRef = useRef(popInMovie)
+  popInMovieRef.current = popInMovie
+  const handleMovieWindowGeometryRef = useRef(handleMovieWindowGeometry)
+  handleMovieWindowGeometryRef.current = handleMovieWindowGeometry
+
   useEffect(() => {
-    const unsubscribeGeometry = window.watchAlong.onMovieWindowGeometry(handleMovieWindowGeometry)
+    const unsubscribeGeometry = window.watchAlong.onMovieWindowGeometry((event) => {
+      handleMovieWindowGeometryRef.current(event)
+    })
     const unsubscribePopIn = window.watchAlong.onMovieWindowPopInRequest(() => {
-      void popInMovie()
+      void popInMovieRef.current()
     })
     const unsubscribeClosed = window.watchAlong.onMovieWindowClosed((event) => {
       if (event?.reason === 'unresponsive') {
@@ -874,7 +896,7 @@ export function App(): JSX.Element {
       destroyRemoteMovieAdapter()
       restoredPopOutSessionRef.current = sessionRef.current.id
       setMovieWindowActive(false)
-      void persist({ isMoviePoppedOut: false })
+      void persistRef.current({ isMoviePoppedOut: false })
       window.requestAnimationFrame(() => {
         if (movieVideoRef.current) {
           buildController(createHtmlVideoAdapter('movie', movieVideoRef.current))
@@ -887,7 +909,7 @@ export function App(): JSX.Element {
       unsubscribePopIn()
       unsubscribeClosed()
     }
-  })
+  }, [buildController, destroyRemoteMovieAdapter])
 
   useEffect(() => {
     return () => {
@@ -911,11 +933,13 @@ export function App(): JSX.Element {
 
     restoredPopOutSessionRef.current = activeSession.id
     void popOutMovie('screen')
-  })
+  }) // Effect intentionally omits a dependency array. The ref guard
+  // (restoredPopOutSessionRef) ensures pop-out only runs once per session.
 
   const openImportWizard = (options?: ImportWizardLaunchOptions): void => {
     setCommandPanelOpen(false)
     setControlsIdle(false)
+    controllerRef.current?.pause()
     void window.watchAlong.openImportWizard(options)
   }
 

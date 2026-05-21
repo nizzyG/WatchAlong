@@ -101,10 +101,7 @@ export class RemoteVideoAdapter implements VideoAdapter {
   }
 
   async play(): Promise<void> {
-    const result = await this.send({ type: 'play' })
-    if (!result.ok) {
-      throw new Error(result.error ?? 'Movie playback failed')
-    }
+    await this.send({ type: 'play' })
   }
 
   pause(): void {
@@ -133,10 +130,10 @@ export class RemoteVideoAdapter implements VideoAdapter {
 
   private async send(command: RemoteMediaCommandInput): Promise<RemoteMediaCommandResult> {
     const result = await this.transport.sendCommand({ ...command, id: `movie-${++nextCommandId}` } as RemoteMediaCommand)
-    this.state = { ...this.state, ...result.state }
     if (!result.ok) {
       throw new Error(result.error ?? 'Movie command failed')
     }
+    this.state = { ...this.state, ...result.state }
     return result
   }
 
