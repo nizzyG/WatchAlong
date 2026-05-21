@@ -1,6 +1,6 @@
 {
   "name": "watchalong",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Local desktop app for synchronized reaction watchalong playback.",
   "main": "out/main/index.js",
   "author": "WatchAlong",

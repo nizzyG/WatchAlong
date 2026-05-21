@@ -52,7 +52,7 @@ That's it. No command lines, no complicated setup.
 
 ## 🖤 Support WatchAlong
 
-WatchAlong is and always will be free. If it makes your watchalong nights better, consider [buying the developer a coffee](https://ko-fi.com/your-link-here) ☕.
+WatchAlong is and always will be free. If it makes your watchalong nights better, consider [buying the developer a coffee](https://ko-fi.com/watchalong) ☕.
 
 ---
 
