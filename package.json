@@ -77,15 +77,10 @@
           ]
         },
         {
-          "from": "resources/tools/patreon-dl",
-          "to": "tools/patreon-dl",
+          "from": "resources/tools",
+          "to": "tools",
           "filter": [
-            "package.json",
-            "node_modules/**/*",
-            "!node_modules/.bin{,/**/*}",
-            "!node_modules/**/{test,tests,__tests__,example,examples,coverage,doc,docs,scripts}{,/**/*}",
-            "!node_modules/**/*.{map,ts,tsx,md,markdown}",
-            "!node_modules/**/{package-lock.json,yarn.lock,pnpm-lock.yaml,npm-shrinkwrap.json}"
+            "patreon-dl/**/*"
           ]
         }
       ]
@@ -116,15 +111,10 @@
           ]
         },
         {
-          "from": "resources/tools/patreon-dl",
-          "to": "tools/patreon-dl",
+          "from": "resources/tools",
+          "to": "tools",
           "filter": [
-            "package.json",
-            "node_modules/**/*",
-            "!node_modules/.bin{,/**/*}",
-            "!node_modules/**/{test,tests,__tests__,example,examples,coverage,doc,docs,scripts}{,/**/*}",
-            "!node_modules/**/*.{map,ts,tsx,md,markdown}",
-            "!node_modules/**/{package-lock.json,yarn.lock,pnpm-lock.yaml,npm-shrinkwrap.json}"
+            "patreon-dl/**/*"
           ]
         }
       ]

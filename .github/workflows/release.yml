@@ -79,5 +79,6 @@ jobs:
           files: |
             dist-artifacts/*.exe
             dist-artifacts/*.dmg
+          overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
