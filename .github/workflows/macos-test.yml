@@ -1,0 +1,48 @@
+name: macOS SSH Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build macOS + SSH
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.15.0'
+          cache: npm
+
+      - name: Make macOS tools executable
+        run: chmod +x resources/tools/ffmpeg/ffmpeg-darwin-* resources/tools/node/node-darwin-* resources/tools/yt-dlp/yt-dlp_macos
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build distribution
+        run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Show what was built
+        run: |
+          echo "=== DMG files ==="
+          ls -lh release/*.dmg 2>/dev/null || echo "No DMG found"
+          echo ""
+          echo "=== macOS tools in release ==="
+          ls -lh release/*-unpacked/WatchAlong.app/Contents/Resources/tools/ 2>/dev/null || echo "Checking app bundle..."
+          echo ""
+          echo "=== patreon-dl contents ==="
+          ls -lh release/*-unpacked/WatchAlong.app/Contents/Resources/tools/patreon-dl/node_modules/patreon-dl/bin/ 2>/dev/null || echo "Checking patreon-dl location..."
+
+      - name: Start SSH session
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true
