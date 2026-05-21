@@ -27,7 +27,7 @@ jobs:
         run: npm ci
 
       - name: Build distribution
-        run: npm run dist
+        run: npm run dist -- --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
@@ -36,11 +36,24 @@ jobs:
           echo "=== DMG files ==="
           ls -lh release/*.dmg 2>/dev/null || echo "No DMG found"
           echo ""
-          echo "=== macOS tools in release ==="
-          ls -lh release/*-unpacked/WatchAlong.app/Contents/Resources/tools/ 2>/dev/null || echo "Checking app bundle..."
+          echo "=== macOS app bundle ==="
+          if [ -d "release/mac/WatchAlong.app" ]; then
+            APP="release/mac/WatchAlong.app"
+          elif [ -d "release/mac-arm64/WatchAlong.app" ]; then
+            APP="release/mac-arm64/WatchAlong.app"
+          else
+            echo "Looking for app bundle..."
+            find release -name "WatchAlong.app" -type d 2>/dev/null
+            APP=$(find release -name "WatchAlong.app" -type d 2>/dev/null | head -1)
+          fi
+          echo "App: $APP"
+          echo ""
+          echo "=== macOS tools ==="
+          ls -lh "$APP/Contents/Resources/tools/" 2>/dev/null || echo "No tools dir"
           echo ""
           echo "=== patreon-dl contents ==="
-          ls -lh release/*-unpacked/WatchAlong.app/Contents/Resources/tools/patreon-dl/node_modules/patreon-dl/bin/ 2>/dev/null || echo "Checking patreon-dl location..."
+          ls -lh "$APP/Contents/Resources/tools/patreon-dl/node_modules/patreon-dl/bin/" 2>/dev/null || echo "No patreon-dl bin"
+          ls -lh "$APP/Contents/Resources/tools/patreon-dl/node_modules/patreon-dl/dist/index.js" 2>/dev/null || echo "No patreon-dl dist"
 
       - name: Start SSH session
         uses: mxschmitt/action-tmate@v3
