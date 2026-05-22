@@ -21,16 +21,17 @@ jobs:
             os: windows-latest
             artifact-name: watchalong-windows
             artifact-path: release/*.exe
+            arch-args: ""
           - name: macOS (Intel)
             os: macos-latest
             artifact-name: watchalong-macos-x64
             artifact-path: release/*.dmg
-            electron-builder-args: --mac dmg --x64 --publish never
+            arch-args: "--mac dmg --x64"
           - name: macOS (Apple Silicon)
             os: macos-latest
             artifact-name: watchalong-macos-arm64
             artifact-path: release/*.dmg
-            electron-builder-args: --mac dmg --arm64 --publish never
+            arch-args: "--mac dmg --arm64"
 
     steps:
       - name: Check out repository
@@ -46,17 +47,13 @@ jobs:
 
       - name: Make macOS tools executable
         if: runner.os == 'macOS'
-        run: |
-          chmod +x \
-            resources/tools/ffmpeg/ffmpeg-darwin-* \
-            resources/tools/node/node-darwin-* \
-            resources/tools/yt-dlp/yt-dlp_macos
+        run: chmod +x resources/tools/ffmpeg/ffmpeg-darwin-* resources/tools/node/node-darwin-* resources/tools/yt-dlp/yt-dlp_macos
 
       - name: Install dependencies
         run: npm ci
 
       - name: Build distribution
-        run: npm run dist -- ${{ matrix.electron-builder-args }}
+        run: npm run dist -- ${{ matrix.arch-args }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
