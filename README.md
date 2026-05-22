@@ -6,8 +6,6 @@ You support the creator. You own the film. WatchAlong handles the rest.
 
 If you're already a paying patron, you've done the part that actually matters. WatchAlong simply makes the watching effortless. It locks your movie to the reaction, fixes that weird frame‑rate drift, and lets you pause or walk away without ever re‑syncing. No accounts, no cloud, no streaming services. Just a perfect watchalong, every time.
 
----
-
 ## ✨ Why You'll Love It
 
 - **Sync once, then forget it.** A quick manual sync at the start of the movie—usually right when the reactor does their “3… 2… 1… play” countdown—is all it takes. After that, WatchAlong keeps both videos frame‑perfect for the rest of the film.
@@ -17,8 +15,6 @@ If you're already a paying patron, you've done the part that actually matters. W
 - **Your library, your way.** All your watchalong pairings are saved in a beautiful dark‑themed library. Pick up right where you left off, every time.
 - **Subtitles included.** Load your own SRT or VTT subtitles and they'll display right over the movie.
 
----
-
 ## 🧭 Our Philosophy
 
 We believe in **owning your media** and **supporting the creators you love**.
@@ -26,8 +22,6 @@ We believe in **owning your media** and **supporting the creators you love**.
 - **You own your movies.** WatchAlong works with files you've ripped from discs you own, or DRM‑free downloads you've purchased. No streaming services, no monthly rentals.
 - **Reactors deserve to be paid.** Full‑length reactions are almost always behind a Patreon subscription. WatchAlong can't bypass that—you need an active subscription to access that content. We just make the experience better once you're a supporter.
 - **Everything stays local.** No accounts, no cloud, no telemetry. Your library, your sessions, your downloads—all of it lives on your own device.
-
----
 
 ## 🚀 Getting Started in 4 Steps
 
@@ -39,6 +33,19 @@ We believe in **owning your media** and **supporting the creators you love**.
 4. **Follow the friendly wizard** to load your movie and add a reaction from a local file, a YouTube link, or directly from Patreon.
 
 That's it. No command lines, no complicated setup.
+
+## 🚧 A Note on v1.0.0
+
+WatchAlong has been built with care, tested on Windows from end to end, and verified on macOS through automated builds and a virtual machine. But this is a first public release—made by one person, in their spare time, for a community they love.
+
+If you're an early adopter, thank you. You're helping shape what WatchAlong becomes.
+
+**What you can expect:**
+- **Windows:** Thoroughly tested. Should be smooth sailing.
+- **macOS:** Built and verified, but tested in a virtual machine rather than on real Apple hardware. If you're on a real Mac and run into anything odd, I want to hear about it.
+- **Feedback is welcome—and fast.** Found a bug? Have an idea? Open an issue on [GitHub](https://github.com/nizzyG/WatchAlong/issues). I'll be actively listening and shipping fixes quickly.
+
+This isn't a beta test in disguise—the tool works. But the first people who use it will help make it better for everyone who comes after. If that's you, I'm grateful.
 
 ---
 
