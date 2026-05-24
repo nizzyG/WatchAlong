@@ -207,7 +207,7 @@ This is normal for open‑source apps that aren't notarized by Apple (notarizati
 
 ### 36. How can I support WatchAlong?
 
-WatchAlong is free and open source, and it will stay that way. The best way to support it is to **support the reactors you love on Patreon**—they're the reason this tool exists. If you'd like to support development directly, there's a coffee cup button in the app's Help section, or visit [ko‑fi.com/watchalong](https://ko‑fi.com/watchalong).
+WatchAlong is free and open source, and it will stay that way. The best way to support it is to **support the reactors you love on Patreon**—they're the reason this tool exists. If you'd like to support development directly, use the Ko-fi button in the app's Help section or visit [https://ko-fi.com/watchalong](https://ko-fi.com/watchalong).
 
 ### 37. I found a bug or have an idea. Where do I report it?
 

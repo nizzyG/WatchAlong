@@ -137,4 +137,4 @@ Thank you for supporting your favorite content creators and owning your media. E
 
 ❓ [FAQ](https://github.com/nizzyG/WatchAlong/blob/main/FAQ.md)
 🐛 [Report a Bug](https://github.com/nizzyG/WatchAlong/issues)
-☕ [Buy the Dev a Coffee](https://ko-fi.com/watchalong)
+☕ [Support the Dev on Ko-fi](https://ko-fi.com/watchalong)

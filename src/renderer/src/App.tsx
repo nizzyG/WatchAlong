@@ -2536,19 +2536,12 @@ function CommandPanel({
             <button
               className="secondary-button"
               type="button"
-              disabled={!DONATION_URL}
-              title={DONATION_URL ? 'Open donation page' : 'Donation link coming soon.'}
-              aria-describedby="donation-help"
-              onClick={() => {
-                if (DONATION_URL) {
-                  window.open(DONATION_URL, '_blank')
-                }
-              }}
+              title="Open https://ko-fi.com/watchalong"
+              onClick={() => window.open(DONATION_URL, '_blank')}
             >
               <Coffee size={16} aria-hidden />
-              Buy the developer a coffee
+              Support the developer on Ko-fi
             </button>
-            {!DONATION_URL && <small id="donation-help">Donation link coming soon.</small>}
           </div>
         </CommandPanelSection>
       </aside>

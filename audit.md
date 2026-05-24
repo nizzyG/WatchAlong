@@ -94,13 +94,13 @@ The full suite passes, but `WizardApp.test.tsx` logs a React `act(...)` warning 
 
 Recommendation: wrap the triggering async state update in `act`/`waitFor` so the suite is quiet before release.
 
-### P3 - Release Polish Placeholders Remain
+### P3 - Release Polish Items Remain
 
-- `DONATION_URL` is still `null` (`src/renderer/src/App.tsx:92`), and the README still points at `https://ko-fi.com/your-link-here` (`README.md:68`).
+- `DONATION_URL` is set to `https://ko-fi.com/watchalong`, and the README points at the same active Ko-fi support page.
 - No app icon assets were found, and `package.json` does not configure an installer/app icon.
 - The README still describes the movie only as a PiP overlay (`README.md:26`, `README.md:28`) and does not mention the new detached movie-window behavior.
 
-Recommendation: either remove placeholder donation copy for the first release or provide the real link, add app icons, and update user-facing docs for pop-out behavior.
+Recommendation: keep the active support link in release builds, add app icons, and update user-facing docs for pop-out behavior.
 
 ## Test Coverage Gaps To Add
 

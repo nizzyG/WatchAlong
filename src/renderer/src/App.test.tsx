@@ -732,9 +732,14 @@ describe('App', () => {
     await waitFor(() => expect(api.setPreference).toHaveBeenCalledWith('openLibraryOnLaunch', true))
 
     fireEvent.click(screen.getByRole('button', { name: /Help & About/i }))
-    expect(screen.getByRole('button', { name: /Buy the developer a coffee/i })).toBeEnabled()
-    expect(screen.getByRole('button', { name: /Buy the developer a coffee/i })).toHaveAttribute('title', 'Open donation page')
-    expect(screen.queryByText('Donation link coming soon.')).not.toBeInTheDocument()
+    const openMock = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const supportButton = screen.getByRole('button', { name: /Support the developer on Ko-fi/i })
+
+    expect(supportButton).toBeEnabled()
+    expect(supportButton).toHaveAttribute('title', 'Open https://ko-fi.com/watchalong')
+    fireEvent.click(supportButton)
+    expect(openMock).toHaveBeenCalledWith('https://ko-fi.com/watchalong', '_blank')
+    openMock.mockRestore()
 
     fireEvent.keyDown(window, { code: 'Escape' })
     await waitFor(() => expect(screen.queryByLabelText('WatchAlong Command Panel')).not.toBeInTheDocument())

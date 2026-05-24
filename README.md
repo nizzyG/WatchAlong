@@ -61,7 +61,7 @@ Check out our comprehensive [FAQ Page](FAQ.md).
 
 ## 🖤 Support WatchAlong
 
-WatchAlong is and always will be free. If it makes your watchalong nights better, consider [buying the developer a coffee](https://ko-fi.com/watchalong) ☕.
+WatchAlong is and always will be free. If it makes your watchalong nights better, consider [supporting the developer on Ko-fi](https://ko-fi.com/watchalong) ☕.
 
 ---
 

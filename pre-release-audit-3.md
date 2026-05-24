@@ -395,22 +395,22 @@ This version string is duplicated from `package.json` and will need manual synch
 
 **Recommendation:** Either inject the version at build time via Vite's `define` or read it from the Electron API at runtime.
 
-### 3.10 `DONATION_URL` placeholder renders a disabled button
+### 3.10 `DONATION_URL` points at the active Ko-fi page
 
 **Where:** `src/renderer/src/App.tsx` lines 95, 2442–2457
 
 **Evidence:**
 ```tsx
-const DONATION_URL: string | null = null
+const DONATION_URL = 'https://ko-fi.com/watchalong'
 // ...
-<button disabled={!DONATION_URL} title={DONATION_URL ? 'Open donation page' : 'Donation link coming soon.'}>
-  Buy the developer a coffee
+<button title="Open https://ko-fi.com/watchalong">
+  Support the developer on Ko-fi
 </button>
 ```
 
-A permanently disabled button with tooltip "Donation link coming soon" in a release build looks unfinished.
+The previous placeholder support path has been replaced with the active Ko-fi page.
 
-**Recommendation:** Either set the real donation URL before release, or hide the button entirely when `DONATION_URL` is null.
+**Recommendation:** Keep the release build wired to `https://ko-fi.com/watchalong`.
 
 ---
 

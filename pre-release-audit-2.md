@@ -206,15 +206,15 @@ The Patreon login window is now sandboxed (`src/main/index.ts:807-811`), which i
 
 **Recommendation:** Wrap the state-changing interaction or async settling in `act(...)`/Testing Library's async utilities so the test suite is warning-clean.
 
-### P3 - Public-release placeholders remain
+### P3 - Public-release polish items remain
 
 **Where:** `src/renderer/src/App.tsx:95`, `README.md`, `BUILDING.md`, electron-builder output.
 
-**Evidence:** `DONATION_URL` is still `null`, the README has a placeholder Ko-fi note, and the packaging log reports the default Electron icon is used. The build also reports no signing information.
+**Evidence:** `DONATION_URL` is set to `https://ko-fi.com/watchalong`, and the README points at the same active Ko-fi support page. The packaging log still reports the default Electron icon is used. The build also reports no signing information.
 
 **Why this matters:** These do not break app behavior, but they are visible public-release signals. A default icon, placeholder support link, and unsigned build can make the release feel unfinished.
 
-**Recommendation:** Set the real donation/support URL or remove the UI path, add final app icons, and publish a clear signing/notarization policy for each platform.
+**Recommendation:** Keep the active donation/support URL in the UI and docs, add final app icons, and publish a clear signing/notarization policy for each platform.
 
 ### P3 - `yt-dlp.exe` is tracked directly instead of through Git LFS
 
