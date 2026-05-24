@@ -121,6 +121,7 @@ function createApi(): WatchAlongApi {
     })),
     getLibrary: vi.fn(),
     saveActiveSession: vi.fn(),
+    saveSessionPosition: vi.fn(),
     setSessionMedia: vi.fn(),
     replaceSessionMedia: vi.fn(async () => ({
       version: 3 as const,
@@ -163,6 +164,8 @@ function createApi(): WatchAlongApi {
     getImportWizardContext: vi.fn(async () => ({ mode: 'new' as const, sessionId: null, movie: null })),
     finishOnboardingWizard: vi.fn(async () => undefined),
     onWizardLifecycle: vi.fn(() => vi.fn()),
+    confirmMainWindowClose: vi.fn(async () => undefined),
+    onMainWindowCloseRequest: vi.fn(() => vi.fn()),
     getPreferences: vi.fn(),
     setPreference: vi.fn(),
     selectDownloadDirectory: vi.fn(),

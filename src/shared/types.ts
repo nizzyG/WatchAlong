@@ -223,6 +223,7 @@ export interface MovieWindowInit {
 export type MovieWindowGeometryCallback = (event: MovieWindowGeometryEvent) => void
 export type MovieWindowLifecycleCallback = (event?: MovieWindowClosedEvent) => void
 export type MovieWindowCommandCallback = (command: RemoteMediaCommand) => void
+export type MainWindowCloseCallback = () => void
 
 export type WizardLifecycleEvent =
   | { type: 'opened' }
@@ -264,6 +265,7 @@ export interface WatchAlongApi {
   createOrSwitchSessionFromPaths(reactionPath: string, moviePath: string, reactionSource?: ReactionSource): Promise<SessionLibrary>
   getLibrary(): Promise<SessionLibrary>
   saveActiveSession(patch: Partial<LibrarySession>): Promise<SessionLibrary>
+  saveSessionPosition(sessionId: string, lastReactionTimeSeconds: number): Promise<SessionLibrary>
   setSessionMedia(role: MediaRole, path: string, reactionSource?: ReactionSource): Promise<SessionLibrary>
   replaceSessionMedia(sessionId: string, role: MediaRole, path: string, reactionSource?: ReactionSource): Promise<SessionLibrary>
   setActiveSession(sessionId: string): Promise<SessionLibrary>
@@ -302,6 +304,8 @@ export interface WatchAlongApi {
   getImportWizardContext(): Promise<ImportWizardContext>
   finishOnboardingWizard(outcome: WizardOutcome): Promise<void>
   onWizardLifecycle(callback: WizardLifecycleCallback): () => void
+  confirmMainWindowClose(): Promise<void>
+  onMainWindowCloseRequest(callback: MainWindowCloseCallback): () => void
   getPreferences(): Promise<AppPreferences>
   setPreference<K extends keyof AppPreferences>(key: K, value: AppPreferences[K]): Promise<AppPreferences>
   selectDownloadDirectory(): Promise<string | null>

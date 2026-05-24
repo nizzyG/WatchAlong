@@ -59,7 +59,7 @@ class FakeVideo implements VideoAdapter {
   }
 }
 
-function createController(offset = 0, movieRateCorrection = 1): {
+function createController(offset = 0, movieRateCorrection = 1, moviePlaybackMultiplier?: number): {
   controller: SyncController
   reaction: FakeVideo
   movie: FakeVideo
@@ -75,6 +75,7 @@ function createController(offset = 0, movieRateCorrection = 1): {
     movie,
     getOffset: () => currentOffset,
     getMovieRateCorrection: () => movieRateCorrection,
+    ...(moviePlaybackMultiplier !== undefined ? { getMoviePlaybackMultiplier: () => moviePlaybackMultiplier } : {}),
     setOffset: (next) => {
       currentOffset = next
     },
@@ -159,13 +160,31 @@ describe('SyncController', () => {
     expect(movie.playbackRate).toBeCloseTo(1.455)
   })
 
-  it('applies movie rate correction to the movie base playback speed', async () => {
-    const { controller, reaction, movie } = createController(0, 1.001)
+  it('applies the movie playback multiplier to the movie base playback speed', async () => {
+    const { controller, reaction, movie } = createController(0, 0.999001, 1.001)
 
     controller.setPlaybackRate(1.5)
 
     expect(reaction.playbackRate).toBe(1.5)
     expect(movie.playbackRate).toBeCloseTo(1.5015)
+  })
+
+  it('defaults playback multiplier to the inverse timeline correction', async () => {
+    const { controller, movie } = createController(0, 0.999001)
+
+    controller.setPlaybackRate(1)
+
+    expect(movie.playbackRate).toBeCloseTo(1.001)
+  })
+
+  it('uses timeline correction, not playback multiplier, when mapping seeks', async () => {
+    const { controller, reaction, movie } = createController(0, 0.999001, 1.001)
+
+    controller.seekReaction(100)
+    await controller.flushForTest()
+
+    expect(reaction.currentTime).toBe(100)
+    expect(movie.currentTime).toBeCloseTo(99.9001)
   })
 
   it('sets independent volumes and muted state without changing sync state', () => {

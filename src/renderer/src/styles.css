@@ -271,7 +271,6 @@ input:disabled {
   padding: 9px 10px;
 }
 
-.library-card-copy strong,
 .library-card-copy small {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -279,8 +278,10 @@ input:disabled {
 }
 
 .library-card-copy strong {
+  overflow-wrap: anywhere;
   font-size: 16px;
   font-weight: 760;
+  white-space: normal;
 }
 
 .library-card-copy small {

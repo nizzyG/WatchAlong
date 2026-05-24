@@ -1,6 +1,6 @@
 import type { MediaRole, SyncCommand, SyncState } from '@shared/types'
 import { SyncCommandQueue } from './commandQueue'
-import { TimelineMapping } from './timeline'
+import { TimelineMapping, movieTimelineCorrectionFromPlaybackMultiplier } from './timeline'
 
 const HAVE_FUTURE_DATA = 3
 const SOFT_DRIFT_SECONDS = 0.1
@@ -30,6 +30,7 @@ export interface SyncControllerOptions {
   movie: VideoAdapter
   getOffset(): number
   getMovieRateCorrection?(): number
+  getMoviePlaybackMultiplier?(): number
   setOffset(offsetSeconds: number): void | Promise<void>
   onState?(state: SyncState): void
   onPosition?(reactionTime: number): void
@@ -547,12 +548,20 @@ export class SyncController {
     return clamp(this.options.getMovieRateCorrection?.() ?? 1, 0.95, 1.05)
   }
 
+  private moviePlaybackMultiplier(): number {
+    return clamp(
+      this.options.getMoviePlaybackMultiplier?.() ?? movieTimelineCorrectionFromPlaybackMultiplier(this.movieRateCorrection()),
+      0.95,
+      1.05
+    )
+  }
+
   private reactionBaseRate(): number {
     return this.basePlaybackRate
   }
 
   private movieBaseRate(): number {
-    return this.basePlaybackRate * this.movieRateCorrection()
+    return this.basePlaybackRate * this.moviePlaybackMultiplier()
   }
 
   private setState(state: SyncState): void {

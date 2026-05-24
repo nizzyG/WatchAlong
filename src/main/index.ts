@@ -50,6 +50,7 @@ const APP_NAME = 'WatchAlong'
 const LEGACY_APP_NAME = 'WatchSync'
 const MEDIA_SCHEME = 'watchalong'
 const IPC_PREFIX = 'watchalong'
+const MAIN_WINDOW_CLOSE_TIMEOUT_MS = 1000
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -86,6 +87,8 @@ let preferencesStore: PreferencesStore
 let toolResolver: ToolResolver
 let patreonVault: PatreonSessionVault
 let downloadManager: DownloadManager
+let mainWindowCloseConfirmed = false
+let mainWindowCloseTimer: NodeJS.Timeout | null = null
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -109,12 +112,55 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  mainWindow.on('close', (event) => {
+    if (mainWindowCloseConfirmed) {
+      return
+    }
+
+    event.preventDefault()
+    requestMainWindowClose()
+  })
+
   mainWindow.on('closed', () => {
+    clearMainWindowCloseTimer()
+    mainWindowCloseConfirmed = false
     closeMovieWindowWithoutPopIn()
     mainWindow = null
   })
 
   void loadRenderer(mainWindow)
+}
+
+function requestMainWindowClose(): void {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindowCloseTimer) {
+    return
+  }
+
+  mainWindow.webContents.send(`${IPC_PREFIX}:main-window-close-request`)
+  mainWindowCloseTimer = setTimeout(() => {
+    confirmMainWindowClose()
+  }, MAIN_WINDOW_CLOSE_TIMEOUT_MS)
+}
+
+function confirmMainWindowClose(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return
+  }
+
+  clearMainWindowCloseTimer()
+  if (mainWindowCloseConfirmed) {
+    return
+  }
+
+  mainWindowCloseConfirmed = true
+  mainWindow.close()
+}
+
+function clearMainWindowCloseTimer(): void {
+  if (mainWindowCloseTimer) {
+    clearTimeout(mainWindowCloseTimer)
+    mainWindowCloseTimer = null
+  }
 }
 
 function openOnboardingWizard(options?: ImportWizardLaunchOptions): void {
@@ -593,6 +639,10 @@ function registerIpc(): void {
     return sessionStore.updateActive(patch)
   })
 
+  ipcMain.handle(`${IPC_PREFIX}:save-session-position`, (_event, sessionId: string, lastReactionTimeSeconds: number) => {
+    return sessionStore.saveSessionPosition(sessionId, lastReactionTimeSeconds)
+  })
+
   ipcMain.handle(`${IPC_PREFIX}:set-session-media`, (_event, role: MediaRole, filePath: string, reactionSource?: ReactionSource) => {
     return sessionStore.setSessionMedia(role, filePath, reactionSource)
   })
@@ -793,6 +843,10 @@ function registerIpc(): void {
 
   ipcMain.handle(`${IPC_PREFIX}:finish-onboarding-wizard`, (_event, outcome: WizardOutcome) => {
     finishOnboardingWizard(outcome)
+  })
+
+  ipcMain.handle(`${IPC_PREFIX}:confirm-main-window-close`, () => {
+    confirmMainWindowClose()
   })
 }
 

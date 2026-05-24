@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TimelineMapping, clampToDuration } from './timeline'
+import { TimelineMapping, clampToDuration, movieTimelineCorrectionFromPlaybackMultiplier } from './timeline'
 
 describe('TimelineMapping', () => {
   it('maps reaction time to movie time with the stored offset', () => {
@@ -36,5 +36,11 @@ describe('TimelineMapping', () => {
   it('clamps invalid values to zero', () => {
     expect(clampToDuration(Number.NaN, 20)).toBe(0)
     expect(clampToDuration(-4, 20)).toBe(0)
+  })
+
+  it('derives timeline correction from the selected playback multiplier', () => {
+    expect(movieTimelineCorrectionFromPlaybackMultiplier(1)).toBe(1)
+    expect(movieTimelineCorrectionFromPlaybackMultiplier(1.001)).toBeCloseTo(0.999001)
+    expect(movieTimelineCorrectionFromPlaybackMultiplier(0.999001)).toBeCloseTo(1.001)
   })
 })

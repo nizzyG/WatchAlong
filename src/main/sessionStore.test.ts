@@ -70,4 +70,24 @@ describe('SessionStore media drafts', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('updates one session resume position without changing the active session', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
+    try {
+      const store = new SessionStore(join(dir, 'library.json'), join(dir, 'session.json'))
+
+      const first = store.createOrSwitchSession('C:\\Reactions\\First.mp4', 'C:\\Movies\\First.mp4')
+      const firstId = first.activeSessionId!
+      const second = store.createOrSwitchSession('C:\\Reactions\\Second.mp4', 'C:\\Movies\\Second.mp4')
+      const secondId = second.activeSessionId!
+
+      const next = store.saveSessionPosition(firstId, 83.25)
+
+      expect(next.activeSessionId).toBe(secondId)
+      expect(next.sessions.find((session) => session.id === firstId)?.lastReactionTimeSeconds).toBe(83.25)
+      expect(next.sessions.find((session) => session.id === secondId)?.lastReactionTimeSeconds).toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

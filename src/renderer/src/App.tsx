@@ -59,7 +59,7 @@ import { constrainOverlay } from './components/pipGeometry'
 import { PatreonStorageOffer, SmartReactionInput } from './components/SmartReactionInput'
 import { SyncController, createHtmlVideoAdapter, type VideoAdapter } from './sync/SyncController'
 import { RemoteVideoAdapter } from './sync/RemoteVideoAdapter'
-import { TimelineMapping } from './sync/timeline'
+import { TimelineMapping, movieTimelineCorrectionFromPlaybackMultiplier } from './sync/timeline'
 import { getActiveSubtitleCue, parseSubtitleText, type SubtitleCue } from './subtitles'
 
 type MediaUrls = Record<MediaRole, string | null>
@@ -101,8 +101,10 @@ export function App(): JSX.Element {
   const controllerRef = useRef<SyncController | null>(null)
   const remoteMovieAdapterRef = useRef<RemoteVideoAdapter | null>(null)
   const sessionRef = useRef<LibrarySession>(createDefaultSession())
+  const activeSessionIdRef = useRef<string | null>(null)
   const setupModeRef = useRef(false)
   const lastPositionSaveRef = useRef(0)
+  const positionRef = useRef(0)
   const restoredPopOutSessionRef = useRef<string | null>(null)
   const pendingMovieWindowGeometryRef = useRef<OverlayGeometry | null>(null)
   const movieWindowGeometryTimerRef = useRef<number | null>(null)
@@ -157,12 +159,49 @@ export function App(): JSX.Element {
     const nextSession = getActiveSession(next)
     if (nextSession) {
       sessionRef.current = nextSession
+      activeSessionIdRef.current = nextSession.id
     } else {
       sessionRef.current = emptySession
+      activeSessionIdRef.current = null
     }
     setLibrary(next)
     return nextSession
   }, [emptySession])
+
+  const mergeSavedSessionPosition = useCallback((next: SessionLibrary, sessionId: string): void => {
+    if (activeSessionIdRef.current === sessionId) {
+      commitLibrary(next)
+      return
+    }
+
+    const savedSession = next.sessions.find((session) => session.id === sessionId)
+    if (!savedSession) {
+      return
+    }
+
+    setLibrary((current) => ({
+      ...current,
+      sessions: current.sessions.map((session) => (session.id === sessionId ? savedSession : session))
+    }))
+  }, [commitLibrary])
+
+  const saveSessionPosition = useCallback(async (sessionId: string, reactionTime: number): Promise<void> => {
+    const next = await window.watchAlong.saveSessionPosition(sessionId, roundSeconds(Math.max(0, reactionTime)))
+    mergeSavedSessionPosition(next, sessionId)
+  }, [mergeSavedSessionPosition])
+
+  const flushCurrentSessionPosition = useCallback(async (): Promise<void> => {
+    const sessionId = activeSessionIdRef.current
+    if (!sessionId) {
+      return
+    }
+
+    const reaction = reactionVideoRef.current
+    const nextReactionTime = reaction && reaction.readyState > 0 && Number.isFinite(reaction.currentTime)
+      ? reaction.currentTime
+      : positionRef.current
+    await saveSessionPosition(sessionId, nextReactionTime)
+  }, [saveSessionPosition])
 
   const getMovieAdapter = useCallback((): VideoAdapter | null => {
     if (remoteMovieAdapterRef.current) {
@@ -184,7 +223,8 @@ export function App(): JSX.Element {
       reaction: createHtmlVideoAdapter('reaction', reaction),
       movie: movieAdapter,
       getOffset: () => sessionRef.current.offsetSeconds,
-      getMovieRateCorrection: () => sessionRef.current.movieRateCorrection,
+      getMovieRateCorrection: () => movieTimelineCorrectionFromPlaybackMultiplier(sessionRef.current.movieRateCorrection),
+      getMoviePlaybackMultiplier: () => sessionRef.current.movieRateCorrection,
       setOffset: async (offsetSeconds) => {
         const next = await window.watchAlong.saveActiveSession({ offsetSeconds })
         commitLibrary(next)
@@ -195,6 +235,7 @@ export function App(): JSX.Element {
           return
         }
 
+        positionRef.current = reactionTime
         setPosition(reactionTime)
         if (setupModeRef.current) {
           setSetupPositions((current) => ({ ...current, reaction: reactionTime }))
@@ -205,9 +246,7 @@ export function App(): JSX.Element {
         const now = Date.now()
         if (now - lastPositionSaveRef.current > 1500 && currentSession.reactionPath && currentSession.moviePath) {
           lastPositionSaveRef.current = now
-          void window.watchAlong
-            .saveActiveSession({ lastReactionTimeSeconds: reactionTime })
-            .then(commitLibrary)
+          void saveSessionPosition(currentSession.id, reactionTime)
         }
       },
       onError: setError
@@ -219,7 +258,7 @@ export function App(): JSX.Element {
     controller.setSetupMode(setupModeRef.current)
     controllerRef.current = controller
     return controller
-  }, [commitLibrary])
+  }, [commitLibrary, saveSessionPosition])
 
   const destroyRemoteMovieAdapter = useCallback((): void => {
     remoteMovieAdapterRef.current?.destroy()
@@ -556,15 +595,20 @@ export function App(): JSX.Element {
   isPlayingRef.current = isPlaying
   const reactionDuration = Number.isFinite(durations.reaction) ? durations.reaction : 0
   const displayOffset = useMemo(() => signedSeconds(session.offsetSeconds), [session.offsetSeconds])
+  const movieTimelineCorrection = movieTimelineCorrectionFromPlaybackMultiplier(session.movieRateCorrection)
   const effectiveOffset = useMemo(
     () => new TimelineMapping({
       offsetSeconds: session.offsetSeconds,
-      movieRateCorrection: session.movieRateCorrection
+      movieRateCorrection: movieTimelineCorrection
     }).effectiveOffsetAt(position),
-    [position, session.movieRateCorrection, session.offsetSeconds]
+    [position, movieTimelineCorrection, session.offsetSeconds]
   )
-  const movieStartsAtReaction = Math.max(0, -session.offsetSeconds / session.movieRateCorrection)
+  const movieStartsAtReaction = Math.max(0, -session.offsetSeconds / movieTimelineCorrection)
   const shouldAutoHideControls = appView === 'player' && isPlaying && !setupMode && !commandPanelOpen
+
+  useEffect(() => {
+    positionRef.current = position
+  }, [position])
 
   useEffect(() => {
     let timer: number | undefined
@@ -655,6 +699,18 @@ export function App(): JSX.Element {
       void handleWizardLifecycle(event)
     })
   }, [commitLibrary, movieWindowActive, refreshMediaUrls])
+
+  useEffect(() => {
+    return window.watchAlong.onMainWindowCloseRequest(() => {
+      void (async () => {
+        try {
+          await flushCurrentSessionPosition()
+        } finally {
+          await window.watchAlong.confirmMainWindowClose()
+        }
+      })()
+    })
+  }, [flushCurrentSessionPosition])
 
   useEffect(() => {
     return window.watchAlong.onDownloadProgress((event) => {
@@ -936,17 +992,19 @@ export function App(): JSX.Element {
   }) // Effect intentionally omits a dependency array. The ref guard
   // (restoredPopOutSessionRef) ensures pop-out only runs once per session.
 
-  const openImportWizard = (options?: ImportWizardLaunchOptions): void => {
+  const openImportWizard = async (options?: ImportWizardLaunchOptions): Promise<void> => {
     setCommandPanelOpen(false)
     setControlsIdle(false)
     controllerRef.current?.pause()
-    void window.watchAlong.openImportWizard(options)
+    await flushCurrentSessionPosition()
+    await window.watchAlong.openImportWizard(options)
   }
 
   const navigateToLibrary = async (): Promise<void> => {
     controllerRef.current?.pause()
     reactionVideoRef.current?.pause()
     getMovieAdapter()?.pause()
+    await flushCurrentSessionPosition()
     if (movieWindowActive) {
       await closeMovieWindowForModeChange()
       destroyRemoteMovieAdapter()
@@ -970,7 +1028,7 @@ export function App(): JSX.Element {
 
   const startWelcomeImport = (): void => {
     setShowWelcome(false)
-    openImportWizard({ mode: 'new' })
+    void openImportWizard({ mode: 'new' })
   }
 
   const locateMissingMedia = async (role: MediaRole): Promise<void> => {
@@ -981,6 +1039,7 @@ export function App(): JSX.Element {
     setError(null)
     const shouldResume = syncState === 'playing'
     controllerRef.current?.pause()
+    await flushCurrentSessionPosition()
     const media = role === 'movie'
       ? await window.watchAlong.selectMovieFile()
       : await window.watchAlong.selectReactionFile()
@@ -1025,6 +1084,7 @@ export function App(): JSX.Element {
     }
 
     controllerRef.current?.pause()
+    await flushCurrentSessionPosition()
     await stopDetachedMovie()
     if (activeSession?.moviePath) {
       const next = await window.watchAlong.replaceSessionMedia(activeSession.id, 'reaction', event.filePath, event.source)
@@ -1115,6 +1175,7 @@ export function App(): JSX.Element {
 
   const openVideos = async (): Promise<void> => {
     setError(null)
+    await flushCurrentSessionPosition()
     const result = await window.watchAlong.openVideos()
     if (!result) {
       return
@@ -1130,12 +1191,13 @@ export function App(): JSX.Element {
 
   const openMovie = async (): Promise<void> => {
     setError(null)
+    controllerRef.current?.pause()
+    await flushCurrentSessionPosition()
     const movie = await window.watchAlong.selectMovieFile()
     if (!movie) {
       return
     }
 
-    controllerRef.current?.pause()
     await stopDetachedMovie()
     const next = await window.watchAlong.setSessionMedia('movie', movie.path)
     const nextSession = commitLibrary(next)
@@ -1147,6 +1209,8 @@ export function App(): JSX.Element {
 
   const openLocalReaction = async (): Promise<void> => {
     setError(null)
+    controllerRef.current?.pause()
+    await flushCurrentSessionPosition()
     const reaction = await window.watchAlong.selectReactionFile()
     if (!reaction) {
       return
@@ -1166,6 +1230,7 @@ export function App(): JSX.Element {
     filePath: string,
     metadata: { jobId: string; source: ReactionDownloadSource }
   ): Promise<void> => {
+    await flushCurrentSessionPosition()
     await stopDetachedMovie()
     const next = await window.watchAlong.setSessionMedia('reaction', filePath, metadata.source)
     const nextSession = commitLibrary(next)
@@ -1185,6 +1250,7 @@ export function App(): JSX.Element {
     }
 
     controllerRef.current?.pause()
+    await flushCurrentSessionPosition()
     if (movieWindowActive) {
       await closeMovieWindowForModeChange()
       destroyRemoteMovieAdapter()
@@ -1335,9 +1401,13 @@ export function App(): JSX.Element {
     const reactionTime = reactionVideoRef.current?.currentTime ?? position
     const currentMovieTime = new TimelineMapping({
       offsetSeconds: sessionRef.current.offsetSeconds,
-      movieRateCorrection: sessionRef.current.movieRateCorrection
+      movieRateCorrection: movieTimelineCorrectionFromPlaybackMultiplier(sessionRef.current.movieRateCorrection)
     }).rawReactionToMovie(reactionTime)
-    const offsetSeconds = TimelineMapping.calculateOffset(reactionTime, currentMovieTime, movieRateCorrection)
+    const offsetSeconds = TimelineMapping.calculateOffset(
+      reactionTime,
+      currentMovieTime,
+      movieTimelineCorrectionFromPlaybackMultiplier(movieRateCorrection)
+    )
     const nextSession = await persist({
       movieRateCorrection,
       offsetSeconds: roundSeconds(offsetSeconds)
@@ -1479,7 +1549,7 @@ export function App(): JSX.Element {
     const nextReactionTime = reaction.currentTime
     await persist({
       offsetSeconds: roundSeconds(
-        TimelineMapping.calculateOffset(reaction.currentTime, movie.currentTime, session.movieRateCorrection)
+        TimelineMapping.calculateOffset(reaction.currentTime, movie.currentTime, movieTimelineCorrection)
       ),
       lastReactionTimeSeconds: nextReactionTime
     })
@@ -1527,7 +1597,7 @@ export function App(): JSX.Element {
     }
 
     other?.pause()
-    active.playbackRate = session.playbackRate
+    active.playbackRate = role === 'movie' ? session.playbackRate * session.movieRateCorrection : session.playbackRate
     await active.play()
     setSetupPlayingRole(role)
   }
@@ -1568,7 +1638,7 @@ export function App(): JSX.Element {
         <LibraryHome
           library={library}
           view={preferences.libraryView}
-          onNew={() => openImportWizard({ mode: 'new' })}
+          onNew={() => void openImportWizard({ mode: 'new' })}
           onOpenSession={(sessionId) => void switchSession(sessionId)}
           onRename={requestRenameSession}
           onDelete={(sessionId) => requestDeleteSession(sessionId)}
@@ -1802,17 +1872,17 @@ export function App(): JSX.Element {
           onExpandedSection={setExpandedPanelSection}
           onClose={closeCommandPanel}
           onSyncSetup={syncNow}
-          onSwapReaction={() => openImportWizard({ mode: 'swap-reaction', sessionId: activeSession?.id ?? null })}
+          onSwapReaction={() => void openImportWizard({ mode: 'swap-reaction', sessionId: activeSession?.id ?? null })}
           onCloseSession={() => void navigateToLibrary()}
           onSwitchSession={(sessionId) => void switchSession(sessionId)}
           onViewLibrary={() => void navigateToLibrary()}
-          onNewSession={() => openImportWizard({ mode: 'new' })}
+          onNewSession={() => void openImportWizard({ mode: 'new' })}
           onCancelDownload={(jobId) => void window.watchAlong.cancelDownload(jobId)}
           onAttachDownload={(event) => void attachDownloadedReaction(event)}
           onPreference={updatePreference}
           onChooseDownloadDirectory={() => void chooseDownloadDirectory()}
           onForgetPatreon={() => void forgetPatreonSession()}
-          onShowWizard={() => openImportWizard({ mode: 'show-again' })}
+          onShowWizard={() => void openImportWizard({ mode: 'show-again' })}
         />
       )}
 

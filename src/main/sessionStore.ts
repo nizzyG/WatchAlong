@@ -170,6 +170,27 @@ export class SessionStore {
     return this.writeAndReturn({ ...library, sessions })
   }
 
+  saveSessionPosition(sessionId: string, lastReactionTimeSeconds: number): SessionLibrary {
+    const library = this.read()
+    if (!library.sessions.some((session) => session.id === sessionId)) {
+      return library
+    }
+
+    const now = new Date()
+    const sessions = library.sessions.map((session) =>
+      session.id === sessionId
+        ? normalizeSession({
+            ...session,
+            lastReactionTimeSeconds,
+            createdAt: session.createdAt,
+            updatedAt: now.toISOString()
+          })
+        : session
+    )
+
+    return this.writeAndReturn({ ...library, sessions })
+  }
+
   renameSession(sessionId: string, title: string): SessionLibrary {
     const now = new Date().toISOString()
     const library = this.read()

@@ -37,12 +37,14 @@ function createApi(
   emitWizardLifecycle(event: Parameters<WizardLifecycleCallback>[0]): void
   emitMovieWindowPopInRequest(): void
   emitMovieWindowClosed(event?: MovieWindowClosedEvent): void
+  emitMainWindowCloseRequest(): void
 } {
   let currentLibrary = library
   let currentPreferences = preferences
   let wizardLifecycleCallback: WizardLifecycleCallback | null = null
   let movieWindowPopInCallback: MovieWindowLifecycleCallback | null = null
   let movieWindowClosedCallback: MovieWindowLifecycleCallback | null = null
+  let mainWindowCloseCallback: (() => void) | null = null
 
   const api = {
     openVideos: vi.fn(),
@@ -70,6 +72,15 @@ function createApi(
         ...currentLibrary,
         sessions: currentLibrary.sessions.map((session) =>
           session.id === currentLibrary.activeSessionId ? { ...session, ...patch } : session
+        )
+      }
+      return currentLibrary
+    }),
+    saveSessionPosition: vi.fn(async (sessionId: string, lastReactionTimeSeconds: number) => {
+      currentLibrary = {
+        ...currentLibrary,
+        sessions: currentLibrary.sessions.map((session) =>
+          session.id === sessionId ? { ...session, lastReactionTimeSeconds } : session
         )
       }
       return currentLibrary
@@ -168,6 +179,11 @@ function createApi(
     onWizardLifecycle: vi.fn((callback: WizardLifecycleCallback) => {
       wizardLifecycleCallback = callback
       return vi.fn()
+    }),
+    confirmMainWindowClose: vi.fn(async () => undefined),
+    onMainWindowCloseRequest: vi.fn((callback: () => void) => {
+      mainWindowCloseCallback = callback
+      return vi.fn()
     })
   }
 
@@ -180,11 +196,15 @@ function createApi(
     },
     emitMovieWindowClosed(event?: MovieWindowClosedEvent) {
       movieWindowClosedCallback?.(event)
+    },
+    emitMainWindowCloseRequest() {
+      mainWindowCloseCallback?.()
     }
   }) as unknown as WatchAlongApi & {
     emitWizardLifecycle(event: Parameters<WizardLifecycleCallback>[0]): void
     emitMovieWindowPopInRequest(): void
     emitMovieWindowClosed(event?: MovieWindowClosedEvent): void
+    emitMainWindowCloseRequest(): void
   }
 }
 
@@ -249,6 +269,21 @@ describe('App', () => {
 
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
     expect(screen.queryByLabelText('WatchAlong Library')).not.toBeInTheDocument()
+  })
+
+  it('restores a previously saved reaction position when loading a session', async () => {
+    const session = createSession('s1', 'First', 37.5)
+    const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    const reaction = container.querySelector('video.reaction-video') as HTMLVideoElement
+
+    fireEvent.loadedMetadata(reaction)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+
+    await waitFor(() => expect(reaction.currentTime).toBe(37.5))
   })
 
   it('falls back to the empty library when resume on launch is enabled but no sessions exist', async () => {
@@ -340,6 +375,80 @@ describe('App', () => {
     await waitFor(() => expect(playMock).toHaveBeenCalledTimes(2))
   })
 
+  it('saves periodic playback position by session id', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    const reaction = container.querySelector('video.reaction-video') as HTMLVideoElement
+    reaction.currentTime = 42.25
+
+    await waitFor(() => expect(api.saveSessionPosition).toHaveBeenCalledWith('s1', 42.25))
+    expect(api.saveActiveSession).not.toHaveBeenCalledWith(expect.objectContaining({ lastReactionTimeSeconds: 42.25 }))
+  })
+
+  it('flushes the current position before switching sessions', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    const reaction = container.querySelector('video.reaction-video') as HTMLVideoElement
+    reaction.currentTime = 51.125
+    vi.mocked(api.saveSessionPosition).mockClear()
+    vi.mocked(api.setActiveSession).mockClear()
+
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    fireEvent.click(await screen.findByRole('button', { name: /Library/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Second/ }))
+
+    await waitFor(() => expect(api.setActiveSession).toHaveBeenCalledWith('s2'))
+    const saveIndex = vi.mocked(api.saveSessionPosition).mock.calls.findIndex(
+      ([sessionId, time]) => sessionId === 's1' && time === 51.125
+    )
+    expect(saveIndex).toBeGreaterThanOrEqual(0)
+    expect(vi.mocked(api.saveSessionPosition).mock.invocationCallOrder[saveIndex]).toBeLessThan(
+      vi.mocked(api.setActiveSession).mock.invocationCallOrder[0]
+    )
+  })
+
+  it('flushes the current position before closing to the library', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    const reaction = container.querySelector('video.reaction-video') as HTMLVideoElement
+    reaction.currentTime = 64.5
+    vi.mocked(api.saveSessionPosition).mockClear()
+
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    fireEvent.click(await screen.findByRole('button', { name: /Close Session/i }))
+
+    await waitFor(() => expect(api.saveSessionPosition).toHaveBeenCalledWith('s1', 64.5))
+    expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
+  })
+
+  it('flushes the current position before confirming main-window close', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    const reaction = container.querySelector('video.reaction-video') as HTMLVideoElement
+    reaction.currentTime = 73.25
+    vi.mocked(api.saveSessionPosition).mockClear()
+
+    act(() => api.emitMainWindowCloseRequest())
+
+    await waitFor(() => expect(api.confirmMainWindowClose).toHaveBeenCalled())
+    expect(api.saveSessionPosition).toHaveBeenCalledWith('s1', 73.25)
+    expect(vi.mocked(api.saveSessionPosition).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(api.confirmMainWindowClose).mock.invocationCallOrder[0]
+    )
+  })
+
   it('hides the PiP overlay while popped out and pops back in from the movie window', async () => {
     const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
     api.closeMovieWindow = vi.fn(async () => ({
@@ -403,9 +512,26 @@ describe('App', () => {
     await waitFor(() =>
       expect(api.saveActiveSession).toHaveBeenCalledWith({
         movieRateCorrection: 1.001,
-        offsetSeconds: 4.9
+        offsetSeconds: 5.0999
       })
     )
+  })
+
+  it('opens a popped-out movie with the selected playback multiplier', async () => {
+    const session = createSession('s1', 'First', 0, { playbackRate: 1.5, movieRateCorrection: 1.001 })
+    const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+
+    fireEvent.click(screen.getByLabelText('Pop out movie to separate window'))
+
+    await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalled())
+    const [request] = vi.mocked(api.openMovieWindow).mock.calls[0]
+    expect(request.playbackRate).toBeCloseTo(1.5015)
   })
 
   it('shows the first-run welcome and opens the import wizard from Get Started', async () => {
@@ -419,7 +545,7 @@ describe('App', () => {
     expect(screen.getByLabelText('Welcome to WatchAlong')).toBeInTheDocument()
     expect(api.openOnboardingWizard).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /Get Started/i }))
-    expect(api.openImportWizard).toHaveBeenCalledWith({ mode: 'new' })
+    await waitFor(() => expect(api.openImportWizard).toHaveBeenCalledWith({ mode: 'new' }))
   })
 
   it('dims, pauses, and resumes playback around a cancelled wizard', async () => {
@@ -606,8 +732,9 @@ describe('App', () => {
     await waitFor(() => expect(api.setPreference).toHaveBeenCalledWith('openLibraryOnLaunch', true))
 
     fireEvent.click(screen.getByRole('button', { name: /Help & About/i }))
-    expect(screen.getByRole('button', { name: /Buy the developer a coffee/i })).toBeDisabled()
-    expect(screen.getByText('Donation link coming soon.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Buy the developer a coffee/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /Buy the developer a coffee/i })).toHaveAttribute('title', 'Open donation page')
+    expect(screen.queryByText('Donation link coming soon.')).not.toBeInTheDocument()
 
     fireEvent.keyDown(window, { code: 'Escape' })
     await waitFor(() => expect(screen.queryByLabelText('WatchAlong Command Panel')).not.toBeInTheDocument())

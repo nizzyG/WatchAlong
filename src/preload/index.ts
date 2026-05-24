@@ -4,6 +4,7 @@ import type {
   DownloadProgressCallback,
   ImportWizardLaunchOptions,
   LibrarySession,
+  MainWindowCloseCallback,
   MediaRole,
   MovieWindowCommandCallback,
   MovieWindowGeometryCallback,
@@ -24,6 +25,8 @@ const api: WatchAlongApi = {
     ipcRenderer.invoke(`${IPC_PREFIX}:create-or-switch-session-from-paths`, reactionPath, moviePath, reactionSource),
   getLibrary: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-library`),
   saveActiveSession: (patch: Partial<LibrarySession>) => ipcRenderer.invoke(`${IPC_PREFIX}:save-active-session`, patch),
+  saveSessionPosition: (sessionId: string, lastReactionTimeSeconds: number) =>
+    ipcRenderer.invoke(`${IPC_PREFIX}:save-session-position`, sessionId, lastReactionTimeSeconds),
   setSessionMedia: (role, path, reactionSource) => ipcRenderer.invoke(`${IPC_PREFIX}:set-session-media`, role, path, reactionSource),
   replaceSessionMedia: (sessionId, role, path, reactionSource) =>
     ipcRenderer.invoke(`${IPC_PREFIX}:replace-session-media`, sessionId, role, path, reactionSource),
@@ -104,6 +107,14 @@ const api: WatchAlongApi = {
     }
     ipcRenderer.on(`${IPC_PREFIX}:wizard-lifecycle`, listener)
     return () => ipcRenderer.removeListener(`${IPC_PREFIX}:wizard-lifecycle`, listener)
+  },
+  confirmMainWindowClose: () => ipcRenderer.invoke(`${IPC_PREFIX}:confirm-main-window-close`),
+  onMainWindowCloseRequest: (callback: MainWindowCloseCallback) => {
+    const listener = (): void => {
+      callback()
+    }
+    ipcRenderer.on(`${IPC_PREFIX}:main-window-close-request`, listener)
+    return () => ipcRenderer.removeListener(`${IPC_PREFIX}:main-window-close-request`, listener)
   },
   getPreferences: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-preferences`),
   setPreference: (key, value) => ipcRenderer.invoke(`${IPC_PREFIX}:set-preference`, key, value),

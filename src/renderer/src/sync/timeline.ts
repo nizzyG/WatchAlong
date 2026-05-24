@@ -51,6 +51,14 @@ export function clampToDuration(value: number, duration?: number): number {
   return Number.isFinite(duration) && duration !== undefined ? Math.min(safeValue, Math.max(0, duration)) : safeValue
 }
 
+export function movieTimelineCorrectionFromPlaybackMultiplier(rate: number): number {
+  if (!Number.isFinite(rate) || rate <= 0 || rate === 1) {
+    return 1
+  }
+
+  return 1 / rate
+}
+
 function finiteOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
