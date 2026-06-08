@@ -57,7 +57,7 @@ Shortcuts are ignored when you're typing in a text field.
 
 ### 10. Why do I need to provide my Patreon session? Is that safe?
 
-Patreon doesn't offer a download button for videos. WatchAlong needs to prove you have an active subscription — your browser login cookie contains that proof. The cookie is used only for that download, never sent anywhere else. If you choose to save it, it's encrypted with your OS keychain (same technology that protects saved passwords).
+Patreon doesn't offer a download button for videos. WatchAlong needs to prove you have an active subscription — your browser login cookie contains that proof. The cookie is used only for that download, never sent anywhere else. If you choose to save it, it's encrypted with your OS keychain (the same technology that protects saved passwords).
 
 ### 11. Why browser cookies instead of a normal login screen?
 
@@ -87,7 +87,7 @@ Almost certainly a frame-rate mismatch. Your movie file runs at one speed, the r
 
 ### 17. How do I fix frame-rate drift?
 
-WatchAlong detects your movie's frame rate automatically using the bundled ffprobe tool. You just tell it what kind of source the reactor is watching from. Open the Command Panel (`Ctrl+Shift+P`) and look for the **Reactor source** dropdown. Three options:
+WatchAlong detects your movie's frame rate automatically using the bundled ffprobe tool. You just tell it what kind of source the reactor is watching from. Locate the "Timing" button near the bottom of the screen. Clicking that will bring up a dialog with three options:
 
 | Option | When to use |
 | :--- | :--- |
@@ -97,7 +97,7 @@ WatchAlong detects your movie's frame rate automatically using the bundled ffpro
 
 The computed correction appears below the dropdown. Set it once per session and you're done — WatchAlong handles the rest.
 
-Not sure which one? Leave it on the default (23.976 fps) and watch for 10-15 minutes. If the reaction creeps ahead or falls behind, try one of the other options — you won't lose your sync point.
+Not sure which one? Leave it on the default (23.976 fps) and watch for 10-15 minutes. If the reaction creeps ahead or falls behind, try one of the other options — you shouldn't lose your sync point (and a few nudges with '[' and ']' will set you right again).
 
 ### 18. I've heard reactors mention NTSC vs PAL. Same issue?
 
@@ -179,7 +179,9 @@ This is normal for open-source apps that aren't notarized by Apple (notarization
 
 ### 35. How can I support WatchAlong?
 
-It's free and open source. The best way to support it: support the reactors you love on Patreon. If you'd like to support development directly, you can [buy me a coffee on Ko-fi](https://ko-fi.com/watchalong).
+It's free and open source. The best way to support it: support the reactors you love on Patreon.
+
+If you'd like to support the developer directly, you can [buy me a coffee on Ko-fi](https://ko-fi.com/watchalong).
 
 ### 36. I found a bug or have an idea.
 
