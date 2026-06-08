@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getActiveSubtitleCue, parseSubtitleText } from './subtitles'
+import { getActiveSubtitleCue, hasSubtitleContentBeyondHeader, parseSubtitleText } from './subtitles'
 
 describe('subtitles', () => {
   it('parses SRT cues with multi-line text', () => {
@@ -15,6 +15,23 @@ Next`)
     expect(cues).toEqual([
       { start: 1, end: 3.5, text: 'First line\nSecond line' },
       { start: 4, end: 5, text: 'Next' }
+    ])
+  })
+
+  it('splits cues on blank lines containing trailing whitespace', () => {
+    const cues = parseSubtitleText([
+      '1',
+      '00:00:01,000 --> 00:00:03,000',
+      'First',
+      ' ',
+      '2',
+      '00:00:04,000 --> 00:00:05,000',
+      'Second'
+    ].join('\n'))
+
+    expect(cues).toEqual([
+      { start: 1, end: 3, text: 'First' },
+      { start: 4, end: 5, text: 'Second' }
     ])
   })
 
@@ -39,5 +56,13 @@ Yes`)
     expect(cues).toHaveLength(1)
     expect(getActiveSubtitleCue(cues, 5)?.text).toBe('Yes')
     expect(getActiveSubtitleCue(cues, 6)).toBeNull()
+  })
+
+  it('detects content beyond an otherwise empty WEBVTT header', () => {
+    expect(hasSubtitleContentBeyondHeader('')).toBe(false)
+    expect(hasSubtitleContentBeyondHeader('WEBVTT\n\n')).toBe(false)
+    expect(hasSubtitleContentBeyondHeader('\uFEFFWEBVTT\r\n\r\n')).toBe(false)
+    expect(hasSubtitleContentBeyondHeader('WEBVTT\n\nbad')).toBe(true)
+    expect(hasSubtitleContentBeyondHeader('not subtitles')).toBe(true)
   })
 })

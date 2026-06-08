@@ -17,6 +17,7 @@ import {
   ToolResolver
 } from './mediaServices'
 import { createMediaResponse } from './mediaRange'
+import { isAllowedPatreonLoginUrl } from './patreonLoginUrls'
 import { PreferencesStore } from './preferencesStore'
 import { SessionStore } from './sessionStore'
 import type {
@@ -956,24 +957,6 @@ function openPatreonLoginWindow(parent: BrowserWindow): Promise<{ ok: boolean; t
     timer = setInterval(() => void checkCookies(), 1500)
     void loginWindow.loadURL('https://www.patreon.com/login?ru=%2F')
   })
-}
-
-function isAllowedPatreonLoginUrl(rawUrl: string): boolean {
-  try {
-    const url = new URL(rawUrl)
-    if (url.protocol !== 'https:') {
-      return false
-    }
-    const host = url.hostname
-    return (
-      host === 'patreon.com' ||
-      host === 'www.patreon.com' ||
-      host.endsWith('.google.com') ||
-      host.endsWith('.apple.com')
-    )
-  } catch {
-    return false
-  }
 }
 
 function openExternalUrl(rawUrl: string): void {

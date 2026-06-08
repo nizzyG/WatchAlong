@@ -111,11 +111,11 @@ export function PipOverlay({
 
   return (
     <section
-      className={`pip ${hidden ? 'pip-hidden' : ''}`}
+      className={`pip ${hidden ? 'pip-hidden' : ''} ${poppedOut ? 'pip-popped-out' : ''}`}
       style={{
         transform: `translate(${geometry.x}px, ${geometry.y}px)`,
         width: geometry.width,
-        height: geometry.height
+        height: poppedOut ? 42 : geometry.height
       }}
       aria-label="Movie picture in picture"
       aria-hidden={hidden}

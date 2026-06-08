@@ -449,7 +449,7 @@ describe('App', () => {
     )
   })
 
-  it('hides the PiP overlay while popped out and pops back in from the movie window', async () => {
+  it('shows a compact PiP placeholder while popped out and pops back in from it', async () => {
     const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
     api.closeMovieWindow = vi.fn(async () => ({
       geometry: { x: 40, y: 50, width: 360, height: 210 },
@@ -472,10 +472,11 @@ describe('App', () => {
       }))
     )
     await waitFor(() => expect(document.querySelector('video.pip-video')).not.toBeInTheDocument())
-    expect(screen.queryByLabelText('Movie picture in picture')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Movie picture in picture')).toHaveClass('pip-popped-out')
+    expect(screen.getByRole('button', { name: 'Pop movie back in' })).toHaveTextContent('Movie is popped out.')
     expect(api.saveActiveSession).toHaveBeenCalledWith(expect.objectContaining({ isMoviePoppedOut: true }))
 
-    act(() => api.emitMovieWindowPopInRequest())
+    fireEvent.click(screen.getByRole('button', { name: 'Pop movie back in' }))
 
     await waitFor(() =>
       expect(api.saveActiveSession).toHaveBeenCalledWith(expect.objectContaining({
@@ -512,7 +513,7 @@ describe('App', () => {
     await waitFor(() =>
       expect(api.saveActiveSession).toHaveBeenCalledWith({
         movieRateCorrection: 1.001,
-        offsetSeconds: 5.0999
+        offsetSeconds: 4.9
       })
     )
   })
@@ -775,6 +776,29 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByText(/Local file \/ Unknown/i)).toBeInTheDocument()
+  })
+
+  it('shows an unsupported subtitle format error for non-empty files with no cues', async () => {
+    const session = createSession('s1', 'First', 0, { subtitlePath: 'C:\\Subtitles\\bad.txt' })
+    const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
+    api.getSubtitleText = vi.fn(async () => 'not subtitles')
+    window.watchAlong = api
+
+    render(<App />)
+
+    expect(await screen.findByText("This subtitle format isn't supported. Use SRT or VTT.")).toBeInTheDocument()
+  })
+
+  it('does not show an unsupported subtitle error for WEBVTT header-only files', async () => {
+    const session = createSession('s1', 'First', 0, { subtitlePath: 'C:\\Subtitles\\empty.vtt' })
+    const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
+    api.getSubtitleText = vi.fn(async () => '\uFEFFWEBVTT\r\n\r\n')
+    window.watchAlong = api
+
+    render(<App />)
+
+    await waitFor(() => expect(api.getSubtitleText).toHaveBeenCalledWith('s1'))
+    expect(screen.queryByText("This subtitle format isn't supported. Use SRT or VTT.")).not.toBeInTheDocument()
   })
 })
 

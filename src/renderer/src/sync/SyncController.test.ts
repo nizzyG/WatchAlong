@@ -59,7 +59,7 @@ class FakeVideo implements VideoAdapter {
   }
 }
 
-function createController(offset = 0, movieRateCorrection = 1, moviePlaybackMultiplier?: number): {
+function createController(offset = 0, movieRateCorrection = 1): {
   controller: SyncController
   reaction: FakeVideo
   movie: FakeVideo
@@ -74,8 +74,7 @@ function createController(offset = 0, movieRateCorrection = 1, moviePlaybackMult
     reaction,
     movie,
     getOffset: () => currentOffset,
-    getMovieRateCorrection: () => movieRateCorrection,
-    ...(moviePlaybackMultiplier !== undefined ? { getMoviePlaybackMultiplier: () => moviePlaybackMultiplier } : {}),
+    getMovieRate: () => movieRateCorrection,
     setOffset: (next) => {
       currentOffset = next
     },
@@ -160,8 +159,24 @@ describe('SyncController', () => {
     expect(movie.playbackRate).toBeCloseTo(1.455)
   })
 
-  it('applies the movie playback multiplier to the movie base playback speed', async () => {
-    const { controller, reaction, movie } = createController(0, 0.999001, 1.001)
+  it('nudges medium drift continuously before the hard-soft boundary', async () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0)
+    try {
+      const { controller, movie } = createController()
+
+      controller.play()
+      await controller.flushForTest()
+      movie.currentTime = 0.05
+      controller.correctDriftForTest()
+
+      expect(movie.playbackRate).toBeCloseTo(0.985)
+    } finally {
+      now.mockRestore()
+    }
+  })
+
+  it('applies the movie rate to the movie base playback speed', async () => {
+    const { controller, reaction, movie } = createController(0, 1.001)
 
     controller.setPlaybackRate(1.5)
 
@@ -169,22 +184,41 @@ describe('SyncController', () => {
     expect(movie.playbackRate).toBeCloseTo(1.5015)
   })
 
-  it('defaults playback multiplier to the inverse timeline correction', async () => {
-    const { controller, movie } = createController(0, 0.999001)
+  it('uses the movie rate as the default playback multiplier', async () => {
+    const { controller, movie } = createController(0, 1.001)
 
     controller.setPlaybackRate(1)
 
     expect(movie.playbackRate).toBeCloseTo(1.001)
   })
 
-  it('uses timeline correction, not playback multiplier, when mapping seeks', async () => {
-    const { controller, reaction, movie } = createController(0, 0.999001, 1.001)
+  it('uses the movie rate when mapping seeks', async () => {
+    const { controller, reaction, movie } = createController(0, 1.001)
 
     controller.seekReaction(100)
     await controller.flushForTest()
 
     expect(reaction.currentTime).toBe(100)
-    expect(movie.currentTime).toBeCloseTo(99.9001)
+    expect(movie.currentTime).toBeCloseTo(100.1)
+  })
+
+  it('keeps a corrected ten-minute movie timeline on the base movie rate', async () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0)
+    try {
+      const { controller, reaction, movie } = createController(0, 1.001)
+      reaction.duration = 1200
+      movie.duration = 1200
+      reaction.currentTime = 600
+
+      controller.play()
+      await controller.flushForTest()
+      controller.correctDriftForTest()
+
+      expect(movie.currentTime).toBeCloseTo(600.6)
+      expect(movie.playbackRate).toBeCloseTo(1.001)
+    } finally {
+      now.mockRestore()
+    }
   })
 
   it('sets independent volumes and muted state without changing sync state', () => {

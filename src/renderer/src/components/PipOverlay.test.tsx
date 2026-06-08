@@ -124,6 +124,8 @@ describe('PipOverlay', () => {
       />
     )
 
+    expect(screen.getByLabelText('Movie picture in picture')).toHaveClass('pip-popped-out')
+    expect(screen.getByLabelText('Movie picture in picture')).toHaveStyle({ height: '42px' })
     expect(screen.getByRole('button', { name: 'Pop movie back in' })).toHaveTextContent('Movie is popped out.')
     expect(document.querySelector('video.pip-video')).not.toBeInTheDocument()
 

@@ -7,13 +7,29 @@ export interface SubtitleCue {
 const TIMESTAMP_PATTERN = /(?:(\d+):)?(\d{2}):(\d{2})[,.](\d{1,3})/
 
 export function parseSubtitleText(raw: string): SubtitleCue[] {
-  return raw
-    .replace(/^\uFEFF/, '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .split(/\n{2,}/)
+  return normalizeSubtitleText(raw)
+    .split(/\n\s*\n/)
     .flatMap(parseCueBlock)
     .sort((a, b) => a.start - b.start)
+}
+
+export function hasSubtitleContentBeyondHeader(raw: string): boolean {
+  const normalized = normalizeSubtitleText(raw)
+  if (normalized.trim().length === 0) {
+    return false
+  }
+
+  const lines = normalized.split('\n')
+  const firstContentIndex = lines.findIndex((line) => line.trim().length > 0)
+  if (firstContentIndex === -1) {
+    return false
+  }
+
+  if (!lines[firstContentIndex].trim().startsWith('WEBVTT')) {
+    return true
+  }
+
+  return lines.slice(firstContentIndex + 1).some((line) => line.trim().length > 0)
 }
 
 export function getActiveSubtitleCue(cues: SubtitleCue[], timeSeconds: number): SubtitleCue | null {
@@ -30,7 +46,7 @@ function parseCueBlock(block: string): SubtitleCue[] {
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
 
-  if (lines.length === 0 || lines[0] === 'WEBVTT' || lines[0].startsWith('NOTE')) {
+  if (lines.length === 0 || lines[0].startsWith('WEBVTT') || lines[0].startsWith('NOTE')) {
     return []
   }
 
@@ -87,4 +103,11 @@ function decodeEntities(value: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&apos;/g, "'")
+}
+
+function normalizeSubtitleText(raw: string): string {
+  return raw
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
 }

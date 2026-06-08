@@ -59,8 +59,8 @@ import { constrainOverlay } from './components/pipGeometry'
 import { PatreonStorageOffer, SmartReactionInput } from './components/SmartReactionInput'
 import { SyncController, createHtmlVideoAdapter, type VideoAdapter } from './sync/SyncController'
 import { RemoteVideoAdapter } from './sync/RemoteVideoAdapter'
-import { TimelineMapping, movieTimelineCorrectionFromPlaybackMultiplier } from './sync/timeline'
-import { getActiveSubtitleCue, parseSubtitleText, type SubtitleCue } from './subtitles'
+import { TimelineMapping } from './sync/timeline'
+import { getActiveSubtitleCue, hasSubtitleContentBeyondHeader, parseSubtitleText, type SubtitleCue } from './subtitles'
 
 type MediaUrls = Record<MediaRole, string | null>
 type MetadataReady = Record<MediaRole, boolean>
@@ -90,6 +90,7 @@ const MOVIE_WINDOW_GEOMETRY_SAVE_MS = 600
 const MOVIE_WINDOW_COMMAND_TIMEOUT_ERROR = 'Movie window stopped responding.'
 const MOVIE_WINDOW_UNRESPONSIVE_MESSAGE =
   'The movie window stopped responding. It has been moved back to the main window. You can pop it out again from the PiP toolbar.'
+const UNSUPPORTED_SUBTITLE_FORMAT_ERROR = "This subtitle format isn't supported. Use SRT or VTT."
 const APP_VERSION = '1.0.1'
 const ONLINE_HELP_URL = 'https://github.com/nizzyG/WatchAlong#readme'
 const DONATION_URL = 'https://ko-fi.com/watchalong'
@@ -223,8 +224,7 @@ export function App(): JSX.Element {
       reaction: createHtmlVideoAdapter('reaction', reaction),
       movie: movieAdapter,
       getOffset: () => sessionRef.current.offsetSeconds,
-      getMovieRateCorrection: () => movieTimelineCorrectionFromPlaybackMultiplier(sessionRef.current.movieRateCorrection),
-      getMoviePlaybackMultiplier: () => sessionRef.current.movieRateCorrection,
+      getMovieRate: () => sessionRef.current.movieRateCorrection,
       setOffset: async (offsetSeconds) => {
         const next = await window.watchAlong.saveActiveSession({ offsetSeconds })
         commitLibrary(next)
@@ -444,7 +444,11 @@ export function App(): JSX.Element {
 
       const text = await window.watchAlong.getSubtitleText(activeSession.id)
       if (mounted) {
-        setSubtitleCues(text ? parseSubtitleText(text) : [])
+        const cues = text ? parseSubtitleText(text) : []
+        setSubtitleCues(cues)
+        if (text && cues.length === 0 && hasSubtitleContentBeyondHeader(text)) {
+          setError(UNSUPPORTED_SUBTITLE_FORMAT_ERROR)
+        }
       }
     })()
 
@@ -595,15 +599,14 @@ export function App(): JSX.Element {
   isPlayingRef.current = isPlaying
   const reactionDuration = Number.isFinite(durations.reaction) ? durations.reaction : 0
   const displayOffset = useMemo(() => signedSeconds(session.offsetSeconds), [session.offsetSeconds])
-  const movieTimelineCorrection = movieTimelineCorrectionFromPlaybackMultiplier(session.movieRateCorrection)
   const effectiveOffset = useMemo(
     () => new TimelineMapping({
       offsetSeconds: session.offsetSeconds,
-      movieRateCorrection: movieTimelineCorrection
+      movieRateCorrection: session.movieRateCorrection
     }).effectiveOffsetAt(position),
-    [position, movieTimelineCorrection, session.offsetSeconds]
+    [position, session.movieRateCorrection, session.offsetSeconds]
   )
-  const movieStartsAtReaction = Math.max(0, -session.offsetSeconds / movieTimelineCorrection)
+  const movieStartsAtReaction = Math.max(0, -session.offsetSeconds / session.movieRateCorrection)
   const shouldAutoHideControls = appView === 'player' && isPlaying && !setupMode && !commandPanelOpen
 
   useEffect(() => {
@@ -1401,12 +1404,12 @@ export function App(): JSX.Element {
     const reactionTime = reactionVideoRef.current?.currentTime ?? position
     const currentMovieTime = new TimelineMapping({
       offsetSeconds: sessionRef.current.offsetSeconds,
-      movieRateCorrection: movieTimelineCorrectionFromPlaybackMultiplier(sessionRef.current.movieRateCorrection)
+      movieRateCorrection: sessionRef.current.movieRateCorrection
     }).rawReactionToMovie(reactionTime)
     const offsetSeconds = TimelineMapping.calculateOffset(
       reactionTime,
       currentMovieTime,
-      movieTimelineCorrectionFromPlaybackMultiplier(movieRateCorrection)
+      movieRateCorrection
     )
     const nextSession = await persist({
       movieRateCorrection,
@@ -1549,7 +1552,7 @@ export function App(): JSX.Element {
     const nextReactionTime = reaction.currentTime
     await persist({
       offsetSeconds: roundSeconds(
-        TimelineMapping.calculateOffset(reaction.currentTime, movie.currentTime, movieTimelineCorrection)
+        TimelineMapping.calculateOffset(reaction.currentTime, movie.currentTime, session.movieRateCorrection)
       ),
       lastReactionTimeSeconds: nextReactionTime
     })
@@ -1665,12 +1668,12 @@ export function App(): JSX.Element {
         />
       )}
 
-      {hasMedia && !movieWindowActive && (
+      {hasMedia && (
         <PipOverlay
           geometry={session.overlay}
           videoRef={movieVideoRef}
-          hidden={session.isPipHidden}
-          poppedOut={false}
+          hidden={movieWindowActive ? false : session.isPipHidden}
+          poppedOut={movieWindowActive}
           onChange={updateOverlay}
           onCommit={commitOverlay}
           onHide={() => void persist({ isPipHidden: true })}
@@ -2649,46 +2652,6 @@ function DownloadIndicator({ event }: { event: DownloadProgressEvent }): JSX.Ele
         </div>
       )}
     </aside>
-  )
-}
-
-interface LibraryPanelProps {
-  library: SessionLibrary
-  activeSessionId: string | null
-  onSwitch(sessionId: string): void
-  onRename(sessionId: string): void
-  onDelete(sessionId: string): void
-}
-
-function LibraryPanel({ library, activeSessionId, onSwitch, onRename, onDelete }: LibraryPanelProps): JSX.Element {
-  const active = library.sessions.find((session) => session.id === activeSessionId)
-
-  return (
-    <details className="library-panel">
-      <summary>
-        <LibraryIcon size={16} aria-hidden />
-        <span>{active?.title ?? 'Library'}</span>
-        <span>{library.sessions.length}</span>
-      </summary>
-      <div className="library-list">
-        {library.sessions.map((session) => (
-          <div key={session.id} className={`library-item ${session.id === activeSessionId ? 'library-item-active' : ''}`}>
-            <button type="button" className="library-session-button" onClick={() => onSwitch(session.id)}>
-              <span>{session.title}</span>
-              <small>
-                {formatTime(session.lastReactionTimeSeconds)} / {session.moviePath ? fileName(session.moviePath) : 'No movie file'}
-              </small>
-            </button>
-            <button className="icon-button" type="button" title="Rename" aria-label="Rename" onClick={() => onRename(session.id)}>
-              <Pencil size={15} aria-hidden />
-            </button>
-            <button className="icon-button" type="button" title="Remove" aria-label="Remove" onClick={() => onDelete(session.id)}>
-              <Trash2 size={15} aria-hidden />
-            </button>
-          </div>
-        ))}
-      </div>
-    </details>
   )
 }
 

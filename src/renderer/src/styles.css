@@ -644,6 +644,10 @@ input:disabled {
   visibility: hidden;
 }
 
+.pip-popped-out {
+  min-height: 42px;
+}
+
 .pip-video {
   width: 100%;
   height: 100%;
@@ -699,6 +703,10 @@ input:disabled {
 
 .pip:focus-within .pip-titlebar,
 .pip:focus-within .pip-resize {
+  opacity: 1;
+}
+
+.pip-popped-out .pip-titlebar {
   opacity: 1;
 }
 

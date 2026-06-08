@@ -1,6 +1,6 @@
 import type { MediaRole, SyncCommand, SyncState } from '@shared/types'
 import { SyncCommandQueue } from './commandQueue'
-import { TimelineMapping, movieTimelineCorrectionFromPlaybackMultiplier } from './timeline'
+import { TimelineMapping } from './timeline'
 
 const HAVE_FUTURE_DATA = 3
 const SOFT_DRIFT_SECONDS = 0.1
@@ -29,8 +29,7 @@ export interface SyncControllerOptions {
   reaction: VideoAdapter
   movie: VideoAdapter
   getOffset(): number
-  getMovieRateCorrection?(): number
-  getMoviePlaybackMultiplier?(): number
+  getMovieRate?(): number
   setOffset(offsetSeconds: number): void | Promise<void>
   onState?(state: SyncState): void
   onPosition?(reactionTime: number): void
@@ -162,12 +161,6 @@ export class SyncController {
     this.enqueue({ type: 'loadSession', time })
   }
 
-  setVolume(volume: number): void {
-    const safeVolume = Math.min(1, Math.max(0, volume))
-    this.options.reaction.volume = safeVolume
-    this.options.movie.volume = safeVolume
-  }
-
   setAudio({
     reactionVolume,
     movieVolume,
@@ -260,7 +253,7 @@ export class SyncController {
             TimelineMapping.calculateOffset(
               this.options.reaction.currentTime,
               this.options.movie.currentTime,
-              this.movieRateCorrection()
+              this.movieRate()
             )
           )
           this.reanchorExpectedTimeline()
@@ -509,14 +502,10 @@ export class SyncController {
   private mapping(): TimelineMapping {
     return new TimelineMapping({
       offsetSeconds: this.options.getOffset(),
-      movieRateCorrection: this.movieRateCorrection(),
+      movieRateCorrection: this.movieRate(),
       reactionDuration: this.options.reaction.duration,
       movieDuration: this.options.movie.duration
     })
-  }
-
-  private bothReady(): boolean {
-    return this.options.reaction.readyState >= HAVE_FUTURE_DATA && this.options.movie.readyState >= HAVE_FUTURE_DATA
   }
 
   private readyForCurrentTimeline(): boolean {
@@ -544,16 +533,8 @@ export class SyncController {
     return Number.isFinite(this.options.reaction.duration) && Number.isFinite(this.options.movie.duration)
   }
 
-  private movieRateCorrection(): number {
-    return clamp(this.options.getMovieRateCorrection?.() ?? 1, 0.95, 1.05)
-  }
-
-  private moviePlaybackMultiplier(): number {
-    return clamp(
-      this.options.getMoviePlaybackMultiplier?.() ?? movieTimelineCorrectionFromPlaybackMultiplier(this.movieRateCorrection()),
-      0.95,
-      1.05
-    )
+  private movieRate(): number {
+    return clamp(this.options.getMovieRate?.() ?? 1, 0.95, 1.05)
   }
 
   private reactionBaseRate(): number {
@@ -561,7 +542,7 @@ export class SyncController {
   }
 
   private movieBaseRate(): number {
-    return this.basePlaybackRate * this.moviePlaybackMultiplier()
+    return this.basePlaybackRate * this.movieRate()
   }
 
   private setState(state: SyncState): void {
@@ -581,7 +562,7 @@ function correctedRate(driftSeconds: number, basePlaybackRate = 1): number {
   }
 
   if (absoluteDrift < SOFT_DRIFT_SECONDS) {
-    return basePlaybackRate
+    return basePlaybackRate * (1 - driftSeconds * 0.3)
   }
 
   return driftSeconds > 0 ? basePlaybackRate * 0.97 : basePlaybackRate * 1.03
