@@ -1,0 +1,68 @@
+# WatchAlong v1.0.1 — Drift Correction Fix & Docs Refresh
+
+## Priority 1 — Fix inverted timeline/playback rate (root cause of drift oscillation)
+
+Read: `src/renderer/src/App.tsx` lines 220-230, `src/renderer/src/sync/SyncController.ts` lines 545-565 and 577-588, `src/renderer/src/sync/timeline.ts` lines 54-60.
+
+**The bug:** When the user sets movieRateCorrection to 1.001 (Stream 24 → Blu-ray 23.976), `App.tsx` passes `movieTimelineCorrectionFromPlaybackMultiplier(1.001)` which returns `0.999001`. The timeline mapping expects the movie to be *behind* the reaction. But `getMoviePlaybackMultiplier` returns `1.001`, so the movie plays *faster*. The timeline and playback rate fight each other. `correctDrift()` oscillates perpetually.
+
+**Fix:**
+
+1. In `App.tsx` line 226, change `getMovieRateCorrection` to return `sessionRef.current.movieRateCorrection` directly — not inverted. Both `getMovieRateCorrection` and `getMoviePlaybackMultiplier` should return the same value.
+
+2. In `SyncController.ts`, the default for `moviePlaybackMultiplier` (line 551-557) should be `this.movieRateCorrection()`, not `movieTimelineCorrectionFromPlaybackMultiplier(this.movieRateCorrection())`. Same value, no inversion.
+
+3. In `SyncController.ts`, add proportional soft correction in the 30ms-100ms drift range. Currently both the <0.03s and <0.10s branches return `basePlaybackRate`. Change the 0.03-0.10s branch to use `basePlaybackRate * (1 - driftSeconds * 0.3)` — gentle proportional nudging instead of no correction.
+
+**Contract:**
+
+- With movieRateCorrection=1.001: at reactionTime=100, movieTime should be ~100.1 (ahead, not behind)
+- With movieRateCorrection=1.001: reaction plays at 1×, movie plays at 1.001× (faster, not slower)
+- `correctDrift()` must apply soft correction for drift between 0.03s and 0.10s
+- Drift must not oscillate during a 10-minute playback at 1.001× correction
+- All existing tests that assert inverted behavior must be updated to assert correct behavior
+- `npm run typecheck` and `npm test` must pass (expected: test expectations change, not test count)
+
+## Priority 2 — Patreon OAuth domains
+
+Read: `src/main/index.ts` lines 884-891.
+
+**Fix:** Add `accounts.google.com` and `appleid.apple.com` to `isAllowedPatreonLoginUrl`. Users who sign into Patreon via Google or Apple cannot authenticate — the OAuth redirect is blocked.
+
+**Contract:**
+
+- Navigating to `accounts.google.com` during Patreon login must not be blocked
+- `appleid.apple.com` same treatment
+- `npm test` must pass
+
+## Priority 3 — PiP keyboard accessibility
+
+Read: `src/renderer/src/styles.css` lines 694-697.
+
+**Fix:** Add `.pip:focus-within .pip-titlebar, .pip:focus-within .pip-resize { opacity: 1; }`. PiP controls are hover-only — keyboard and touch users cannot discover or use pop-out.
+
+## Priority 4 — Subtitle silent failure
+
+Read: `src/renderer/src/subtitles.ts`.
+
+**Fix:** When `parseSubtitleText` returns an empty array for a non-empty file, show an error message: "This subtitle format isn't supported. Use SRT or VTT." Currently ASS/SSA files fail silently with no user feedback.
+
+## Priority 5 — Remove dead code
+
+- `LibraryPanel` component (App.tsx ~line 2568-2606) — never rendered, duplicates LibrarySessionCard
+- `bothReady()` method (SyncController.ts ~line 518) — never called
+- `setVolume()` method (SyncController.ts ~line 165) — never called, would be incorrect if called
+
+## Priority 6 — Fix APP_VERSION
+
+Read: `src/renderer/src/App.tsx` line 93.
+
+**Fix:** Change `'0.1.0'` to `'1.0.1'`.
+
+## Verification
+
+After all fixes:
+- `npm run typecheck` — clean
+- `npm test` — all passing (test expectations updated where inverted behavior was asserted)
+- `npm run build` — passes
+- Manual smoke: load a session, set rate correction to "Stream 24 → Blu-ray 23.976", play for 10+ minutes, confirm no oscillation

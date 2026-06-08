@@ -90,7 +90,7 @@ const MOVIE_WINDOW_GEOMETRY_SAVE_MS = 600
 const MOVIE_WINDOW_COMMAND_TIMEOUT_ERROR = 'Movie window stopped responding.'
 const MOVIE_WINDOW_UNRESPONSIVE_MESSAGE =
   'The movie window stopped responding. It has been moved back to the main window. You can pop it out again from the PiP toolbar.'
-const APP_VERSION = '1.0.0'
+const APP_VERSION = '1.0.1'
 const ONLINE_HELP_URL = 'https://github.com/nizzyG/WatchAlong#readme'
 const DONATION_URL = 'https://ko-fi.com/watchalong'
 
