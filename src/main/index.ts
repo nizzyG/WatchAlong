@@ -9,6 +9,7 @@ import {
 } from './movieWindowHelpers'
 import {
   detectBrowsers,
+  detectMovieFrameRate,
   DownloadManager,
   extractPatreonSession,
   findPatreonSessionCookieValue,
@@ -794,6 +795,10 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(`${IPC_PREFIX}:check-tools`, () => toolResolver.checkTools())
+
+  ipcMain.handle(`${IPC_PREFIX}:detect-movie-frame-rate`, (_event, moviePath: unknown) => {
+    return typeof moviePath === 'string' ? detectMovieFrameRate(moviePath, toolResolver) : null
+  })
 
   ipcMain.handle(`${IPC_PREFIX}:detect-browsers`, () => detectBrowsers())
 

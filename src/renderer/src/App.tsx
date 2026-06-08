@@ -48,6 +48,7 @@ import type {
   PlaybackRate,
   ReactionDownloadSource,
   ReactionSource,
+  ReactorSource,
   RemoteMediaState,
   SavedPatreonSessionStatus,
   SessionLibrary,
@@ -78,7 +79,17 @@ const defaultPreferences: AppPreferences = {
   reactionDownloadDirectory: null
 }
 const playbackRates: PlaybackRate[] = [1, 1.25, 1.5, 2]
-const movieSourceRates = [
+const reactorSourceOptions: Array<{ source: ReactorSource; label: string; summary: string }> = [
+  { source: 'ntsc', label: '23.976 fps (most movies, Blu-ray, streaming)', summary: '23.976 fps' },
+  { source: 'streaming', label: '24.000 fps (select streaming originals)', summary: '24.000 fps' },
+  { source: 'pal', label: '25.000 fps (PAL DVD, European broadcast)', summary: '25.000 fps' }
+]
+const reactorSourceFps: Record<ReactorSource, number> = {
+  streaming: 24,
+  ntsc: 24000 / 1001,
+  pal: 25
+}
+const manualMovieSourceRates = [
   { label: 'Matched', rate: 1 },
   { label: 'Stream 24 -> Blu-ray 23.976', rate: 1.001 },
   { label: 'Reverse', rate: 0.999001 }
@@ -117,6 +128,7 @@ export function App(): JSX.Element {
   const resumeAfterRepairRef = useRef(false)
   const canPlayRef = useRef(false)
   const isPlayingRef = useRef(false)
+  const movieFrameRateDetectionKeyRef = useRef<string | null>(null)
   const persistRef = useRef<typeof persist>(null as unknown as typeof persist)
 
   const [emptySession] = useState(() => createDefaultSession())
@@ -155,6 +167,8 @@ export function App(): JSX.Element {
   const activeSession = useMemo(() => getActiveSession(library), [library])
   const session = activeSession ?? emptySession
   const activeSubtitle = useMemo(() => getActiveSubtitleCue(subtitleCues, moviePosition), [moviePosition, subtitleCues])
+  const detectedMovieRateCorrection = calculateMovieRateCorrection(session.detectedMovieFps, session.reactorSource)
+  const reactorSourceSummary = reactorSourceOptions.find((option) => option.source === session.reactorSource)?.summary ?? '23.976 fps'
 
   const commitLibrary = useCallback((next: SessionLibrary): LibrarySession | null => {
     const nextSession = getActiveSession(next)
@@ -1396,12 +1410,22 @@ export function App(): JSX.Element {
     void persist({ playbackRate })
   }
 
-  const setMovieRateCorrection = async (movieRateCorrection: number): Promise<void> => {
+  const getCurrentReactionTime = (): number => {
+    const reaction = reactionVideoRef.current
+    return reaction && reaction.readyState > 0 && Number.isFinite(reaction.currentTime)
+      ? reaction.currentTime
+      : positionRef.current
+  }
+
+  const applyMovieRateCorrection = async (
+    movieRateCorrection: number,
+    patch: Partial<LibrarySession> = {}
+  ): Promise<void> => {
     if (!activeSession) {
       return
     }
 
-    const reactionTime = reactionVideoRef.current?.currentTime ?? position
+    const reactionTime = getCurrentReactionTime()
     const currentMovieTime = new TimelineMapping({
       offsetSeconds: sessionRef.current.offsetSeconds,
       movieRateCorrection: sessionRef.current.movieRateCorrection
@@ -1412,6 +1436,7 @@ export function App(): JSX.Element {
       movieRateCorrection
     )
     const nextSession = await persist({
+      ...patch,
       movieRateCorrection,
       offsetSeconds: roundSeconds(offsetSeconds)
     })
@@ -1420,6 +1445,69 @@ export function App(): JSX.Element {
       controllerRef.current?.seekReaction(reactionTime)
     }
   }
+
+  const setMovieRateCorrection = async (movieRateCorrection: number): Promise<void> => {
+    await applyMovieRateCorrection(movieRateCorrection)
+  }
+
+  const setReactorSource = async (reactorSource: ReactorSource): Promise<void> => {
+    if (!activeSession) {
+      return
+    }
+
+    const movieRateCorrection = calculateMovieRateCorrection(sessionRef.current.detectedMovieFps, reactorSource)
+    if (movieRateCorrection === null) {
+      await persist({ reactorSource })
+      return
+    }
+
+    await applyMovieRateCorrection(movieRateCorrection, { reactorSource })
+  }
+
+  useEffect(() => {
+    const moviePath = activeSession?.moviePath
+    if (!activeSession || !moviePath || activeSession.detectedMovieFps !== null) {
+      return
+    }
+
+    const detectionKey = `${activeSession.id}|${moviePath}`
+    if (movieFrameRateDetectionKeyRef.current === detectionKey) {
+      return
+    }
+
+    movieFrameRateDetectionKeyRef.current = detectionKey
+    let cancelled = false
+
+    void (async () => {
+      let detectedMovieFps: number | null = null
+      try {
+        detectedMovieFps = await window.watchAlong.detectMovieFrameRate(moviePath)
+      } catch {
+        detectedMovieFps = null
+      }
+
+      if (cancelled) {
+        return
+      }
+
+      const currentSession = sessionRef.current
+      if (currentSession.id !== activeSession.id || currentSession.moviePath !== moviePath) {
+        return
+      }
+
+      const movieRateCorrection = calculateMovieRateCorrection(detectedMovieFps, currentSession.reactorSource)
+      if (movieRateCorrection === null) {
+        await persistRef.current({ detectedMovieFps: null })
+        return
+      }
+
+      await applyMovieRateCorrection(movieRateCorrection, { detectedMovieFps })
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeSession?.detectedMovieFps, activeSession?.id, activeSession?.moviePath])
 
   const togglePipVisibility = (): void => {
     if (!activeSession) {
@@ -1798,60 +1886,100 @@ export function App(): JSX.Element {
 
         <div className="control-meta">
           <span className={`status-pill status-${syncState}`}>{syncState}</span>
-          <span className="file-label">{session.reactionPath ? fileName(session.reactionPath) : 'No reaction file'}</span>
-          <span className="file-label">{session.moviePath ? fileName(session.moviePath) : 'No movie file'}</span>
-          <span className="offset-label">
-            Offset {displayOffset} / effective {signedSeconds(effectiveOffset)} / movie at {formatTime(movieStartsAtReaction)}
-          </span>
-          <div className="speed-control" role="group" aria-label="Playback speed">
-            {playbackRates.map((rate) => (
-              <button
-                key={rate}
-                className={rate === session.playbackRate ? 'speed-active' : ''}
-                type="button"
-                disabled={!activeSession}
-                onClick={() => setPlaybackRate(rate)}
-              >
-                {rate}x
-              </button>
-            ))}
+
+          <div className="volume-bank">
+            <StreamVolume
+              label="Reaction"
+              volume={session.reactionVolume}
+              muted={session.isReactionMuted}
+              onVolume={setReactionVolume}
+              onMute={toggleReactionMute}
+            />
+            <StreamVolume
+              label="Movie"
+              volume={session.movieVolume}
+              muted={session.isMovieMuted}
+              onVolume={setMovieVolume}
+              onMute={toggleMovieMute}
+            />
           </div>
-          <div className="source-rate-control" role="group" aria-label="Movie source">
-            <span>
-              Movie source {formatRatePercent(session.movieRateCorrection)} / {formatRateDriftPerHour(session.movieRateCorrection)}
-            </span>
-            {movieSourceRates.map((option) => (
-              <button
-                key={option.rate}
-                className={Math.abs(option.rate - session.movieRateCorrection) < 0.000001 ? 'speed-active' : ''}
-                type="button"
-                disabled={!activeSession}
-                onClick={() => void setMovieRateCorrection(option.rate)}
-              >
-                {option.label}
+
+          <div className="playback-options">
+            <div className="speed-control" role="group" aria-label="Playback speed">
+              {playbackRates.map((rate) => (
+                <button
+                  key={rate}
+                  className={rate === session.playbackRate ? 'speed-active' : ''}
+                  type="button"
+                  disabled={!activeSession}
+                  onClick={() => setPlaybackRate(rate)}
+                >
+                  {rate}x
+                </button>
+              ))}
+            </div>
+            <details className="timing-settings">
+              <summary className="timing-summary">
+                <span className="timing-summary-label">Timing</span>
+                <span className="timing-summary-value">{reactorSourceSummary}</span>
+                <span className="timing-summary-detail">
+                  {detectedMovieRateCorrection !== null
+                    ? `Detected movie ${formatFps(session.detectedMovieFps)} fps / ${formatRatePercent(detectedMovieRateCorrection)}`
+                    : 'Manual movie rate'}
+                </span>
+              </summary>
+              <div className="timing-settings-body">
+                <div className="timing-session-details" aria-label="Session timing details">
+                  <span>{session.reactionPath ? fileName(session.reactionPath) : 'No reaction file'}</span>
+                  <span>{session.moviePath ? fileName(session.moviePath) : 'No movie file'}</span>
+                  <span>
+                    Offset {displayOffset} / effective {signedSeconds(effectiveOffset)} / movie at {formatTime(movieStartsAtReaction)}
+                  </span>
+                </div>
+                <div className="source-rate-control" role="group" aria-label="Reactor source">
+                  <span>Reactor source</span>
+                  {reactorSourceOptions.map((option) => (
+                    <button
+                      key={option.source}
+                      className={option.source === session.reactorSource ? 'speed-active' : ''}
+                      type="button"
+                      disabled={!activeSession}
+                      onClick={() => void setReactorSource(option.source)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                {detectedMovieRateCorrection !== null ? (
+                  <span className="source-rate-detail">
+                    Detected movie {formatFps(session.detectedMovieFps)} fps / correction{' '}
+                    {formatRatePercent(detectedMovieRateCorrection)} / {formatRateDriftPerHour(detectedMovieRateCorrection)}
+                  </span>
+                ) : (
+                  <div className="source-rate-control manual-rate-control" role="group" aria-label="Manual movie rate">
+                    <span>Manual movie rate</span>
+                    {manualMovieSourceRates.map((option) => (
+                      <button
+                        key={option.rate}
+                        className={Math.abs(option.rate - session.movieRateCorrection) < 0.000001 ? 'speed-active' : ''}
+                        type="button"
+                        disabled={!activeSession}
+                        onClick={() => void setMovieRateCorrection(option.rate)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </details>
+            {session.subtitlePath && (
+              <button className="mini-button subtitle-clear" type="button" onClick={() => void clearSubtitle()}>
+                <X size={14} aria-hidden />
+                {fileName(session.subtitlePath)}
               </button>
-            ))}
+            )}
           </div>
-          <StreamVolume
-            label="Reaction"
-            volume={session.reactionVolume}
-            muted={session.isReactionMuted}
-            onVolume={setReactionVolume}
-            onMute={toggleReactionMute}
-          />
-          <StreamVolume
-            label="Movie"
-            volume={session.movieVolume}
-            muted={session.isMovieMuted}
-            onVolume={setMovieVolume}
-            onMute={toggleMovieMute}
-          />
-          {session.subtitlePath && (
-            <button className="mini-button subtitle-clear" type="button" onClick={() => void clearSubtitle()}>
-              <X size={14} aria-hidden />
-              {fileName(session.subtitlePath)}
-            </button>
-          )}
         </div>
         {error && (
           <div className="error-banner">
@@ -2855,6 +2983,23 @@ function formatRateDriftPerHour(rate: number): string {
   const secondsPerHour = (rate - 1) * 3600
   const sign = secondsPerHour >= 0 ? '+' : ''
   return `${sign}${secondsPerHour.toFixed(1)}s/hr`
+}
+
+function formatFps(fps: number | null): string {
+  if (fps === null || !Number.isFinite(fps)) {
+    return 'unknown'
+  }
+
+  return fps.toFixed(3).replace(/\.?0+$/, '')
+}
+
+function calculateMovieRateCorrection(detectedMovieFps: number | null, reactorSource: ReactorSource): number | null {
+  if (detectedMovieFps === null || !Number.isFinite(detectedMovieFps) || detectedMovieFps <= 0) {
+    return null
+  }
+
+  const sourceFps = reactorSourceFps[reactorSource]
+  return Number(clamp(sourceFps / detectedMovieFps, 0.9, 1.1).toFixed(6))
 }
 
 function roundSeconds(value: number): number {

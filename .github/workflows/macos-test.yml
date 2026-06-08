@@ -21,7 +21,7 @@ jobs:
           cache: npm
 
       - name: Make macOS tools executable
-        run: chmod +x resources/tools/ffmpeg/ffmpeg-darwin-* resources/tools/node/node-darwin-* resources/tools/yt-dlp/yt-dlp_macos
+        run: chmod +x resources/tools/ffmpeg/ffmpeg-darwin-* resources/tools/ffmpeg/ffprobe-darwin-* resources/tools/node/node-darwin-* resources/tools/yt-dlp/yt-dlp_macos
 
       - name: Install dependencies
         run: npm ci

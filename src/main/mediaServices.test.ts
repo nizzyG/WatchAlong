@@ -13,6 +13,7 @@ import {
   getBrowserExtractionMode,
   getPlatformToolFilename,
   humanizeCookieExtractionError,
+  parseFfprobeFrameRate,
   parsePatreonSessionCookie,
   ToolResolver
 } from './mediaServices'
@@ -34,6 +35,7 @@ describe('media services', () => {
     it('uses Windows bundled executable names', () => {
       expect(getPlatformToolFilename('yt-dlp', 'win32')).toBe('yt-dlp.exe')
       expect(getPlatformToolFilename('ffmpeg', 'win32')).toBe('ffmpeg.exe')
+      expect(getPlatformToolFilename('ffprobe', 'win32')).toBe('ffprobe.exe')
       expect(getPlatformToolFilename('node', 'win32')).toBe('node.exe')
     })
 
@@ -41,8 +43,25 @@ describe('media services', () => {
       expect(getPlatformToolFilename('yt-dlp', 'darwin')).toBe('yt-dlp_macos')
       expect(getPlatformToolFilename('ffmpeg', 'darwin', 'arm64')).toBe('ffmpeg-darwin-arm64')
       expect(getPlatformToolFilename('ffmpeg', 'darwin', 'x64')).toBe('ffmpeg-darwin-x64')
+      expect(getPlatformToolFilename('ffprobe', 'darwin', 'arm64')).toBe('ffprobe-darwin-arm64')
+      expect(getPlatformToolFilename('ffprobe', 'darwin', 'x64')).toBe('ffprobe-darwin-x64')
       expect(getPlatformToolFilename('node', 'darwin', 'arm64')).toBe('node-darwin-arm64')
       expect(getPlatformToolFilename('node', 'darwin', 'x64')).toBe('node-darwin-x64')
+    })
+  })
+
+  describe('parseFfprobeFrameRate', () => {
+    it('parses and rounds ffprobe frame-rate fractions', () => {
+      expect(parseFfprobeFrameRate('25/1')).toBe(25)
+      expect(parseFfprobeFrameRate('24000/1001')).toBe(23.976)
+      expect(parseFfprobeFrameRate('30000/1001')).toBe(29.97)
+      expect(parseFfprobeFrameRate('24/1')).toBe(24)
+    })
+
+    it('returns null for missing or unparseable frame-rate output', () => {
+      expect(parseFfprobeFrameRate('')).toBeNull()
+      expect(parseFfprobeFrameRate('garbage')).toBeNull()
+      expect(parseFfprobeFrameRate('0/0')).toBeNull()
     })
   })
 

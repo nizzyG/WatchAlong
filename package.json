@@ -100,7 +100,8 @@
           "from": "resources/tools/ffmpeg",
           "to": "tools/ffmpeg",
           "filter": [
-            "ffmpeg-darwin-${arch}"
+            "ffmpeg-darwin-${arch}",
+            "ffprobe-darwin-${arch}"
           ]
         },
         {

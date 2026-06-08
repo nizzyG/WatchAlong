@@ -1,5 +1,6 @@
 export type MediaRole = 'reaction' | 'movie'
 export type PlaybackRate = 1 | 1.25 | 1.5 | 2
+export type ReactorSource = 'streaming' | 'ntsc' | 'pal'
 export type ToolName = 'yt-dlp' | 'ffmpeg' | 'node' | 'patreon-dl'
 export type BrowserName = 'firefox' | 'chrome' | 'edge' | 'brave' | 'safari' | 'opera'
 export type BrowserExtractionMode = 'automatic' | 'best-effort' | 'manual-only'
@@ -41,6 +42,8 @@ export interface LibrarySession {
   isReactionMuted: boolean
   isMovieMuted: boolean
   playbackRate: PlaybackRate
+  reactorSource: ReactorSource
+  detectedMovieFps: number | null
   movieRateCorrection: number
   createdAt: string
   updatedAt: string
@@ -289,6 +292,7 @@ export interface WatchAlongApi {
   onMovieWindowPopInRequest(callback: MovieWindowLifecycleCallback): () => void
   onMovieWindowClosed(callback: MovieWindowLifecycleCallback): () => void
   checkTools(): Promise<ToolCheckResult>
+  detectMovieFrameRate(moviePath: string): Promise<number | null>
   detectBrowsers(): Promise<BrowserDetection[]>
   extractPatreonSession(browserName: BrowserName): Promise<PatreonSessionExtractionResult>
   openPatreonLoginWindow(): Promise<PatreonSessionExtractionResult>

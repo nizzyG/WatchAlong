@@ -1,4 +1,4 @@
-import type { LibrarySession, OverlayGeometry, PlaybackRate, ReactionSource, SessionLibrary, SessionData } from './types'
+import type { LibrarySession, OverlayGeometry, PlaybackRate, ReactionSource, ReactorSource, SessionLibrary, SessionData } from './types'
 
 export const SESSION_LIBRARY_VERSION = 3
 
@@ -36,6 +36,8 @@ export function createDefaultSession(now = new Date(), patch: Partial<LibrarySes
     isReactionMuted: Boolean(patch.isReactionMuted),
     isMovieMuted: Boolean(patch.isMovieMuted),
     playbackRate: normalizePlaybackRate(patch.playbackRate),
+    reactorSource: normalizeReactorSource(patch.reactorSource),
+    detectedMovieFps: normalizeDetectedMovieFps(patch.detectedMovieFps),
     movieRateCorrection: normalizeMovieRateCorrection(patch.movieRateCorrection),
     createdAt: timestamp,
     updatedAt: timestamp
@@ -89,6 +91,8 @@ export function normalizeSession(value: unknown, now = new Date()): SessionData 
     isReactionMuted: Boolean(source?.isReactionMuted),
     isMovieMuted: Boolean(source?.isMovieMuted),
     playbackRate: normalizePlaybackRate(source?.playbackRate),
+    reactorSource: normalizeReactorSource(source?.reactorSource),
+    detectedMovieFps: normalizeDetectedMovieFps(source?.detectedMovieFps),
     movieRateCorrection: normalizeMovieRateCorrection(source?.movieRateCorrection),
     createdAt,
     updatedAt
@@ -185,9 +189,17 @@ export function normalizePlaybackRate(value: unknown): PlaybackRate {
   return PLAYBACK_RATES.includes(value as PlaybackRate) ? (value as PlaybackRate) : 1
 }
 
+export function normalizeReactorSource(value: unknown): ReactorSource {
+  return value === 'ntsc' || value === 'pal' || value === 'streaming' ? value : 'ntsc'
+}
+
+export function normalizeDetectedMovieFps(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
+}
+
 export function normalizeMovieRateCorrection(value: unknown): number {
   const rate = finiteOr(value, 1)
-  return clamp(rate, 0.95, 1.05)
+  return clamp(rate, 0.9, 1.1)
 }
 
 export function defaultSessionTitle(moviePath: string | null, reactionPath: string | null): string {

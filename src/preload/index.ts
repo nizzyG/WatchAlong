@@ -81,6 +81,7 @@ const api: WatchAlongApi = {
     return () => ipcRenderer.removeListener(`${IPC_PREFIX}:movie-window-closed`, listener)
   },
   checkTools: () => ipcRenderer.invoke(`${IPC_PREFIX}:check-tools`),
+  detectMovieFrameRate: (moviePath: string) => ipcRenderer.invoke(`${IPC_PREFIX}:detect-movie-frame-rate`, moviePath),
   detectBrowsers: () => ipcRenderer.invoke(`${IPC_PREFIX}:detect-browsers`),
   extractPatreonSession: (browserName: BrowserName) => ipcRenderer.invoke(`${IPC_PREFIX}:extract-patreon-session`, browserName),
   openPatreonLoginWindow: () => ipcRenderer.invoke(`${IPC_PREFIX}:open-patreon-login-window`),

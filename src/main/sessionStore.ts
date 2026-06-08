@@ -82,6 +82,7 @@ export class SessionStore {
       ...active,
       [pathKey]: filePath,
       ...(role === 'reaction' ? { reactionSource } : {}),
+      ...(role === 'movie' ? { detectedMovieFps: null } : {}),
       title: role === 'movie' ? basenameForTitle(filePath) : active.title,
       createdAt: active.createdAt,
       updatedAt: now.toISOString()
@@ -121,7 +122,7 @@ export class SessionStore {
     const nextSession = normalizeSession({
       ...target,
       ...(role === 'movie'
-        ? { moviePath: filePath }
+        ? { moviePath: filePath, detectedMovieFps: null }
         : { reactionPath: filePath, reactionSource }),
       createdAt: target.createdAt,
       updatedAt: now.toISOString()

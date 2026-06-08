@@ -534,7 +534,7 @@ export class SyncController {
   }
 
   private movieRate(): number {
-    return clamp(this.options.getMovieRate?.() ?? 1, 0.95, 1.05)
+    return clamp(this.options.getMovieRate?.() ?? 1, 0.9, 1.1)
   }
 
   private reactionBaseRate(): number {

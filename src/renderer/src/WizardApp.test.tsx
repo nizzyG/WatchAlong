@@ -149,6 +149,7 @@ function createApi(): WatchAlongApi {
     onMovieWindowPopInRequest: vi.fn(() => vi.fn()),
     onMovieWindowClosed: vi.fn(() => vi.fn()),
     checkTools: vi.fn(),
+    detectMovieFrameRate: vi.fn(async () => null),
     detectBrowsers: vi.fn(async () => []),
     extractPatreonSession: vi.fn(async () => ({ ok: false })),
     openPatreonLoginWindow: vi.fn(async () => ({ ok: false })),

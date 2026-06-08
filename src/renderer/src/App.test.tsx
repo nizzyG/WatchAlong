@@ -162,6 +162,7 @@ function createApi(
       return vi.fn()
     }),
     checkTools: vi.fn(async () => ({ ready: true, tools: [] })),
+    detectMovieFrameRate: vi.fn(async () => null),
     detectBrowsers: vi.fn(async () => []),
     extractPatreonSession: vi.fn(async () => ({ ok: false })),
     openPatreonLoginWindow: vi.fn(async () => ({ ok: false })),
@@ -498,8 +499,33 @@ describe('App', () => {
     expect(fullscreenTargets).toEqual([document.documentElement])
   })
 
-  it('preserves the current sync point when changing movie source rate', async () => {
-    const session = createSession('s1', 'First', 0, { offsetSeconds: 5 })
+  it('detects the movie frame rate and stores the computed correction', async () => {
+    const session = createSession('s1', 'First', 0, { detectedMovieFps: null })
+    const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
+    api.detectMovieFrameRate = vi.fn(async () => 25)
+    window.watchAlong = api
+
+    render(<App />)
+
+    await waitFor(() => expect(api.detectMovieFrameRate).toHaveBeenCalledWith(session.moviePath))
+    await waitFor(() =>
+      expect(api.saveActiveSession).toHaveBeenCalledWith({
+        detectedMovieFps: 25,
+        movieRateCorrection: 0.959041,
+        offsetSeconds: 0
+      })
+    )
+    expect(await screen.findByText('Detected movie 25 fps / -4.096%')).toBeInTheDocument()
+    expect(api.detectMovieFrameRate).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves the current sync point when changing reactor source', async () => {
+    const session = createSession('s1', 'First', 0, {
+      detectedMovieFps: 25,
+      reactorSource: 'streaming',
+      movieRateCorrection: 24 / 25,
+      offsetSeconds: 5
+    })
     const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
     window.watchAlong = api
 
@@ -508,14 +534,31 @@ describe('App', () => {
     const reaction = container.querySelector('video.reaction-video') as HTMLVideoElement
     reaction.currentTime = 100
 
-    fireEvent.click(screen.getByRole('button', { name: 'Stream 24 -> Blu-ray 23.976' }))
+    fireEvent.click(screen.getByText('Timing'))
+    fireEvent.click(screen.getByRole('button', { name: '25.000 fps (PAL DVD, European broadcast)' }))
 
     await waitFor(() =>
       expect(api.saveActiveSession).toHaveBeenCalledWith({
-        movieRateCorrection: 1.001,
-        offsetSeconds: 4.9
+        reactorSource: 'pal',
+        movieRateCorrection: 1,
+        offsetSeconds: 1
       })
     )
+  })
+
+  it('shows manual movie rate presets when detection fails', async () => {
+    const session = createSession('s1', 'First', 0, { detectedMovieFps: null })
+    const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
+    api.detectMovieFrameRate = vi.fn(async () => null)
+    window.watchAlong = api
+
+    render(<App />)
+
+    await waitFor(() => expect(api.detectMovieFrameRate).toHaveBeenCalledWith(session.moviePath))
+    fireEvent.click(screen.getByText('Timing'))
+    expect(screen.getByRole('group', { name: 'Manual movie rate' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Stream 24 -> Blu-ray 23.976' })).toBeInTheDocument()
+    expect(screen.queryByText(/Detected movie/i)).not.toBeInTheDocument()
   })
 
   it('opens a popped-out movie with the selected playback multiplier', async () => {
@@ -827,6 +870,8 @@ function createSession(
     isReactionMuted: false,
     isMovieMuted: false,
     playbackRate: 1,
+    reactorSource: 'ntsc',
+    detectedMovieFps: 24000 / 1001,
     movieRateCorrection: 1,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z'

@@ -42,7 +42,7 @@ interface RunningDownload {
 }
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov', '.webm', '.mkv', '.avi'])
-type ToolExecutableName = Exclude<ToolName, 'patreon-dl'>
+type ToolExecutableName = Exclude<ToolName, 'patreon-dl'> | 'ffprobe'
 
 interface BrowserDefinition {
   name: BrowserName
@@ -65,6 +65,7 @@ export function getPlatformToolFilename(
     return {
       'yt-dlp': 'yt-dlp.exe',
       ffmpeg: 'ffmpeg.exe',
+      ffprobe: 'ffprobe.exe',
       node: 'node.exe'
     }[toolName]
   }
@@ -74,6 +75,7 @@ export function getPlatformToolFilename(
     return {
       'yt-dlp': 'yt-dlp_macos',
       ffmpeg: `ffmpeg-darwin-${darwinArch}`,
+      ffprobe: `ffprobe-darwin-${darwinArch}`,
       node: `node-darwin-${darwinArch}`
     }[toolName]
   }
@@ -81,6 +83,7 @@ export function getPlatformToolFilename(
   return {
     'yt-dlp': 'yt-dlp',
     ffmpeg: 'ffmpeg',
+    ffprobe: 'ffprobe',
     node: 'node'
   }[toolName]
 }
@@ -207,6 +210,10 @@ export class ToolResolver {
 
   getFfmpegPath(): string | null {
     return firstExisting([resourcePath('tools', 'ffmpeg', getPlatformToolFilename('ffmpeg'))])
+  }
+
+  getFfprobePath(): string | null {
+    return firstExisting([resourcePath('tools', 'ffmpeg', getPlatformToolFilename('ffprobe'))])
   }
 
   getNodePath(): string | null {
@@ -609,6 +616,56 @@ export function detectBrowsers(
       paths
     }
   })
+}
+
+export async function detectMovieFrameRate(moviePath: string, tools: ToolResolver): Promise<number | null> {
+  if (!moviePath || !existsSync(moviePath)) {
+    return null
+  }
+
+  const ffprobePath = tools.getFfprobePath()
+  if (!ffprobePath) {
+    return null
+  }
+
+  const result = await runVersionCheck(ffprobePath, [
+    '-v',
+    'error',
+    '-select_streams',
+    'v:0',
+    '-show_entries',
+    'stream=r_frame_rate',
+    '-of',
+    'csv=p=0',
+    moviePath
+  ], 10000)
+
+  return result.ok ? parseFfprobeFrameRate(result.output) : null
+}
+
+export function parseFfprobeFrameRate(output: string): number | null {
+  const line = output
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .find((item) => item.length > 0)
+
+  if (!line) {
+    return null
+  }
+
+  const match = /^(\d+(?:\.\d+)?)(?:\/(\d+(?:\.\d+)?))?$/.exec(line)
+  if (!match) {
+    return null
+  }
+
+  const numerator = Number.parseFloat(match[1])
+  const denominator = match[2] ? Number.parseFloat(match[2]) : 1
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) {
+    return null
+  }
+
+  const fps = numerator / denominator
+  return Number.isFinite(fps) && fps > 0 ? Math.round(fps * 1000) / 1000 : null
 }
 
 export async function extractPatreonSession(

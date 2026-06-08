@@ -18,6 +18,8 @@ describe('session helpers', () => {
     expect(session.overlay.height).toBe(180)
     expect(session.reactionPath).toBeNull()
     expect(session.playbackRate).toBe(1)
+    expect(session.reactorSource).toBe('ntsc')
+    expect(session.detectedMovieFps).toBeNull()
     expect(session.movieRateCorrection).toBe(1)
     expect(session.isMoviePoppedOut).toBe(false)
     expect(session.movieWindowGeometry).toMatchObject({
