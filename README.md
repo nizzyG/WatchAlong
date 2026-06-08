@@ -1,43 +1,45 @@
 # WatchAlong
 
-A desktop app for watching full-length Patreon reaction videos alongside your own movie files. Keeps them in sync. Handles the 24fps drift thing. Free and open source.
+**Full-length Patreon reactions, synced with your own movie files.**
+
+You support the creator. You own the film. WatchAlong handles the sync — locking your movie to the reaction, fixing frame-rate drift, and remembering everything when you close the app. No accounts, no cloud, no streaming services.
 
 ## What it does
 
-You load a movie file and a reaction video. WatchAlong plays them together — reaction full screen, movie in a draggable overlay. Press play once, both play. Pause, both pause. Close the app, reopen it — everything's where you left it.
+- **Sync once, then forget it.** A quick manual sync at the start (usually right when the reactor does their countdown), and WatchAlong keeps both videos locked together. Pause, seek, restart the app — no re-syncing.
+- **Picture-in-Picture, or pop it out.** Watch the reactor in a draggable overlay over your movie, or pop the movie into its own window for dual-monitor setups.
+- **Fixes the 24fps vs 23.976fps drift.** Most streaming services play at true 24fps. Blu-ray rips run at 23.976fps. Over a 2-hour movie that's about 7 seconds of drift. WatchAlong has a one-click correction for this.
+- **Download reactions directly.** Paste a YouTube link or connect your Patreon account — WatchAlong grabs the reaction for you. No browser extensions.
+- **Library that remembers.** All your watchalong pairings are saved. Pick up right where you left off.
+- **Subtitles.** Load SRT or VTT subtitle files, displayed over the movie.
+- **Keyboard shortcuts for everything.** Space, arrows, R/M for mute, Ctrl+Shift+P for the command panel.
 
-- Picture-in-picture overlay you can drag, resize, and snap to corners
-- One-click pop-out — movie gets its own window, perfect for dual monitors
-- Fixes the 24fps vs 23.976fps drift (streams run at true 24fps, Blu-rays at 23.976fps — over 2 hours that's 7 seconds of drift)
-- Downloads reactions from YouTube links or Patreon posts (needs your Patreon login — only works if you're subscribed)
-- Saves all your watchalong pairings so you can pick up where you left off
-- SRT/VTT subtitles over the movie
-- Keyboard shortcuts for everything
+## Philosophy
 
-## What it doesn't do
+WatchAlong is built on a few simple ideas:
 
-Doesn't work with Netflix, Disney+, HBO, or any streaming service. Doesn't bypass Patreon paywalls — you need an active subscription. Doesn't phone home, collect data, or require an account. Everything lives on your machine.
-
-## Why I built it
-
-I was watching a Patreon reaction to Across the Universe (favorite musical) and the audio kept drifting out of sync. By the end of the movie, the reactor was a few seconds ahead of the film. Drove me nuts. I couldn't find a tool that handled this well, so I built one.
+- **You should own your media.** It works with files you've ripped from discs you own, or DRM-free downloads you've purchased. No streaming service integration.
+- **Creators deserve to be paid.** Full-length reactions are behind a Patreon subscription. WatchAlong doesn't bypass that — you need an active subscription to access that content.
+- **Everything stays local.** No accounts, no cloud, no telemetry. Your library, sessions, and downloads live on your device.
 
 ## Getting started
 
-1. Have a movie file you legally own (ripped from a disc, DRM-free download)
-2. Subscribe to a reactor on Patreon who posts full-length reactions
-3. [Download WatchAlong](https://github.com/nizzyG/WatchAlong/releases)
-4. Click "+ New WatchAlong" and follow the wizard
+1. Have a movie file you legally own (ripped from a disc, or a DRM-free download)
+2. Download WatchAlong from the [releases page](https://github.com/nizzyG/WatchAlong/releases)
+   - **Windows:** Run the `.exe` installer
+   - **macOS:** Open the `.dmg` and drag to Applications
+3. Launch and click **+ New WatchAlong**
+4. Follow the wizard to load your movie and add a reaction
 
-[Step-by-step tutorial with screenshots](tutorial.md) if you want the full walkthrough.
+First time? There's a [step-by-step tutorial with screenshots](tutorial.md).
 
-## Platform support
+## Platform notes
 
-**Windows:** Tested thoroughly. Should be smooth.
+**Windows:** Tested end-to-end. Should be smooth.
 
-**macOS:** Built and tested in a VM. If you're on a real Mac and something's off, I want to hear about it.
+**macOS:** Built and verified, but tested in a VM rather than on real Apple hardware. If you're on a real Mac and run into issues, I want to hear about it.
 
-First public release. Built by one person. If you find a bug, [open an issue](https://github.com/nizzyG/WatchAlong/issues) and I'll fix it.
+This is a first public release, built by one person. Bug reports and feedback are welcome — [open an issue](https://github.com/nizzyG/WatchAlong/issues).
 
 ## FAQ
 
@@ -45,7 +47,7 @@ Questions about legality, file formats, Patreon setup, the 24fps thing — [FAQ 
 
 ## Support
 
-WatchAlong is free. If it makes your watchalong nights better, [throw me a few bucks on Ko-fi](https://ko-fi.com/watchalong).
+WatchAlong is free and always will be. If it makes your watchalong nights better, [throw me a few bucks on Ko-fi](https://ko-fi.com/watchalong).
 
 ## Dev
 
@@ -58,4 +60,4 @@ npm install
 npm run dev
 ```
 
-MIT license. Bundled tools (yt-dlp, ffmpeg, patreon-dl, Node.js) have their own licenses — see ATTRIBUTION.md.
+MIT license. Bundled tools (yt-dlp, ffmpeg, patreon-dl, Node.js) have their own licenses — see `ATTRIBUTION.md`.
