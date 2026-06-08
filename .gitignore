@@ -11,13 +11,23 @@ coverage/
 
 npm-debug.log*
 
+# Agentic AI docs (plans, audits, sprint prompts)
+codex/
+refactor_opportunity.md
+audit.md
 pre-release-audit.md
+pre-release-audit-2.md
+pre-release-audit-3.md
+pre-release-audit-4.md
 pre-release-report-2.md
 pre-release-report-3.md
 pre-release-report-4.md
 
+# DeepSeek chat logs
 WatchAlong_DeepSeek_ChatLog.md
 WatchAlong_DeepSeek_ChatLog-2.md
 WatchAlong_ChatLog.md
 chatdump.md
+
+# Misc
 _gap_content.md

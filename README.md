@@ -8,7 +8,7 @@ You support the creator. You own the film. WatchAlong handles the sync - locking
 
 - **Sync once, then forget it.** A quick manual sync at the start (usually right when the reactor does their countdown), and WatchAlong keeps both videos locked together. Pause, seek, restart the app - no re-syncing.
 - **Picture-in-Picture, or pop it out.** Watch the reactor in a draggable overlay over your movie, or pop the movie into its own window for dual-monitor setups.
-- **Fixes the 24fps vs 23.976fps drift.** Most streaming services play at true 24fps. Blu-ray rips run at 23.976fps. Over a 2-hour movie that's about 7 seconds of drift. WatchAlong has a one-click correction for this.
+- **Fixes frame-rate drift automatically.** WatchAlong detects your movie's frame rate and lets you select the reactor's source speed (most streaming and Blu-ray is 23.976 fps, PAL DVDs are 25 fps, some streaming originals are 24 fps). One click and drift is gone — no manual math.
 - **Download reactions directly.** Paste a YouTube link or connect your Patreon account - WatchAlong grabs the reaction for you. No browser extensions.
 - **Library that remembers.** All your watchalong pairings are saved. Pick up right where you left off.
 - **Subtitles.** Load SRT or VTT subtitle files, displayed over the movie.
