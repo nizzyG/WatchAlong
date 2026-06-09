@@ -30,7 +30,7 @@ If you paste the session ID yourself, it goes directly into memory. No temp file
 ### During download
 
 1. A temporary config file containing the session cookie is written to an OS temp directory
-2. File permissions are set to `0600` (owner read/write only — no other user or process can read it)
+2. File permissions are set to `0600` (owner read/write only where supported). This reduces accidental exposure but is not a defense against malware, administrator/root access, or other processes running as your user.
 3. `patreon-dl` uses this config to authenticate with Patreon
 4. The temp directory and all files in it are deleted when the download finishes (or fails)
 5. After a successful download, the session is held briefly in memory so you can choose to save it

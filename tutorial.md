@@ -102,7 +102,7 @@ This tells WatchAlong exactly how the two videos align!
 
 ## 🍿 Step 10: Lean Back and Enjoy!
 
-Congratulations! Your movie and reaction are now perfectly, frame-accurately synced. 
+Congratulations! Your movie and reaction are now synced. WatchAlong continuously corrects timing drift — through pauses, seeks, and across sessions. 
 
 You can watch the reaction in a Picture-in-Picture window over the movie, or even pop the movie out into its own window if you have multiple monitors.
 

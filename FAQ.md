@@ -63,7 +63,7 @@ Shortcuts are ignored when you're typing in a text field.
 
 ### 10. Why do I need to provide my Patreon session? Is that safe?
 
-Patreon doesn't offer a download button for videos. WatchAlong needs to prove you have an active subscription — your browser login cookie contains that proof.
+Patreon doesn't provide a public video-download API for subscriber-only watchalong videos. WatchAlong needs to prove you have an active subscription — your browser login cookie contains that proof.
 
 Your session is never sent to WatchAlong-operated servers. It's used locally by WatchAlong and bundled tools to authenticate directly with Patreon. During extraction and download, it may be written temporarily to OS temp files (deleted immediately after). If you choose to save it, WatchAlong stores it encrypted with Electron safeStorage, using your operating system's secure storage where available. You can delete the saved session or revoke it from Patreon's account settings at any time.
 

@@ -20,7 +20,7 @@ If you love watching reactors experience your favorite films for the first time,
 WatchAlong is free and open source. No telemetry, no analytics, no WatchAlong account, no WatchAlong server. Your library, sessions, and downloaded reactions live on your drive.
 
 - **Creators get paid.** Full-length reactions live behind a Patreon subscription. WatchAlong doesn't bypass that — you need an active subscription to access that content.
-- **You own your media.** The app works with DRM-free local movie files you're authorized to use — rips from discs you own, DRM-free purchases, or any file you have the right to play.
+- **You own your media.** The app works with DRM-free local movie files you're authorized to use — DRM-free purchases, legally created local backups, or any file you have the right to play.
 - **Everything stays local.** Your library, your sessions, your downloads — yours. The only network requests are ones you trigger: signing into Patreon or downloading a reaction.
 
 ## Getting Started

@@ -1,12 +1,12 @@
 # Privacy
 
-WatchAlong doesn't collect, transmit, or sell your data. There's no telemetry, no analytics, no crash reporter, and no server to send anything to. Everything stays on your machine.
+WatchAlong doesn't collect data for the developer, sell data, run telemetry, or transmit data to WatchAlong-operated servers. There's no server to send anything to. Everything stays on your machine unless you trigger a network request.
 
 Here's exactly what's stored, where, and when.
 
 ## What's stored on your device
 
-### Session library (`%APPDATA%/watchalong/library.json` on Windows, `~/Library/Application Support/watchalong/library.json` on macOS)
+### Session library (`%APPDATA%/WatchAlong/library.json` on Windows, `~/Library/Application Support/WatchAlong/library.json` on macOS)
 
 Every watchalong you create. Each session contains:
 - Movie file path, reaction file path, subtitle file path
@@ -22,9 +22,9 @@ Every watchalong you create. Each session contains:
 
 This JSON file lives in Electron's standard `userData` directory. It's not encrypted — it's just a local JSON file. It can reveal your viewing history, local file names, and directory structure to anyone with access to your machine.
 
-### Preferences (`%APPDATA%/watchalong/preferences.json` on Windows, `~/Library/Application Support/watchalong/preferences.json` on macOS)
+### Preferences (`%APPDATA%/WatchAlong/preferences.json` on Windows, `~/Library/Application Support/WatchAlong/preferences.json` on macOS)
 
-Your app settings: download directory, default reactor source, UI preferences.
+Your app settings: download directory, launch behavior, UI preferences. (Reactor source and sync settings are stored per-session, not globally.)
 
 ### Downloaded reactions
 
@@ -69,8 +69,8 @@ No data is ever sent to a WatchAlong-operated server — there isn't one.
 
 Sessions, preferences, downloaded reactions, and saved Patreon sessions stay on your drive. The app doesn't clean these up on uninstall — your library outlasts the app, like documents outlast a word processor. Delete the WatchAlong folders manually if you want to remove everything:
 
-- Windows: `%APPDATA%/watchalong/` and your download directory
-- macOS: `~/Library/Application Support/watchalong/` and your download directory
+- Windows: `%APPDATA%/WatchAlong/` and your download directory
+- macOS: `~/Library/Application Support/WatchAlong/` and your download directory
 
 ## Changes
 

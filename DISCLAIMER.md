@@ -4,7 +4,7 @@ WatchAlong is a local media sync tool. I built it for a community of people who 
 
 That said, here's what you need to know.
 
-## The app is legal. Your use of it is your responsibility.
+## Designed for lawful, user-authorized use. Your use is your responsibility.
 
 WatchAlong doesn't provide, host, sell, or redistribute movie files or reaction files. It doesn't intentionally bypass DRM. The app syncs two local media files that you supply — that's it.
 
@@ -14,11 +14,11 @@ Some features can download reaction files from Patreon or YouTube using links an
 
 Full-length reactions live behind a Patreon paywall. WatchAlong doesn't bypass that — you need an active subscription to download. The only people who can use the Patreon download feature are people who are already supporting that creator. This tool exists to make the experience better for paying subscribers, not to take anything from the creators they support.
 
-## No WatchAlong server. No data collection. No monetization.
+## No ads, no paid features, no data sale.
 
-WatchAlong has no telemetry, no analytics, no crash reporter, no account system, no cloud library, and no server. Your library, playback state, settings, downloaded files, and optional saved Patreon session live on your own drive. The only network requests are ones you trigger: authenticating with Patreon or downloading a reaction. I don't collect your data, I don't sell your data, and I don't make money from this project.
+WatchAlong has no telemetry, no analytics, no crash reporter, no account system, no cloud library, and no server. Your library, playback state, settings, downloaded files, and optional saved Patreon session live on your own drive. The only network requests are ones you trigger: authenticating with Patreon or downloading a reaction. I don't collect your data, I don't sell your data, and there are no paid features, subscriptions, or ads.
 
-WatchAlong is free and open source. It always will be.
+WatchAlong is free and open source. I have no plans for paid features, ads, telemetry, or data monetization. Optional donations are accepted, but they don't unlock features or change how data is handled.
 
 ## Third-party tools, their own rules
 
