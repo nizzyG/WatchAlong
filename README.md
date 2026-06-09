@@ -1,10 +1,9 @@
 # WatchAlong
 
-**Full-length Patreon reactions, synced with your own movie files.**
+**Full-length Patreon reactions, synced with your own movie files.**  
+You support the creator. You own the film. WatchAlong handles the sync.
 
 If you love watching reactors experience your favorite films for the first time, you know the drill: you support them on Patreon, they post the full-length watch-along, and you sync up your own copy of the movie with their reaction. WatchAlong makes that last part effortless — load both files, line up the start, and you're done. No juggling two media players. No re-syncing after pauses. No wondering why everything drifted apart by the credits.
-
-You support the creator. You own the film. WatchAlong just handles the rest.
 
 ## What it does
 
@@ -18,15 +17,15 @@ You support the creator. You own the film. WatchAlong just handles the rest.
 
 ## Our Philosophy
 
-WatchAlong is free and open source. It works with files you already own — no streaming service integration, no accounts, no cloud, no telemetry. Everything lives on your device.
+WatchAlong is free and open source. No telemetry, no analytics, no WatchAlong account, no WatchAlong server. Your library, sessions, and downloaded reactions live on your drive.
 
-- **You should own your media.** It works with files you've ripped from discs you own, or DRM-free downloads you've purchased.
-- **Creators deserve to be paid.** Full-length reactions live behind a Patreon subscription. WatchAlong doesn't bypass that — you need an active subscription to access that content.
-- **Everything stays local.** Your library, your sessions, your downloads — all on your own drive.
+- **Creators get paid.** Full-length reactions live behind a Patreon subscription. WatchAlong doesn't bypass that — you need an active subscription to access that content.
+- **You own your media.** The app works with DRM-free local movie files you're authorized to use — rips from discs you own, DRM-free purchases, or any file you have the right to play.
+- **Everything stays local.** Your library, your sessions, your downloads — yours. The only network requests are ones you trigger: signing into Patreon or downloading a reaction.
 
 ## Getting Started
 
-1. Have a movie file you legally own (ripped from a disc, or a DRM-free download)
+1. Have a DRM-free local movie file you're authorized to use
 2. Download WatchAlong from the [releases page](https://github.com/nizzyG/WatchAlong/releases)
    - **Windows:** Run the `.exe` installer
    - **macOS:** Open the `.dmg` and drag to Applications
@@ -47,6 +46,13 @@ This is a first public release, built by one person. Bug reports and feedback ar
 
 Questions about legality, file formats, Patreon setup, frame rate drift? See our [FAQ page](FAQ.md).
 
+## Legal & Privacy
+
+- [Disclaimer](DISCLAIMER.md)
+- [Privacy](PRIVACY.md)
+- [Security](SECURITY.md)
+- [Third-Party Notices](THIRD_PARTY_NOTICES.md)
+
 ## Support
 
 WatchAlong is free and always will be. If it makes your watch-along nights better, you can [buy me a coffee on Ko-fi](https://ko-fi.com/watchalong).
@@ -62,4 +68,4 @@ npm install
 npm run dev
 ```
 
-MIT license. Bundled tools (yt-dlp, ffmpeg, patreon-dl, Node.js) have their own licenses — see `ATTRIBUTION.md`.
+MIT license. Bundled tools (yt-dlp, ffmpeg, patreon-dl, Node.js) have their own licenses — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

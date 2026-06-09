@@ -1,14 +1,14 @@
 # 🎬 Syncing Your First WatchAlong: A Step-by-Step Tutorial
 
-Welcome to **WatchAlong**! We are so glad you're here. We believe that if you already own your movie and you are supporting your favorite reactors on Patreon, watching them together should be effortless. This tutorial will walk you through setting up your very first synced watchalong.
+Welcome to **WatchAlong**! If you already own the movie and you're supporting your favorite reactors on Patreon, watching them together should be effortless. This tutorial walks you through setting up your first synced watchalong.
 
-For this guide, we will walk through pairing a legally owned local copy of **X-Men: First Class** with **Shanelle Riccio's** brilliant full-length watchalong from her Patreon (who we proudly support as active Patrons, as we patiently wait for her to get to **Logan**).
+For this guide, we'll pair a local copy of **X-Men: First Class** with **Shanelle Riccio's** full-length watchalong from her Patreon. (Shanelle has given her permission for WatchAlong to use her name and likeness — she's one of the creators who wants this tool to exist.)
 
 Don't worry—there are no command lines, no complicated setups, and absolutely no technical headaches. Just follow these steps, and you'll be set up in no time!
 
 ## 📋 What You'll Need Before We Start
 
-1. **Your movie file**: A DRM-free copy of *X-Men: First Class (2011)* on your computer.
+1. **Your movie file**: A DRM-free local copy of *X-Men: First Class (2011)* you're authorized to use.
 2. **A Patreon Subscription**: An active subscription to [Shanelle Riccio's Patreon](https://www.patreon.com/cw/shanellericcio) (or whichever creator you are watching).
 3. **The WatchAlong App**: Download the latest release for your operating system from the [releases page](https://github.com/nizzyG/WatchAlong/releases).
 
@@ -36,7 +36,7 @@ Simply copy the full URL from your browser's address bar.
 
 > [NOTE]
 > **Is it safe to copy the link?**
-> Absolutely. WatchAlong only uses this link to request the video directly from Patreon's servers on your behalf. Your data is kept entirely local on your machine, and only people with an **ACTIVE subscription** to Shanelle's Patreon can download the video.
+> Yes. WatchAlong uses this link to request the video from Patreon on your behalf, using your Patreon session for authentication. Only people with an active subscription to Shanelle's Patreon can download. Your session is never sent to WatchAlong-operated servers. For details on how your session is handled, see the [Security](SECURITY.md) page.
 
 ![Copying the Patreon Post URL](docs/images/pat-1.png)
 
@@ -136,5 +136,7 @@ Thank you for supporting your favorite content creators and owning your media. E
 ---
 
 ❓ [FAQ](https://github.com/nizzyG/WatchAlong/blob/main/FAQ.md)
+⚖️ [Disclaimer](https://github.com/nizzyG/WatchAlong/blob/main/DISCLAIMER.md)
+🔒 [Privacy & Security](https://github.com/nizzyG/WatchAlong/blob/main/SECURITY.md)
 🐛 [Report a Bug](https://github.com/nizzyG/WatchAlong/issues)
 ☕ [Support the Dev on Ko-fi](https://ko-fi.com/watchalong)

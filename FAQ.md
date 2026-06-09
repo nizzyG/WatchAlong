@@ -6,7 +6,11 @@ Looking for setup help? Start with the [README](README.md) or the [step-by-step 
 
 ### 1. Is WatchAlong legal?
 
-Yes. It plays two files you already own in time with each other. It doesn't distribute, copy, or stream anything, and doesn't circumvent DRM. Reaction videos are original commentary — the reactor is paid through Patreon for their work. You need an active subscription to access that content.
+WatchAlong is designed for a use-case that respects everyone involved: you already own the movie, you already pay the creator on Patreon, and the app syncs them locally. It doesn't provide, host, or redistribute movie files or reaction files. It doesn't intentionally bypass DRM.
+
+Some features download reaction files from Patreon or YouTube using links and access you provide. You're responsible for making sure your use complies with copyright law, creator permissions, and platform terms.
+
+We believe the advertised use-case — syncing a movie you own with a reaction from a creator you support — is lawful, and it directly benefits the community: creators get paid, movies stay owned, and nobody's data gets harvested.
 
 ### 2. I already subscribe to the reactor on Patreon. Does WatchAlong change that?
 
@@ -18,7 +22,9 @@ Two reasons. First, WatchAlong is built for media you actually own — files on 
 
 ### 4. What kind of movie files work?
 
-Any DRM-free local file. Most people rip their own Blu-rays or DVDs with MakeMKV, or buy DRM-free downloads from stores like GOG. MP4 and WebM with H.264 video and AAC audio work best. MKV and AVI may play depending on their internal codecs.
+Any DRM-free local file you're authorized to use. MP4 and WebM with H.264 video and AAC audio work best. MKV and AVI may play depending on their internal codecs.
+
+WatchAlong doesn't rip discs or remove DRM. You're responsible for creating or obtaining files you have the right to play.
 
 ### 5. Some reactors include a timer or leave a few seconds of the movie in their video for sync. Do I still need WatchAlong?
 
@@ -28,11 +34,11 @@ Those workarounds exist because syncing manually is painful. WatchAlong automate
 
 ### 6. What do I need before using WatchAlong?
 
-Three things: a local copy of a movie you legally own, an active Patreon subscription to a reactor with full-length watchalongs, and the WatchAlong app itself. The app bundles everything it needs:yt-dlp, ffmpeg, node, and patreon-dl — nothing extra to install.
+Three things: a DRM-free local movie file you're authorized to use, an active Patreon subscription to a reactor with full-length watchalongs, and the WatchAlong app itself. The app bundles everything it needs:yt-dlp, ffmpeg, node, and patreon-dl — nothing extra to install.
 
 ### 7. How do I get my movie into a local file?
 
-Physical discs: use MakeMKV (free) to create a DRM-free MKV, then optionally re-encode to MP4 with HandBrake (free). Digital purchases: download the DRM-free file if available.
+Digital purchases: download the DRM-free file where available (stores like GOG offer these). For more options, HandBrake (free) can re-encode to MP4. WatchAlong doesn't provide guidance on creating copies from physical media — you're responsible for ensuring any local file you use was created lawfully.
 
 ### 8. Why don't some of my MKV files play?
 
@@ -57,7 +63,9 @@ Shortcuts are ignored when you're typing in a text field.
 
 ### 10. Why do I need to provide my Patreon session? Is that safe?
 
-Patreon doesn't offer a download button for videos. WatchAlong needs to prove you have an active subscription — your browser login cookie contains that proof. The cookie is used only for that download, never sent anywhere else. If you choose to save it, it's encrypted with your OS keychain (the same technology that protects saved passwords).
+Patreon doesn't offer a download button for videos. WatchAlong needs to prove you have an active subscription — your browser login cookie contains that proof.
+
+Your session is never sent to WatchAlong-operated servers. It's used locally by WatchAlong and bundled tools to authenticate directly with Patreon. During extraction and download, it may be written temporarily to OS temp files (deleted immediately after). If you choose to save it, WatchAlong stores it encrypted with Electron safeStorage, using your operating system's secure storage where available. You can delete the saved session or revoke it from Patreon's account settings at any time.
 
 ### 11. Why browser cookies instead of a normal login screen?
 
@@ -73,7 +81,9 @@ Firefox is the most reliable on both Windows and macOS. Chromium-based browsers 
 
 ### 14. I have a private/unlisted YouTube link. Can I use that?
 
-Yes. Paste the URL into WatchAlong and it downloads the video. No login needed.
+Yes — paste the URL and WatchAlong downloads it. No login needed.
+
+Only download YouTube videos when you have permission from the content owner and when YouTube's terms allow it. WatchAlong doesn't grant rights to download or retain YouTube content.
 
 ### 15. What about Google Drive or Vimeo links?
 
@@ -139,7 +149,9 @@ The movie or reaction file was moved, renamed, or deleted since the session was 
 
 ### 26. What data does WatchAlong collect or send anywhere?
 
-None. No telemetry, no analytics, no crash reporter, no server. Everything lives on your filesystem. The only network requests are ones you trigger: downloading a reaction from YouTube or Patreon.
+None. No telemetry, no analytics, no crash reporter, no server. Your library, playback state, settings, and downloaded files stay on your device. The only network requests are ones you trigger: authenticating with Patreon, or downloading a reaction from YouTube or Patreon.
+
+For a full breakdown of what's stored and where, see [PRIVACY.md](PRIVACY.md).
 
 ### 27. Where are sessions, settings, and downloads stored?
 
@@ -190,3 +202,10 @@ If you'd like to support the developer directly, you can [buy me a coffee on Ko-
 ### 37. Will WatchAlong add support for other services or features?
 
 Bug fixes and quality-of-life improvements are the priority. Major features depend on community interest and available time. The roadmap lives on GitHub.
+
+## Legal & Privacy
+
+- [Disclaimer](DISCLAIMER.md) — the official word on legality, liability, and what you're responsible for
+- [Privacy](PRIVACY.md) — exactly what data is stored where, and what isn't
+- [Security](SECURITY.md) — how your Patreon session is handled, how to revoke it
+- [Third-Party Notices](THIRD_PARTY_NOTICES.md) — licenses for FFmpeg, yt-dlp, Node.js, patreon-dl
