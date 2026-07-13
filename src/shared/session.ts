@@ -1,6 +1,6 @@
 import type { LibrarySession, OverlayGeometry, PlaybackRate, ReactionSource, ReactorSource, SessionLibrary, SessionData } from './types'
 
-export const SESSION_LIBRARY_VERSION = 3
+export const SESSION_LIBRARY_VERSION = 4
 
 export const DEFAULT_OVERLAY: OverlayGeometry = {
   x: 24,
@@ -39,6 +39,10 @@ export function createDefaultSession(now = new Date(), patch: Partial<LibrarySes
     reactorSource: normalizeReactorSource(patch.reactorSource),
     detectedMovieFps: normalizeDetectedMovieFps(patch.detectedMovieFps),
     movieRateCorrection: normalizeMovieRateCorrection(patch.movieRateCorrection),
+    timingOrigin: normalizeTimingOrigin(patch.timingOrigin),
+    autoSyncConfidence: normalizeConfidence(patch.autoSyncConfidence),
+    autoSyncAnalyzedAt: stringOrNull(patch.autoSyncAnalyzedAt),
+    autoSyncAlgorithmVersion: normalizeAlgorithmVersion(patch.autoSyncAlgorithmVersion),
     createdAt: timestamp,
     updatedAt: timestamp
   }
@@ -94,6 +98,10 @@ export function normalizeSession(value: unknown, now = new Date()): SessionData 
     reactorSource: normalizeReactorSource(source?.reactorSource),
     detectedMovieFps: normalizeDetectedMovieFps(source?.detectedMovieFps),
     movieRateCorrection: normalizeMovieRateCorrection(source?.movieRateCorrection),
+    timingOrigin: normalizeTimingOrigin(source?.timingOrigin),
+    autoSyncConfidence: normalizeConfidence(source?.autoSyncConfidence),
+    autoSyncAnalyzedAt: stringOrNull(source?.autoSyncAnalyzedAt),
+    autoSyncAlgorithmVersion: normalizeAlgorithmVersion(source?.autoSyncAlgorithmVersion),
     createdAt,
     updatedAt
   }
@@ -200,6 +208,18 @@ export function normalizeDetectedMovieFps(value: unknown): number | null {
 export function normalizeMovieRateCorrection(value: unknown): number {
   const rate = finiteOr(value, 1)
   return clamp(rate, 0.9, 1.1)
+}
+
+export function normalizeTimingOrigin(value: unknown): LibrarySession['timingOrigin'] {
+  return value === 'automatic' ? 'automatic' : 'manual'
+}
+
+function normalizeConfidence(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? clamp(value, 0, 1) : null
+}
+
+function normalizeAlgorithmVersion(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
 }
 
 export function defaultSessionTitle(moviePath: string | null, reactionPath: string | null): string {

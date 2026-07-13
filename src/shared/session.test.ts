@@ -21,6 +21,10 @@ describe('session helpers', () => {
     expect(session.reactorSource).toBe('ntsc')
     expect(session.detectedMovieFps).toBeNull()
     expect(session.movieRateCorrection).toBe(1)
+    expect(session.timingOrigin).toBe('manual')
+    expect(session.autoSyncConfidence).toBeNull()
+    expect(session.autoSyncAnalyzedAt).toBeNull()
+    expect(session.autoSyncAlgorithmVersion).toBeNull()
     expect(session.isMoviePoppedOut).toBe(false)
     expect(session.movieWindowGeometry).toMatchObject({
       width: 320,
@@ -61,7 +65,7 @@ describe('session helpers', () => {
       lastReactionTimeSeconds: 90
     })
 
-    expect(library.version).toBe(3)
+    expect(library.version).toBe(4)
     expect(library.sessions).toHaveLength(1)
     expect(library.activeSessionId).toBe(library.sessions[0].id)
     expect(library.sessions[0]).toMatchObject({
@@ -69,7 +73,11 @@ describe('session helpers', () => {
       reactionVolume: 0.4,
       movieVolume: 0.4,
       offsetSeconds: 12.5,
-      lastReactionTimeSeconds: 90
+      lastReactionTimeSeconds: 90,
+      timingOrigin: 'manual',
+      autoSyncConfidence: null,
+      autoSyncAnalyzedAt: null,
+      autoSyncAlgorithmVersion: null
     })
   })
 

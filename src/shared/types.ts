@@ -45,6 +45,10 @@ export interface LibrarySession {
   reactorSource: ReactorSource
   detectedMovieFps: number | null
   movieRateCorrection: number
+  timingOrigin: 'manual' | 'automatic'
+  autoSyncConfidence: number | null
+  autoSyncAnalyzedAt: string | null
+  autoSyncAlgorithmVersion: number | null
   createdAt: string
   updatedAt: string
 }
@@ -52,7 +56,7 @@ export interface LibrarySession {
 export type SessionData = LibrarySession
 
 export interface SessionLibrary {
-  version: 3
+  version: 4
   activeSessionId: string | null
   sessions: LibrarySession[]
 }

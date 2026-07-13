@@ -115,7 +115,7 @@ function createApi(): WatchAlongApi {
     selectMovieFile: vi.fn(async () => firstMovie),
     selectReactionFile: vi.fn(async () => reaction),
     createOrSwitchSessionFromPaths: vi.fn(async () => ({
-      version: 3 as const,
+      version: 4 as const,
       activeSessionId: 'session-1',
       sessions: []
     })),
@@ -124,7 +124,7 @@ function createApi(): WatchAlongApi {
     saveSessionPosition: vi.fn(),
     setSessionMedia: vi.fn(),
     replaceSessionMedia: vi.fn(async () => ({
-      version: 3 as const,
+      version: 4 as const,
       activeSessionId: 'session-1',
       sessions: []
     })),
