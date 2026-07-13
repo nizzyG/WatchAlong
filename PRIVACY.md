@@ -1,6 +1,6 @@
 # Privacy
 
-WatchAlong doesn't collect data for the developer, sell data, run telemetry, or transmit data to WatchAlong-operated servers. There's no server to send anything to. Everything stays on your machine unless you trigger a network request.
+WatchAlong doesn't collect your data, sell your data, run telemetry, or talk to any WatchAlong-operated server. There isn't one. Everything stays on your machine unless you trigger a network request yourself.
 
 Here's exactly what's stored, where, and when.
 

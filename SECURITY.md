@@ -1,6 +1,6 @@
 # Security
 
-WatchAlong was built with the assumption that anything touching your Patreon credentials needs to be handled carefully. Here's how it works and what you should know.
+Anything that touches your Patreon credentials needs to be handled with care. Here's how WatchAlong handles yours, and what you should know.
 
 ## Your Patreon session is a bearer token
 
