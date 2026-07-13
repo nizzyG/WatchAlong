@@ -42,7 +42,7 @@ describe('WizardApp', () => {
     expect(await screen.findByText('Reaction.mp4')).toBeInTheDocument()
     expect(await screen.findByText("Everything's loaded and safe. Now let's find the perfect sync point.")).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /Start Sync Setup/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Find My Sync/i }))
 
     await waitFor(() =>
       expect(window.watchAlong.createOrSwitchSessionFromPaths).toHaveBeenCalledWith(reaction.path, firstMovie.path, 'local')
@@ -99,7 +99,7 @@ describe('WizardApp', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Local file/i }))
     expect(await screen.findByText("Everything's loaded and safe. Now let's find the perfect sync point.")).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /Start Sync Setup/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Find My Sync/i }))
 
     await waitFor(() =>
       expect(window.watchAlong.replaceSessionMedia).toHaveBeenCalledWith('s1', 'reaction', reaction.path, 'local')
@@ -107,9 +107,49 @@ describe('WizardApp', () => {
     expect(window.watchAlong.createOrSwitchSessionFromPaths).not.toHaveBeenCalled()
     await waitFor(() => expect(window.watchAlong.finishOnboardingWizard).toHaveBeenCalledWith('completed'))
   })
+
+  it('falls back to the simple manual setup when automatic sync is uncertain', async () => {
+    let complete: Parameters<WatchAlongApi['onAutoSyncComplete']>[0] | null = null
+    window.watchAlong.onAutoSyncComplete = vi.fn((callback) => {
+      complete = callback
+      return () => undefined
+    })
+    window.watchAlong.startSessionAutoSync = vi.fn(async (sessionId: string) => {
+      queueMicrotask(() => complete?.({ sessionId, outcome: 'fallback', message: 'Please line it up manually.' }))
+      return { started: true }
+    })
+
+    render(<WizardApp />)
+    await reachReadyStep()
+    fireEvent.click(screen.getByRole('button', { name: /Find My Sync/i }))
+
+    expect(await screen.findByText('Please line it up manually.')).toBeInTheDocument()
+    await waitFor(() => expect(window.watchAlong.finishOnboardingWizard).toHaveBeenCalledWith('completed-needs-review'))
+  })
+
+  it('lets the user skip the scan and line up manually without losing the saved files', async () => {
+    window.watchAlong.startSessionAutoSync = vi.fn(async () => ({ started: true }))
+
+    render(<WizardApp />)
+    await reachReadyStep()
+    fireEvent.click(screen.getByRole('button', { name: /Find My Sync/i }))
+
+    fireEvent.click(await screen.findByRole('button', { name: /Line Up Manually Instead/i }))
+    await waitFor(() => expect(window.watchAlong.cancelSessionAutoSync).toHaveBeenCalledWith('session-1'))
+    await waitFor(() => expect(window.watchAlong.finishOnboardingWizard).toHaveBeenCalledWith('completed-needs-review'))
+  })
 })
 
+async function reachReadyStep(): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: /Open Movie File/i }))
+  expect(await screen.findByText('Movie.mp4')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  fireEvent.click(await screen.findByRole('button', { name: /Local file/i }))
+  expect(await screen.findByText("Everything's loaded and safe. Now let's find the perfect sync point.")).toBeInTheDocument()
+}
+
 function createApi(): WatchAlongApi {
+  let autoSyncComplete: Parameters<WatchAlongApi['onAutoSyncComplete']>[0] | null = null
   return {
     openVideos: vi.fn(),
     selectMovieFile: vi.fn(async () => firstMovie),
@@ -160,6 +200,24 @@ function createApi(): WatchAlongApi {
     startReactionDownload: vi.fn(async () => ({ jobId: 'job-1' })),
     cancelDownload: vi.fn(async () => undefined),
     onDownloadProgress: vi.fn(() => vi.fn()),
+    startSessionAutoSync: vi.fn(async (sessionId: string) => {
+      queueMicrotask(() => autoSyncComplete?.({
+        sessionId,
+        outcome: 'confident',
+        message: 'Ready — timing found.',
+        offsetSeconds: -20,
+        movieRateCorrection: 1,
+        confidence: 0.94,
+        anchorCount: 6
+      }))
+      return { started: true }
+    }),
+    cancelSessionAutoSync: vi.fn(async () => undefined),
+    onAutoSyncProgress: vi.fn(() => vi.fn()),
+    onAutoSyncComplete: vi.fn((callback) => {
+      autoSyncComplete = callback
+      return () => { if (autoSyncComplete === callback) autoSyncComplete = null }
+    }),
     openOnboardingWizard: vi.fn(async () => undefined),
     openImportWizard: vi.fn(async () => undefined),
     getImportWizardContext: vi.fn(async () => ({ mode: 'new' as const, sessionId: null, movie: null })),

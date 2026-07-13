@@ -98,6 +98,18 @@ const api: WatchAlongApi = {
     ipcRenderer.on(`${IPC_PREFIX}:download-progress`, listener)
     return () => ipcRenderer.removeListener(`${IPC_PREFIX}:download-progress`, listener)
   },
+  startSessionAutoSync: (sessionId) => ipcRenderer.invoke(`${IPC_PREFIX}:start-session-auto-sync`, sessionId),
+  cancelSessionAutoSync: (sessionId) => ipcRenderer.invoke(`${IPC_PREFIX}:cancel-session-auto-sync`, sessionId),
+  onAutoSyncProgress: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof callback>[0]): void => callback(payload)
+    ipcRenderer.on(`${IPC_PREFIX}:auto-sync-progress`, listener)
+    return () => ipcRenderer.removeListener(`${IPC_PREFIX}:auto-sync-progress`, listener)
+  },
+  onAutoSyncComplete: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof callback>[0]): void => callback(payload)
+    ipcRenderer.on(`${IPC_PREFIX}:auto-sync-complete`, listener)
+    return () => ipcRenderer.removeListener(`${IPC_PREFIX}:auto-sync-complete`, listener)
+  },
   openOnboardingWizard: () => ipcRenderer.invoke(`${IPC_PREFIX}:open-onboarding-wizard`),
   openImportWizard: (options?: ImportWizardLaunchOptions) => ipcRenderer.invoke(`${IPC_PREFIX}:open-import-wizard`, options),
   getImportWizardContext: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-import-wizard-context`),

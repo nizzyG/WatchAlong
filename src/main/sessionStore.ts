@@ -153,12 +153,22 @@ export class SessionStore {
       return library
     }
 
+    return this.updateSession(active.id, patch)
+  }
+
+  updateSession(sessionId: string, patch: Partial<LibrarySession>): SessionLibrary {
+    const library = this.read()
+    const target = library.sessions.find((session) => session.id === sessionId)
+    if (!target) {
+      return library
+    }
+
     const now = new Date()
     const timingPatch = isManualTimingPatch(patch) && patch.timingOrigin !== 'automatic'
       ? resetAutoSyncMetadata
       : {}
     const sessions = library.sessions.map((session) =>
-      session.id === active.id
+      session.id === target.id
         ? normalizeSession({
             ...session,
             ...patch,

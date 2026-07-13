@@ -48,6 +48,7 @@ import type { PlaybackHook } from './usePlayback'
 import type { SessionHook } from './useSession'
 import type { SubtitlesHook } from './useSubtitles'
 import type { DownloadsHook } from './useDownloads'
+import { useAutoSync } from './useAutoSync'
 
 type MediaUrls = Record<MediaRole, string | null>
 type MetadataReady = Record<MediaRole, boolean>
@@ -121,6 +122,7 @@ export function useWatchAlongController({
     pausedForWizardRef, downloadIndicatorTimerRef, patreonStorageJobId, setPatreonStorageJobId,
     downloadIndicator, setDownloadIndicator, downloadEvents, setDownloadEvents
   } = downloads
+  const autoSync = useAutoSync()
   const persistRef = useRef<typeof persist>(null as unknown as typeof persist)
 
   const activeSession = useMemo(() => getActiveSession(library), [library])
@@ -665,7 +667,7 @@ export function useWatchAlongController({
       setShowWelcome(false)
       setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
       setMoviePosition(0)
-      setPendingSyncSetup(Boolean(nextSession?.reactionPath && nextSession.moviePath))
+      setPendingSyncSetup(event.outcome === 'completed-needs-review' && Boolean(nextSession?.reactionPath && nextSession.moviePath))
       setAppView(nextSession ? 'player' : 'library')
       setCommandPanelOpen(false)
       await refreshMediaUrls(nextSession?.id ?? null)
@@ -1389,6 +1391,23 @@ export function useWatchAlongController({
     await applyMovieRateCorrection(movieRateCorrection, { reactorSource })
   }
 
+  const detectSyncAgain = async (): Promise<void> => {
+    const sessionId = activeSessionIdRef.current
+    if (!sessionId || autoSync.runningSessionId) return
+    controllerRef.current?.pause()
+    const result = await autoSync.start(sessionId)
+    const nextSession = commitLibrary(await window.watchAlong.getLibrary())
+    // The analysis belongs to the session that started it. If the user moved
+    // elsewhere while it ran, refresh the library but do not seek or open
+    // manual setup for the newly active session.
+    if (nextSession?.id !== sessionId) return
+    if (result.outcome === 'confident' && nextSession && canPlayRef.current) {
+      controllerRef.current?.seekReaction(getCurrentReactionTime())
+    } else if (result.outcome !== 'cancelled' && nextSession?.reactionPath && nextSession.moviePath) {
+      setPendingSyncSetup(true)
+    }
+  }
+
   useEffect(() => {
     const moviePath = activeSession?.moviePath
     if (!activeSession || !moviePath || activeSession.detectedMovieFps !== null) {
@@ -1846,21 +1865,39 @@ export function useWatchAlongController({
             <details className="timing-settings">
               <summary className="timing-summary">
                 <span className="timing-summary-label">Timing</span>
-                <span className="timing-summary-value">{reactorSourceSummary}</span>
+                <span className="timing-summary-value">
+                  {session.timingOrigin === 'automatic' ? 'Automatically measured' : reactorSourceSummary}
+                </span>
                 <span className="timing-summary-detail">
-                  {detectedMovieRateCorrection !== null
+                  {session.timingOrigin === 'automatic'
+                    ? `${Math.round((session.autoSyncConfidence ?? 0) * 100)}% confidence / ${formatRatePercent(session.movieRateCorrection)}`
+                    : detectedMovieRateCorrection !== null
                     ? `Detected movie ${formatFps(session.detectedMovieFps)} fps / ${formatRatePercent(detectedMovieRateCorrection)}`
                     : 'Manual movie rate'}
                 </span>
               </summary>
               <div className="timing-settings-body">
                 <div className="timing-session-details" aria-label="Session timing details">
+                  {session.timingOrigin === 'automatic' && (
+                    <span className="automatic-timing-detail">
+                      Automatically measured locally · {Math.round((session.autoSyncConfidence ?? 0) * 100)}% confidence
+                    </span>
+                  )}
                   <span>{session.reactionPath ? fileName(session.reactionPath) : 'No reaction file'}</span>
                   <span>{session.moviePath ? fileName(session.moviePath) : 'No movie file'}</span>
                   <span>
                     Offset {displayOffset} / effective {signedSeconds(effectiveOffset)} / movie at {formatTime(movieStartsAtReaction)}
                   </span>
                 </div>
+                <button
+                  className="secondary-button detect-sync-button"
+                  type="button"
+                  disabled={!activeSession?.moviePath || !activeSession.reactionPath || Boolean(autoSync.runningSessionId)}
+                  onClick={() => void detectSyncAgain()}
+                >
+                  {autoSync.runningSessionId ? <Loader2 size={14} aria-hidden className="spin" /> : <RefreshCw size={14} aria-hidden />}
+                  {autoSync.runningSessionId ? autoSync.progress.message : 'Find Sync Again'}
+                </button>
                 <div className="source-rate-control" role="group" aria-label="Reactor source">
                   <span>Reactor source</span>
                   {reactorSourceOptions.map((option) => (

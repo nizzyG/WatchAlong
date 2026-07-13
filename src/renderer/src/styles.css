@@ -1532,6 +1532,34 @@ input:disabled {
   background: #8ee2b1;
 }
 
+.wizard-syncing-card {
+  gap: 20px;
+}
+
+.auto-sync-progress {
+  width: min(420px, 100%);
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(194, 212, 232, 0.16);
+}
+
+.auto-sync-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #8ee2b1;
+  transition: width 320ms ease;
+}
+
+.wizard-sync-hint {
+  max-width: 430px;
+  margin: -4px 0 0;
+  color: #8293a3;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .wizard-copy {
   display: grid;
   justify-items: center;
@@ -2693,6 +2721,21 @@ input:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.timing-session-details .automatic-timing-detail {
+  color: #8ee2b1;
+  font-weight: 700;
+}
+
+.detect-sync-button {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  justify-self: start;
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
 .timing-settings:not([open]) .timing-settings-body {

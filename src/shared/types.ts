@@ -7,7 +7,9 @@ export type BrowserExtractionMode = 'automatic' | 'best-effort' | 'manual-only'
 export type ReactionDownloadSource = 'youtube' | 'patreon'
 export type ReactionSource = 'local' | ReactionDownloadSource
 export type DownloadJobState = 'idle' | 'checking' | 'downloading' | 'success' | 'failed' | 'cancelled'
-export type WizardOutcome = 'cancelled' | 'completed'
+export type WizardOutcome = 'cancelled' | 'completed' | 'completed-needs-review'
+export type AutoSyncPhase = 'preparing' | 'finding-inset' | 'scanning' | 'refining' | 'finishing'
+export type AutoSyncOutcome = 'confident' | 'partial' | 'fallback' | 'cancelled' | 'stale' | 'failed'
 export type LibraryViewPreference = 'grid' | 'list'
 export type ImportWizardMode = 'new' | 'show-again' | 'swap-reaction'
 
@@ -118,6 +120,31 @@ export interface DownloadProgressEvent {
 }
 
 export type DownloadProgressCallback = (event: DownloadProgressEvent) => void
+
+export interface AutoSyncProgressEvent {
+  sessionId: string
+  phase: AutoSyncPhase
+  percent: number
+  message: string
+}
+
+export interface AutoSyncCompleteEvent {
+  sessionId: string
+  outcome: AutoSyncOutcome
+  message: string
+  offsetSeconds?: number
+  movieRateCorrection?: number
+  confidence?: number
+  anchorCount?: number
+}
+
+export interface StartAutoSyncResult {
+  started: boolean
+  reason?: 'already-running' | 'missing-session' | 'missing-media' | 'tools-unavailable'
+}
+
+export type AutoSyncProgressCallback = (event: AutoSyncProgressEvent) => void
+export type AutoSyncCompleteCallback = (event: AutoSyncCompleteEvent) => void
 
 export type WizardLifecycleCallback = (event: WizardLifecycleEvent) => void
 
@@ -307,6 +334,10 @@ export interface WatchAlongApi {
   startReactionDownload(request: ReactionDownloadRequest): Promise<StartDownloadResult>
   cancelDownload(jobId: string): Promise<void>
   onDownloadProgress(callback: DownloadProgressCallback): () => void
+  startSessionAutoSync(sessionId: string): Promise<StartAutoSyncResult>
+  cancelSessionAutoSync(sessionId: string): Promise<void>
+  onAutoSyncProgress(callback: AutoSyncProgressCallback): () => void
+  onAutoSyncComplete(callback: AutoSyncCompleteCallback): () => void
   openOnboardingWizard(): Promise<void>
   openImportWizard(options?: ImportWizardLaunchOptions): Promise<void>
   getImportWizardContext(): Promise<ImportWizardContext>

@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { APP_NAME, IPC_PREFIX, LEGACY_APP_NAME, MEDIA_SCHEME } from './constants'
 import { registerDownloadIpc } from './ipc/downloadIpc'
+import { registerAutoSyncIpc } from './ipc/autoSyncIpc'
 import { registerMovieWindowIpc } from './ipc/movieWindowIpc'
 import { registerPatreonIpc } from './ipc/patreonIpc'
 import { registerPreferencesIpc } from './ipc/preferencesIpc'
@@ -15,6 +16,8 @@ import { SessionStore } from './sessionStore'
 import { DownloadManager } from './services/downloadManager'
 import { PatreonSessionVault } from './services/patreonSessionVault'
 import { ToolResolver } from './services/toolResolution'
+import { AutoSyncService } from './services/autosync/AutoSyncService'
+import { FfmpegAutoSyncBackend } from './services/autosync/ffmpegBackend'
 import { WindowManager } from './WindowManager'
 
 protocol.registerSchemesAsPrivileged([{
@@ -39,12 +42,23 @@ void app.whenReady().then(() => {
     (event) => windowManager.sendToRendererWindows(`${IPC_PREFIX}:download-progress`, event),
     () => preferencesStore.read().reactionDownloadDirectory
   )
+  const ffmpegPath = toolResolver.getFfmpegPath()
+  const ffprobePath = toolResolver.getFfprobePath()
+  const autoSyncService = ffmpegPath && ffprobePath
+    ? new AutoSyncService({
+        sessions: sessionStore,
+        backend: new FfmpegAutoSyncBackend(ffmpegPath, ffprobePath),
+        emitProgress: (event) => windowManager.sendToRendererWindows(`${IPC_PREFIX}:auto-sync-progress`, event),
+        emitComplete: (event) => windowManager.sendToRendererWindows(`${IPC_PREFIX}:auto-sync-complete`, event)
+      })
+    : null
   const mainWindowGetter = () => windowManager.getMainWindow()
 
   registerMediaProtocol(sessionStore)
   registerSessionIpc({ sessionStore, mainWindowGetter })
   registerPreferencesIpc({ preferencesStore, mainWindowGetter })
   registerDownloadIpc({ downloadManager })
+  registerAutoSyncIpc({ autoSyncService })
   registerMovieWindowIpc({ windowManager })
   registerPatreonIpc({ toolResolver, patreonVault, mainWindowGetter })
   registerToolsIpc({ toolResolver })

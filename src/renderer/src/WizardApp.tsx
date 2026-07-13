@@ -1,9 +1,10 @@
 import { AlertTriangle, Check, Disc3, Film, Loader2, ShieldCheck, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { SmartReactionInput } from './components/SmartReactionInput'
-import type { ImportWizardContext, MediaFile, ReactionDownloadSource, WizardOutcome } from '@shared/types'
+import { useAutoSync } from './hooks/useAutoSync'
+import type { AutoSyncCompleteEvent, ImportWizardContext, MediaFile, ReactionDownloadSource, WizardOutcome } from '@shared/types'
 
-type WizardStep = 'movie' | 'reaction' | 'ready'
+type WizardStep = 'movie' | 'reaction' | 'ready' | 'syncing'
 
 interface ReactionSelection {
   path: string
@@ -14,7 +15,8 @@ interface ReactionSelection {
 const stepTitles: Record<WizardStep, string> = {
   movie: 'Choose Your Movie',
   reaction: 'Add the Reaction',
-  ready: 'Ready to Sync'
+  ready: 'Ready to Sync',
+  syncing: 'Finding Your Sync'
 }
 
 const closeAnimationMs = 280
@@ -34,22 +36,26 @@ export function WizardApp(): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [closing, setClosing] = useState<WizardOutcome | null>(null)
   const [finishing, setFinishing] = useState(false)
+  const [syncResult, setSyncResult] = useState<AutoSyncCompleteEvent | null>(null)
   const autoAdvanceRef = useRef<number | null>(null)
+  const manualFallbackRef = useRef(false)
+  const autoSync = useAutoSync()
 
-  const stepIndex = useMemo(() => ['movie', 'reaction', 'ready'].indexOf(step), [step])
+  const stepIndex = useMemo(() => ['movie', 'reaction', 'ready', 'syncing'].indexOf(step), [step])
   const isSwapReaction = context.mode === 'swap-reaction' && Boolean(context.sessionId && movie)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
         event.preventDefault()
-        closeWizard('cancelled')
+        if (step === 'syncing') void leaveForManualSync()
+        else closeWizard('cancelled')
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [closing])
+  }, [closing, step, autoSync.runningSessionId])
 
   useEffect(() => {
     document.body.classList.add('wizard-body')
@@ -181,17 +187,32 @@ export function WizardApp(): JSX.Element {
     try {
       setError(null)
       setFinishing(true)
+      let library
       if (isSwapReaction && context.sessionId) {
-        await window.watchAlong.replaceSessionMedia(context.sessionId, 'reaction', reaction.path, reaction.source)
+        library = await window.watchAlong.replaceSessionMedia(context.sessionId, 'reaction', reaction.path, reaction.source)
       } else {
-        await window.watchAlong.createOrSwitchSessionFromPaths(reaction.path, movie.path, reaction.source)
+        library = await window.watchAlong.createOrSwitchSessionFromPaths(reaction.path, movie.path, reaction.source)
         await window.watchAlong.completeOnboarding()
       }
-      closeWizard('completed')
+      const sessionId = context.sessionId ?? library.activeSessionId
+      if (!sessionId) throw new Error('The saved watchalong has no session id.')
+      setStep('syncing')
+      const result = await autoSync.start(sessionId)
+      if (manualFallbackRef.current) return
+      setSyncResult(result)
+      await new Promise((resolve) => window.setTimeout(resolve, 650))
+      closeWizard(result.outcome === 'confident' ? 'completed' : 'completed-needs-review')
     } catch {
       setFinishing(false)
       setError('WatchAlong could not save this watchalong. Your files are still safe; please try again.')
     }
+  }
+
+  const leaveForManualSync = async (): Promise<void> => {
+    if (manualFallbackRef.current || closing) return
+    manualFallbackRef.current = true
+    await autoSync.cancel()
+    closeWizard('completed-needs-review')
   }
 
   const closeWizard = (outcome: WizardOutcome): void => {
@@ -209,13 +230,18 @@ export function WizardApp(): JSX.Element {
     <main className={`wizard-window ${closing ? 'wizard-window-closing' : ''}`}>
       <header className="wizard-titlebar">
         <span>{stepTitles[step]}</span>
-        <button className="wizard-close-button" type="button" aria-label="Close" onClick={() => closeWizard('cancelled')}>
+        <button
+          className="wizard-close-button"
+          type="button"
+          aria-label="Close"
+          onClick={() => step === 'syncing' ? void leaveForManualSync() : closeWizard('cancelled')}
+        >
           <X size={16} aria-hidden />
         </button>
       </header>
 
       <div className="wizard-progress" aria-hidden>
-        {(['movie', 'reaction', 'ready'] as WizardStep[]).map((item, index) => (
+        {(['movie', 'reaction', 'ready', 'syncing'] as WizardStep[]).map((item, index) => (
           <span key={item} className={index <= stepIndex ? 'wizard-progress-active' : ''} />
         ))}
       </div>
@@ -322,9 +348,42 @@ export function WizardApp(): JSX.Element {
               </button>
               <button className="primary-button" type="button" disabled={!movie || !reaction || finishing} onClick={() => void completeWizard()}>
                 {finishing && <Loader2 size={17} aria-hidden className="spin" />}
-                Start Sync Setup
+                Find My Sync
               </button>
             </div>
+          </div>
+        </section>
+      )}
+
+      {step === 'syncing' && (
+        <section className="wizard-page wizard-syncing-step" aria-label="Finding Your Sync">
+          <div className="wizard-card wizard-syncing-card">
+            <div className={`wizard-mark ${syncResult?.outcome === 'confident' ? 'wizard-ready-mark' : ''}`}>
+              {syncResult ? <Check size={42} aria-hidden /> : <Loader2 size={42} aria-hidden className="spin" />}
+            </div>
+            <div className="wizard-copy">
+              <p className="wizard-kicker">{syncResult ? 'All checked.' : 'This stays on your computer.'}</p>
+              <h1>{syncResult?.outcome === 'confident' ? 'Your watchalong is ready' : 'Finding Your Sync'}</h1>
+              <p>{syncResult?.message ?? autoSync.progress.message}</p>
+            </div>
+            <div
+              className="auto-sync-progress"
+              role="progressbar"
+              aria-label="Automatic sync progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={autoSync.progress.percent}
+            >
+              <span style={{ width: `${autoSync.progress.percent}%` }} />
+            </div>
+            {!syncResult && (
+              <>
+                <p className="wizard-sync-hint">You can keep using your computer while WatchAlong checks a few moments in both videos.</p>
+                <button className="secondary-button" type="button" onClick={() => void leaveForManualSync()}>
+                  Line Up Manually Instead
+                </button>
+              </>
+            )}
           </div>
         </section>
       )}
