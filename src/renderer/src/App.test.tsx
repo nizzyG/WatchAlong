@@ -17,7 +17,7 @@ const secondSession = createSession('s2', 'Second', 20)
 
 function createLibrary(activeSessionId: string | null = 's1', sessions: LibrarySession[] = [firstSession, secondSession]): SessionLibrary {
   return {
-    version: 3,
+    version: 4,
     activeSessionId,
     sessions
   }
@@ -873,6 +873,10 @@ function createSession(
     reactorSource: 'ntsc',
     detectedMovieFps: 24000 / 1001,
     movieRateCorrection: 1,
+    timingOrigin: 'manual',
+    autoSyncConfidence: null,
+    autoSyncAnalyzedAt: null,
+    autoSyncAlgorithmVersion: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z'
   }

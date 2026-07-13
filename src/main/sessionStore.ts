@@ -83,6 +83,7 @@ export class SessionStore {
       [pathKey]: filePath,
       ...(role === 'reaction' ? { reactionSource } : {}),
       ...(role === 'movie' ? { detectedMovieFps: null } : {}),
+      ...resetAutoSyncMetadata,
       title: role === 'movie' ? basenameForTitle(filePath) : active.title,
       createdAt: active.createdAt,
       updatedAt: now.toISOString()
@@ -124,6 +125,7 @@ export class SessionStore {
       ...(role === 'movie'
         ? { moviePath: filePath, detectedMovieFps: null }
         : { reactionPath: filePath, reactionSource }),
+      ...resetAutoSyncMetadata,
       createdAt: target.createdAt,
       updatedAt: now.toISOString()
     })
@@ -152,11 +154,15 @@ export class SessionStore {
     }
 
     const now = new Date()
+    const timingPatch = isManualTimingPatch(patch) && patch.timingOrigin !== 'automatic'
+      ? resetAutoSyncMetadata
+      : {}
     const sessions = library.sessions.map((session) =>
       session.id === active.id
         ? normalizeSession({
             ...session,
             ...patch,
+            ...timingPatch,
             id: session.id,
             overlay: patch.overlay ? { ...session.overlay, ...patch.overlay } : session.overlay,
             movieWindowGeometry: patch.movieWindowGeometry
@@ -249,6 +255,20 @@ export class SessionStore {
       return createDefaultLibrary()
     }
   }
+}
+
+const resetAutoSyncMetadata: Pick<
+  LibrarySession,
+  'timingOrigin' | 'autoSyncConfidence' | 'autoSyncAnalyzedAt' | 'autoSyncAlgorithmVersion'
+> = {
+  timingOrigin: 'manual',
+  autoSyncConfidence: null,
+  autoSyncAnalyzedAt: null,
+  autoSyncAlgorithmVersion: null
+}
+
+function isManualTimingPatch(patch: Partial<LibrarySession>): boolean {
+  return 'offsetSeconds' in patch || 'movieRateCorrection' in patch || 'reactorSource' in patch
 }
 
 function basenameForTitle(filePath: string): string {

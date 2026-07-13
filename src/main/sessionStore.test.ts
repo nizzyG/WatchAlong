@@ -71,6 +71,59 @@ describe('SessionStore media drafts', () => {
     }
   })
 
+  it('resets automatic timing metadata when media is replaced', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
+    try {
+      const store = new SessionStore(join(dir, 'library.json'), join(dir, 'session.json'))
+      const library = store.createOrSwitchSession('reaction.mp4', 'movie.mp4')
+      const sessionId = library.activeSessionId!
+      store.updateActive({
+        timingOrigin: 'automatic',
+        autoSyncConfidence: 0.94,
+        autoSyncAnalyzedAt: '2026-07-12T00:00:00.000Z',
+        autoSyncAlgorithmVersion: 1
+      })
+
+      const next = store.replaceSessionMedia(sessionId, 'movie', 'replacement.mp4')
+
+      expect(next.sessions[0]).toMatchObject({
+        timingOrigin: 'manual',
+        autoSyncConfidence: null,
+        autoSyncAnalyzedAt: null,
+        autoSyncAlgorithmVersion: null
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('resets automatic metadata for manual timing changes but permits an atomic automatic result', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
+    try {
+      const store = new SessionStore(join(dir, 'library.json'), join(dir, 'session.json'))
+      store.createOrSwitchSession('reaction.mp4', 'movie.mp4')
+      const automatic = store.updateActive({
+        offsetSeconds: 12.5,
+        movieRateCorrection: 1.001,
+        timingOrigin: 'automatic',
+        autoSyncConfidence: 0.94,
+        autoSyncAnalyzedAt: '2026-07-12T00:00:00.000Z',
+        autoSyncAlgorithmVersion: 1
+      })
+      expect(automatic.sessions[0].timingOrigin).toBe('automatic')
+
+      const manual = store.updateActive({ offsetSeconds: 13 })
+      expect(manual.sessions[0]).toMatchObject({
+        timingOrigin: 'manual',
+        autoSyncConfidence: null,
+        autoSyncAnalyzedAt: null,
+        autoSyncAlgorithmVersion: null
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('updates one session resume position without changing the active session', () => {
     const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
     try {
