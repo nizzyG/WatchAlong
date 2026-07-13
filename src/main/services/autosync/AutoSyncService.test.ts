@@ -20,7 +20,7 @@ describe('AutoSyncService', () => {
     expect(repository.session).toMatchObject({
       timingOrigin: 'automatic',
       autoSyncAnalyzedAt: '2026-07-13T12:00:00.000Z',
-      autoSyncAlgorithmVersion: 1
+      autoSyncAlgorithmVersion: 2
     })
   }, 20000)
 

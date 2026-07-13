@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   applySignatureMask,
   createFrameSignature,
+  createTemporalOrdinalSignature,
   createTemporalVarianceMask,
   signatureDistance,
+  temporalOrdinalDistance,
+  type FrameSignature,
   type PixelFrame
 } from './signatures'
 
@@ -66,7 +69,59 @@ describe('auto-sync frame signatures', () => {
     )
     expect(createTemporalVarianceMask(signatures)).toBeNull()
   })
+
+  it('keeps temporal ordinal ranks invariant under monotonic luma changes', () => {
+    const original = ordinalSequence([0.08, 0.31, 0.17, 0.82, 0.55])
+    const gammaAdjusted = original.map((signature) => ({
+      ...signature,
+      luma: Float32Array.from(signature.luma, (value) => value ** 2.2)
+    }))
+
+    expect(temporalOrdinalDistance(
+      createTemporalOrdinalSignature(original),
+      createTemporalOrdinalSignature(gammaAdjusted)
+    )).toBe(0)
+  })
+
+  it('normalizes a reversed odd-length temporal order to maximum distance', () => {
+    const original = ordinalSequence([0, 0.25, 0.5, 0.75, 1])
+    const reversed = ordinalSequence([1, 0.75, 0.5, 0.25, 0])
+    expect(temporalOrdinalDistance(
+      createTemporalOrdinalSignature(original),
+      createTemporalOrdinalSignature(reversed)
+    )).toBe(1)
+  })
+
+  it('uses signature cell weights to prevent a localized overlay from dominating TOM', () => {
+    const original = ordinalSequence([0.1, 0.3, 0.2, 0.7, 0.5])
+    const overlaid = original.map((signature, frame) => {
+      const luma = new Float32Array(signature.luma)
+      luma[0] = 1 - frame * 0.2
+      const cellWeights = new Float32Array(signature.luma.length).fill(1)
+      cellWeights[0] = 0.06
+      return { ...signature, luma, cellWeights }
+    })
+    expect(temporalOrdinalDistance(
+      createTemporalOrdinalSignature(original),
+      createTemporalOrdinalSignature(overlaid)
+    )).toBeLessThan(0.01)
+  })
 })
+
+function ordinalSequence(values: number[]): FrameSignature[] {
+  return values.map((value, frame) => {
+    const luma = Float32Array.from({ length: 16 }, (_, cell) => value + cell * 0.01 + frame * cell * 0.001)
+    return {
+      gridSize: 4,
+      luma,
+      chromaU: new Float32Array(16),
+      chromaV: new Float32Array(16),
+      meanLuma: value,
+      contrast: 0.05,
+      edgeEnergy: 0.1
+    }
+  })
+}
 
 function patternedFrame(width: number, height: number, inverse = false): PixelFrame {
   const frame = solidFrame(width, height, [0, 0, 0])

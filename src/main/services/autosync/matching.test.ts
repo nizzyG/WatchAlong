@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { createFrameSignature, type PixelFrame } from './signatures'
-import { findSequenceAnchors, matchSequence, type TimedSignature } from './matching'
+import {
+  applyBurstinessReweighting,
+  findSequenceAnchors,
+  matchSequence,
+  type SequenceMatchCandidate,
+  type TimedSignature
+} from './matching'
 
 describe('auto-sync sequence matching', () => {
   it('finds the same sequence at a different timeline position', () => {
@@ -30,7 +36,45 @@ describe('auto-sync sequence matching', () => {
     const match = matchSequence(reactionWindow, movie)
     expect(match?.movieTime).toBe(10)
   })
+
+  it('applies movie-first then reaction-side burstiness normalization', () => {
+    const weighted = applyBurstinessReweighting([
+      [candidate(0, 0, 0.81), candidate(0, 1, 0.36)],
+      [candidate(1, 0, 0.49), candidate(1, 1, 0.16)]
+    ], { referenceTimeBinSeconds: 1 })
+
+    expect(weighted[0][0].movieNormalizedSimilarity).toBeCloseTo(0.81 / Math.sqrt(1.3), 6)
+    expect(weighted[0][0].burstSimilarity).toBeCloseTo(0.646, 3)
+    expect(weighted[1][1].burstSimilarity).toBeCloseTo(0.275, 3)
+  })
+
+  it('suppresses a generic probe with many matches while preserving a unique one', () => {
+    const weighted = applyBurstinessReweighting([
+      [0, 1, 2, 3].map((movieTime) => candidate(0, movieTime, 0.8)),
+      [candidate(1, 4, 0.8)]
+    ], { referenceTimeBinSeconds: 1 })
+    expect(Math.max(...weighted[0].map((item) => item.burstSimilarity)))
+      .toBeLessThan(weighted[1][0].burstSimilarity * 0.6)
+  })
+
+  it('normalizes positive similarity rather than lower-is-better distance', () => {
+    const weighted = applyBurstinessReweighting([[
+      candidate(0, 0, 0.9),
+      candidate(0, 1, 0.2)
+    ]], { referenceTimeBinSeconds: 1 })
+    expect(weighted[0][0].burstSimilarity).toBeGreaterThan(weighted[0][1].burstSimilarity)
+  })
 })
+
+function candidate(reactionTime: number, movieTime: number, rawSimilarity: number): SequenceMatchCandidate {
+  return {
+    reactionTime,
+    movieTime,
+    candidateIndex: movieTime,
+    distance: 1 - rawSimilarity,
+    rawSimilarity
+  }
+}
 
 function timeline(count: number, step: number): TimedSignature[] {
   return Array.from({ length: count }, (_, index) => ({

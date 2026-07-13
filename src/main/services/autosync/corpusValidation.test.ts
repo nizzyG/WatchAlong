@@ -59,7 +59,7 @@ describe.runIf(enabled)('local auto-sync corpus shipping gate', () => {
       // Zero is the store's historical default, so only non-default values are
       // usable as local ground truth. The full run still reports every pair.
       const hasVerifiedTiming = Math.abs(session.offsetSeconds) > 1
-      rows.push({ title: session.title, outcome: result.outcome, verified: hasVerifiedTiming, expectedOffset: session.offsetSeconds, actualOffset: result.offsetSeconds, offsetError, expectedRate: session.movieRateCorrection, actualRate: result.movieRateCorrection, endError, seconds: (Date.now() - started) / 1000 })
+      rows.push({ title: session.title, outcome: result.outcome, confidence: result.confidence, verified: hasVerifiedTiming, expectedOffset: session.offsetSeconds, actualOffset: result.offsetSeconds, offsetError, expectedRate: session.movieRateCorrection, actualRate: result.movieRateCorrection, endError, seconds: (Date.now() - started) / 1000 })
     }
 
     console.table(rows)

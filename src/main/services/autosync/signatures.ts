@@ -29,6 +29,13 @@ export interface SignatureCellMask {
   maskedFraction: number
 }
 
+export interface TemporalOrdinalSignature {
+  gridSize: number
+  windowSize: number
+  ranks: Float32Array
+  cellWeights: Float32Array
+}
+
 export interface TemporalMaskOptions {
   maximumMaskedFraction?: number
   minimumComponentSize?: number
@@ -135,6 +142,69 @@ export function signatureDistance(a: FrameSignature, b: FrameSignature): number 
 
 export function signatureSimilarity(a: FrameSignature, b: FrameSignature): number {
   return 1 - signatureDistance(a, b)
+}
+
+/**
+ * Ranks each spatial cell along one exact comparison window. Candidate windows
+ * must be ranked independently: ranks from unrelated sliding neighborhoods are
+ * not comparable (Chen–Stentiford temporal ordinal measurement).
+ */
+export function createTemporalOrdinalSignature(signatures: FrameSignature[]): TemporalOrdinalSignature {
+  const first = signatures[0]
+  if (!first || signatures.length < 2) {
+    throw new Error('Temporal ordinal signatures need at least two frames.')
+  }
+  if (signatures.some((signature) =>
+    signature.gridSize !== first.gridSize || signature.luma.length !== first.luma.length
+  )) {
+    throw new Error('Temporal ordinal signature grids must have the same dimensions.')
+  }
+
+  const windowSize = signatures.length
+  const cellCount = first.luma.length
+  const ranks = new Float32Array(windowSize * cellCount)
+  const cellWeights = new Float32Array(cellCount).fill(1)
+  for (let cell = 0; cell < cellCount; cell += 1) {
+    for (let frame = 0; frame < windowSize; frame += 1) {
+      const value = signatures[frame].luma[cell]
+      let rank = 0
+      for (let comparison = 0; comparison < windowSize; comparison += 1) {
+        const other = signatures[comparison].luma[cell]
+        if (other < value) rank += 1
+        else if (comparison !== frame && other === value) rank += 0.5
+      }
+      ranks[frame * cellCount + cell] = rank
+      cellWeights[cell] = Math.min(cellWeights[cell], signatures[frame].cellWeights?.[cell] ?? 1)
+    }
+  }
+  return { gridSize: first.gridSize, windowSize, ranks, cellWeights }
+}
+
+export function temporalOrdinalDistance(
+  a: TemporalOrdinalSignature,
+  b: TemporalOrdinalSignature
+): number {
+  if (a.gridSize !== b.gridSize || a.windowSize !== b.windowSize || a.ranks.length !== b.ranks.length) {
+    throw new Error('Temporal ordinal signatures must have the same dimensions.')
+  }
+  const cellCount = a.gridSize * a.gridSize
+  // Maximum Spearman footrule distance between two permutations. floor() is
+  // required for odd windows; W²/2 would never reach one for the windows we use.
+  const normalization = Math.max(1, Math.floor((a.windowSize ** 2) / 2))
+  let weightedDistance = 0
+  let weightTotal = 0
+  for (let cell = 0; cell < cellCount; cell += 1) {
+    const weight = Math.min(a.cellWeights[cell] ?? 1, b.cellWeights[cell] ?? 1)
+    if (weight <= 0) continue
+    let distance = 0
+    for (let frame = 0; frame < a.windowSize; frame += 1) {
+      const index = frame * cellCount + cell
+      distance += Math.abs(a.ranks[index] - b.ranks[index])
+    }
+    weightedDistance += Math.min(1, distance / normalization) * weight
+    weightTotal += weight
+  }
+  return clamp01(weightedDistance / Math.max(1e-6, weightTotal))
 }
 
 export function mirrorSignature(signature: FrameSignature): FrameSignature {

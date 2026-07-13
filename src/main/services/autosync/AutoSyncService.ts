@@ -1,11 +1,26 @@
 import type { AutoSyncCompleteEvent, AutoSyncProgressEvent, LibrarySession, SessionLibrary, StartAutoSyncResult } from '@shared/types'
-import { fitAnchors, isConfidentFit, type AutoSyncFit } from './fitting'
+import {
+  fitAnchors,
+  isConfidentFit,
+  isReliableConsensusEvidence,
+  type AutoSyncFit,
+  type FitConsensusEvidence
+} from './fitting'
+import { voteForTemporalConsensus, type HoughConsensus, type HoughVotingOptions } from './houghVoting'
 import { findInsetGeometry, refineGeometryCandidates, type InsetGeometry, type TimedPixelFrame } from './insetGeometry'
-import { matchSequence, type AutoSyncAnchor, type TimedSignature } from './matching'
+import {
+  applyBurstinessReweighting,
+  findSequenceMatchCandidates,
+  matchSequence,
+  selectBurstWeightedMatches,
+  type AutoSyncAnchor,
+  type SequenceMatchCandidate,
+  type TimedSignature
+} from './matching'
 import { applySignatureMask, createFrameSignature, type SignatureCellMask } from './signatures'
 import type { AutoSyncMediaBackend, MediaInfo } from './ffmpegBackend'
 
-export const AUTO_SYNC_ALGORITHM_VERSION = 1
+export const AUTO_SYNC_ALGORITHM_VERSION = 2
 
 export interface AutoSyncSessionRepository {
   getSession(sessionId: string): LibrarySession | null
@@ -34,6 +49,11 @@ interface DetectedInset {
   referenceReactionTime: number
   referenceMovieTime: number
   anchors: AutoSyncAnchor[]
+}
+
+interface AnchorMatchSet {
+  anchors: AutoSyncAnchor[]
+  consensus: HoughConsensus | null
 }
 
 export class AutoSyncService {
@@ -85,8 +105,11 @@ export class AutoSyncService {
       const coarse = scan.anchors
       this.progress(sessionId, 'refining', 72, 'Double-checking the best matches…')
       const refined = await this.refineAnchors(session, coarse, scan.geometry, scan.mask, effectiveSignal)
-      const anchors = refined.length >= 3 ? refined : coarse
-      const fit = fitAnchors(anchors, { movieDuration: movieInfo.duration })
+      const refinedFit = fitMatchSet(refined, movieInfo.duration)
+      const coarseFit = fitMatchSet({ anchors: coarse, consensus: scan.consensus }, movieInfo.duration)
+      // A refinement is only better when its complete evidence is stronger.
+      // This also prevents a marginal refined pass from hiding a valid coarse fit.
+      const fit = choosePreferredFit(refinedFit, coarseFit)
       const current = this.options.sessions.getSession(sessionId)
       if (!current || current.moviePath !== session.moviePath || current.reactionPath !== session.reactionPath) {
         return { sessionId, outcome: 'stale', message: 'The files changed while WatchAlong was checking, so the old result was safely ignored.' }
@@ -99,8 +122,8 @@ export class AutoSyncService {
       }
 
       const refinedIntro = await this.refineAnchors(session, intro.anchors, intro.geometry, intro.mask, effectiveSignal, false)
-      const introOffset = offsetStatsForRate(refinedIntro, current.movieRateCorrection)
-      const bodyOffset = offsetStatsForRate(refined, current.movieRateCorrection)
+      const introOffset = offsetStatsForRate(refinedIntro.anchors, current.movieRateCorrection)
+      const bodyOffset = offsetStatsForRate(refined.anchors, current.movieRateCorrection)
       const partialOffset = introOffset && bodyOffset && Math.abs(bodyOffset.offsetSeconds - introOffset.offsetSeconds) <= 2
         ? bodyOffset.offsetSeconds
         : introOffset?.offsetSeconds
@@ -167,7 +190,7 @@ export class AutoSyncService {
     reactionInfo: MediaInfo,
     intro: DetectedInset,
     signal: AbortSignal
-  ): Promise<{ anchors: AutoSyncAnchor[]; geometry: InsetGeometry; mask: SignatureCellMask | null }> {
+  ): Promise<{ anchors: AutoSyncAnchor[]; consensus: HoughConsensus | null; geometry: InsetGeometry; mask: SignatureCellMask | null }> {
     const pivotReactionTime = clamp(reactionInfo.duration * 0.55, 30, reactionInfo.duration - 30)
     const reactionSpan = pivotReactionTime - intro.referenceReactionTime
     const possibleMovieTimes = [0.9, 1.1].map((rate) => intro.referenceMovieTime + reactionSpan * rate)
@@ -194,16 +217,19 @@ export class AutoSyncService {
       if (pivot && (!selected || pivot.confidence > selected.pivot.confidence)) selected = { pivot, geometry, mask }
     }
     if (!selected || selected.pivot.confidence < 0.32 || Math.abs(selected.pivot.reactionTime - intro.referenceReactionTime) < 30) {
-      return { anchors: [], geometry: intro.geometry, mask: intro.mask }
+      return { anchors: [], consensus: null, geometry: intro.geometry, mask: intro.mask }
     }
     const { pivot, geometry, mask } = selected
 
     const estimatedRate = (pivot.movieTime - intro.referenceMovieTime) / (pivot.reactionTime - intro.referenceReactionTime)
-    if (!Number.isFinite(estimatedRate) || estimatedRate < 0.88 || estimatedRate > 1.12) return { anchors: [], geometry, mask }
+    if (!Number.isFinite(estimatedRate) || estimatedRate < 0.88 || estimatedRate > 1.12) {
+      return { anchors: [], consensus: null, geometry, mask }
+    }
     const probeTimes = [0.08, 0.2, 0.38, 0.56, 0.74, 0.9]
       .map((fraction) => reactionInfo.duration * fraction)
       .filter((time) => time > 20 && time < reactionInfo.duration - 20)
     const anchors: AutoSyncAnchor[] = [pivot]
+    const candidateGroups: SequenceMatchCandidate[][] = []
     for (let index = 0; index < probeTimes.length; index += 1) {
       const reactionTime = probeTimes[index]
       this.progress(session.id, 'scanning', 35 + Math.round(index / Math.max(1, probeTimes.length) * 32), 'Checking moments throughout the watchalong…')
@@ -215,10 +241,15 @@ export class AutoSyncService {
         this.extractSignatures(session.reactionPath!, reactionStart, 10, 2, 128, 72, geometry, signal, 10, mask),
         this.extractSignatures(session.moviePath!, movieStart, 28, 2, 96, 54, undefined, signal, 10)
       ])
-      const match = matchSequence(reaction, movie, { runnerUpExclusionFrames: 12 })
-      if (match && match.confidence >= 0.35) anchors.push(match)
+      const candidates = findSequenceMatchCandidates(reaction, movie)
+      if (candidates.length) candidateGroups.push(candidates)
     }
-    return { anchors, geometry, mask }
+    const body = resolveCandidateGroups(candidateGroups, {
+      offsetBinSeconds: 0.5,
+      inlierToleranceSeconds: 0.75
+    }, 12, 0.35)
+    anchors.push(...body.anchors)
+    return { anchors, consensus: body.consensus, geometry, mask }
   }
 
   private async refineAnchors(
@@ -228,8 +259,8 @@ export class AutoSyncService {
     mask: SignatureCellMask | null,
     signal: AbortSignal,
     reportProgress = true
-  ): Promise<AutoSyncAnchor[]> {
-    const refined: AutoSyncAnchor[] = []
+  ): Promise<AnchorMatchSet> {
+    const candidateGroups: SequenceMatchCandidate[][] = []
     for (let index = 0; index < Math.min(8, anchors.length); index += 1) {
       const anchor = anchors[index]
       if (reportProgress) {
@@ -241,10 +272,13 @@ export class AutoSyncService {
         this.extractSignatures(session.reactionPath!, reactionStart, 10, 4, 192, 108, geometry, signal, 12, mask),
         this.extractSignatures(session.moviePath!, movieStart, 14, 4, 128, 72, undefined, signal)
       ])
-      const match = matchSequence(reaction, movie, { runnerUpExclusionFrames: 20 })
-      if (match && match.confidence >= 0.4) refined.push(match)
+      const candidates = findSequenceMatchCandidates(reaction, movie)
+      if (candidates.length) candidateGroups.push(candidates)
     }
-    return refined
+    return resolveCandidateGroups(candidateGroups, {
+      offsetBinSeconds: 0.25,
+      inlierToleranceSeconds: 0.5
+    }, 20, 0.4)
   }
 
   private async extractPixelFrames(
@@ -323,6 +357,50 @@ function offsetStatsForRate(anchors: AutoSyncAnchor[], rate: number): { offsetSe
     maximumDeviation: Math.max(...values.map((value) => Math.abs(value - offsetSeconds))),
     count: values.length
   }
+}
+
+function resolveCandidateGroups(
+  candidateGroups: SequenceMatchCandidate[][],
+  houghOptions: HoughVotingOptions,
+  runnerUpExclusionFrames: number,
+  minimumConfidence: number
+): AnchorMatchSet {
+  const weighted = applyBurstinessReweighting(candidateGroups)
+  const consensus = voteForTemporalConsensus(weighted, houghOptions)
+  if (consensus && isReliableConsensusEvidence(consensusEvidence(consensus))) {
+    return { anchors: consensus.anchors, consensus }
+  }
+  return {
+    anchors: selectBurstWeightedMatches(candidateGroups, { runnerUpExclusionFrames })
+      .filter((match) => match.confidence >= minimumConfidence),
+    consensus: null
+  }
+}
+
+function fitMatchSet(matched: AnchorMatchSet, movieDuration: number): AutoSyncFit | null {
+  if (!matched.consensus || matched.anchors.length < 3) return null
+  return fitAnchors(matched.anchors, {
+    movieDuration,
+    seedAnchors: matched.consensus.anchors,
+    consensusEvidence: consensusEvidence(matched.consensus)
+  })
+}
+
+function consensusEvidence(consensus: HoughConsensus): FitConsensusEvidence {
+  return {
+    peakMargin: consensus.peakMargin,
+    supportFraction: consensus.supportFraction,
+    meanSimilarity: consensus.meanSimilarity,
+    meanSeedResidual: consensus.meanSeedResidual,
+    maximumSeedResidual: consensus.maximumSeedResidual
+  }
+}
+
+function choosePreferredFit(...fits: Array<AutoSyncFit | null>): AutoSyncFit | null {
+  return fits.filter((fit): fit is AutoSyncFit => Boolean(fit)).sort((a, b) =>
+    Number(isConfidentFit(b)) - Number(isConfidentFit(a)) ||
+    b.confidence - a.confidence
+  )[0] ?? null
 }
 
 function fallback(sessionId: string, message: string): AutoSyncCompleteEvent {
