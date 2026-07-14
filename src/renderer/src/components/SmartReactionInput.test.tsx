@@ -496,6 +496,8 @@ function createApi(): WatchAlongApi {
     confirmMainWindowClose: vi.fn(),
     onMainWindowCloseRequest: vi.fn(() => vi.fn()),
     getPreferences: vi.fn(),
+    getCabinetThemePreference: vi.fn(async () => 'system' as const),
+    onCabinetThemePreference: vi.fn(() => vi.fn()),
     setPreference: vi.fn(),
     selectDownloadDirectory: vi.fn(),
     completeOnboarding: vi.fn()

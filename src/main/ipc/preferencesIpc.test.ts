@@ -7,20 +7,30 @@ import type { AppPreferences } from '@shared/types'
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
+  roles: new Map<string, readonly string[]>(),
   showOpenDialog: vi.fn(),
-  senderWindow: {}
+  senderWindow: {},
+  send: vi.fn(),
+  isDestroyed: vi.fn(() => false)
 }))
 
 vi.mock('electron', () => ({
-  dialog: { showOpenDialog: (...args: unknown[]) => mocks.showOpenDialog(...args) }
+  dialog: { showOpenDialog: (...args: unknown[]) => mocks.showOpenDialog(...args) },
+  BrowserWindow: {
+    getAllWindows: () => [{ webContents: { send: mocks.send, isDestroyed: mocks.isDestroyed } }]
+  }
 }))
 
 vi.mock('./security', () => ({
+  isTrustedRendererWebContents: vi.fn(() => true),
   handleTrustedIpc: (
     channel: string,
-    _roles: readonly string[],
+    roles: readonly string[],
     listener: (...args: unknown[]) => unknown
-  ) => mocks.handlers.set(channel, listener)
+  ) => {
+    mocks.roles.set(channel, roles)
+    mocks.handlers.set(channel, listener)
+  }
 }))
 
 vi.mock('./utils', () => ({
@@ -40,13 +50,17 @@ describe('preferences IPC filesystem authority', () => {
 
   beforeEach(() => {
     mocks.handlers.clear()
+    mocks.roles.clear()
     mocks.showOpenDialog.mockReset()
+    mocks.send.mockReset()
+    mocks.isDestroyed.mockClear()
     root = mkdtempSync(join(tmpdir(), 'watchalong-preferences-ipc-'))
     preferences = {
       hasCompletedOnboarding: true,
       openLibraryOnLaunch: true,
       libraryView: 'grid',
-      reactionDownloadDirectory: null
+      reactionDownloadDirectory: null,
+      cabinetTheme: 'system'
     }
     store = createStore(() => preferences, (next) => { preferences = next })
     registerPreferencesIpc({
@@ -65,6 +79,21 @@ describe('preferences IPC filesystem authority', () => {
     expect(() => setPreference({}, 'reactionDownloadDirectory', '\\\\server\\share')).toThrow(/folder picker/)
     expect(store.setPreference).not.toHaveBeenCalled()
     expect(setPreference({}, 'reactionDownloadDirectory', null)).toMatchObject({ reactionDownloadDirectory: null })
+  })
+
+  it('allows cabinet choices through the existing preference channel', () => {
+    const setPreference = getHandler(`${IPC_PREFIX}:set-preference`)
+
+    expect(setPreference({}, 'cabinetTheme', 'oak')).toMatchObject({ cabinetTheme: 'oak' })
+    expect(store.setPreference).toHaveBeenCalledWith('cabinetTheme', 'oak')
+    expect(mocks.send).toHaveBeenCalledWith(`${IPC_PREFIX}:cabinet-theme-preference`, 'oak')
+  })
+
+  it('shares only the cabinet preference with every trusted app window', () => {
+    const getCabinetTheme = getHandler(`${IPC_PREFIX}:get-cabinet-theme-preference`)
+
+    expect(mocks.roles.get(`${IPC_PREFIX}:get-cabinet-theme-preference`)).toEqual(['main', 'wizard', 'movie'])
+    expect(getCabinetTheme({})).toBe('system')
   })
 
   it('persists only the directory returned by the main-process picker', async () => {

@@ -10,7 +10,8 @@ const defaultPreferences: AppPreferences = {
   hasCompletedOnboarding: false,
   openLibraryOnLaunch: true,
   libraryView: 'grid',
-  reactionDownloadDirectory: null
+  reactionDownloadDirectory: null,
+  cabinetTheme: 'system'
 }
 
 export function useSession() {

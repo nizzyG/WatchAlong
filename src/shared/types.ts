@@ -319,11 +319,16 @@ export interface SavedPatreonSessionStatus {
   canEncrypt: boolean
 }
 
+export type CabinetTheme = 'mahogany' | 'oak'
+export type CabinetThemePreference = 'system' | CabinetTheme
+export type CabinetThemePreferenceCallback = (preference: CabinetThemePreference) => void
+
 export interface AppPreferences {
   hasCompletedOnboarding: boolean
   openLibraryOnLaunch: boolean
   libraryView: LibraryViewPreference
   reactionDownloadDirectory: string | null
+  cabinetTheme: CabinetThemePreference
 }
 
 export interface ImportWizardLaunchOptions {
@@ -418,6 +423,8 @@ export interface WatchAlongApi {
   confirmMainWindowClose(): Promise<void>
   onMainWindowCloseRequest(callback: MainWindowCloseCallback): () => void
   getPreferences(): Promise<AppPreferences>
+  getCabinetThemePreference(): Promise<CabinetThemePreference>
+  onCabinetThemePreference(callback: CabinetThemePreferenceCallback): () => void
   setPreference<K extends keyof AppPreferences>(key: K, value: AppPreferences[K]): Promise<AppPreferences>
   selectDownloadDirectory(): Promise<AppPreferences | null>
   completeOnboarding(): Promise<AppPreferences>

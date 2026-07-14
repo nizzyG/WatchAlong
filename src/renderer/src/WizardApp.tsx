@@ -4,6 +4,7 @@ import { SmartReactionInput } from './components/SmartReactionInput'
 import type { DownloadedReactionMetadata } from './components/SmartReactionInput'
 import { buildSuggestedPairingTitle } from './components/pairingTitle'
 import { useAutoSync } from './hooks/useAutoSync'
+import { useStoredCabinetTheme } from './hooks/useCabinetTheme'
 import type { AutoSyncCompleteEvent, ImportWizardContext, MediaFile, ReactionDownloadSource, WizardOutcome } from '@shared/types'
 
 type WizardStep = 'movie' | 'reaction' | 'ready' | 'syncing'
@@ -31,6 +32,7 @@ const defaultWizardContext: ImportWizardContext = {
 }
 
 export function WizardApp(): JSX.Element {
+  useStoredCabinetTheme()
   const [step, setStep] = useState<WizardStep>('movie')
   const [context, setContext] = useState<ImportWizardContext>(defaultWizardContext)
   const [movie, setMovie] = useState<MediaFile | null>(null)

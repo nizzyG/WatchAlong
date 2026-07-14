@@ -33,7 +33,8 @@ const defaultPreferences: AppPreferences = {
   hasCompletedOnboarding: true,
   openLibraryOnLaunch: true,
   libraryView: 'grid',
-  reactionDownloadDirectory: null
+  reactionDownloadDirectory: null,
+  cabinetTheme: 'system'
 }
 
 function createApi(
@@ -75,6 +76,8 @@ function createApi(
     revealLibraryRecoveryFile: vi.fn(async () => false),
     startFreshLibraryAfterRecovery: vi.fn(async () => createLibrary(null, [])),
     getPreferences: vi.fn(async () => currentPreferences),
+    getCabinetThemePreference: vi.fn(async () => currentPreferences.cabinetTheme),
+    onCabinetThemePreference: vi.fn(() => vi.fn()),
     setPreference: vi.fn(async (key: keyof AppPreferences, value: AppPreferences[keyof AppPreferences]) => {
       currentPreferences = { ...currentPreferences, [key]: value }
       return currentPreferences

@@ -134,6 +134,19 @@ describe('CommandPanel session timing', () => {
       expect(sourceRate).toBeDisabled()
     }
   })
+
+  it('offers System, Mahogany, and Oak cabinet finishes in Preferences', () => {
+    const { props } = renderPanel(createSession(), { expandedSection: 'preferences' })
+    const cabinetChoices = screen.getByRole('group', { name: 'Cabinet finish' })
+
+    expect(within(cabinetChoices).getByRole('button', { name: /System/i })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(cabinetChoices).getByRole('button', { name: /Mahogany/i })).toHaveAttribute('aria-pressed', 'false')
+    expect(within(cabinetChoices).getByRole('button', { name: /Oak/i })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByText('Follows your system appearance')).toBeInTheDocument()
+
+    fireEvent.click(within(cabinetChoices).getByRole('button', { name: /Oak/i }))
+    expect(props.onPreference).toHaveBeenCalledWith('cabinetTheme', 'oak')
+  })
 })
 
 function renderPanel(
@@ -150,7 +163,8 @@ function renderPanel(
       hasCompletedOnboarding: true,
       openLibraryOnLaunch: true,
       libraryView: 'grid',
-      reactionDownloadDirectory: null
+      reactionDownloadDirectory: null,
+      cabinetTheme: 'system'
     },
     patreonStatus: { available: false, canEncrypt: true },
     expandedSection: 'now-playing',

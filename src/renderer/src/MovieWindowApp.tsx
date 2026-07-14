@@ -10,6 +10,7 @@ import {
   isFullscreenShortcut,
   isInteractiveShortcutTarget
 } from './keyboardShortcuts'
+import { useStoredCabinetTheme } from './hooks/useCabinetTheme'
 
 const mediaEvents: RemoteMediaEventType[] = [
   'play',
@@ -31,6 +32,7 @@ const mediaEvents: RemoteMediaEventType[] = [
 ]
 
 export function MovieWindowApp(): JSX.Element {
+  useStoredCabinetTheme()
   const windowRef = useRef<HTMLElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const [init, setInit] = useState<MovieWindowInit | null>(null)

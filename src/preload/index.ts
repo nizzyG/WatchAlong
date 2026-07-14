@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   BrowserName,
+  CabinetThemePreferenceCallback,
   DownloadProgressCallback,
   ImportWizardLaunchOptions,
   LibrarySession,
@@ -152,6 +153,14 @@ const api: WatchAlongApi = {
     return () => ipcRenderer.removeListener(`${IPC_PREFIX}:main-window-close-request`, listener)
   },
   getPreferences: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-preferences`),
+  getCabinetThemePreference: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-cabinet-theme-preference`),
+  onCabinetThemePreference: (callback: CabinetThemePreferenceCallback) => {
+    const listener = (_event: Electron.IpcRendererEvent, preference: Parameters<CabinetThemePreferenceCallback>[0]): void => {
+      callback(preference)
+    }
+    ipcRenderer.on(`${IPC_PREFIX}:cabinet-theme-preference`, listener)
+    return () => ipcRenderer.removeListener(`${IPC_PREFIX}:cabinet-theme-preference`, listener)
+  },
   setPreference: (key, value) => ipcRenderer.invoke(`${IPC_PREFIX}:set-preference`, key, value),
   selectDownloadDirectory: () => ipcRenderer.invoke(`${IPC_PREFIX}:select-download-directory`),
   completeOnboarding: () => ipcRenderer.invoke(`${IPC_PREFIX}:complete-onboarding`)

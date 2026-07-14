@@ -41,6 +41,8 @@ describe('MovieWindowApp fullscreen shortcut', () => {
     })
 
     window.watchAlong = {
+      getCabinetThemePreference: vi.fn(async () => 'system'),
+      onCabinetThemePreference: vi.fn(() => vi.fn()),
       getMovieWindowInit: vi.fn(async () => null),
       movieWindowReady: vi.fn(async () => undefined),
       onMovieMediaCommand: vi.fn(() => vi.fn()),

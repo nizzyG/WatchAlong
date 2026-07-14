@@ -243,6 +243,52 @@ export function CommandPanel({
             onToggle={() => onExpandedSection('preferences')}
           >
             <div className="panel-preferences">
+              <div className="panel-cabinet-setting">
+                <span className="panel-cabinet-copy">
+                  <strong>Cabinet finish</strong>
+                  <small>
+                    {preferences.cabinetTheme === 'system'
+                      ? 'Follows your system appearance'
+                      : `Always use ${preferences.cabinetTheme === 'mahogany' ? 'Mahogany' : 'Oak'}`}
+                  </small>
+                </span>
+                <div className="panel-cabinet-choices" role="group" aria-label="Cabinet finish">
+                  <button
+                    type="button"
+                    aria-pressed={preferences.cabinetTheme === 'system'}
+                    onClick={() => void onPreference('cabinetTheme', 'system')}
+                  >
+                    <span className="cabinet-swatch cabinet-swatch-system" aria-hidden />
+                    <span>
+                      <strong>System</strong>
+                      <small>Follows computer</small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={preferences.cabinetTheme === 'mahogany'}
+                    onClick={() => void onPreference('cabinetTheme', 'mahogany')}
+                  >
+                    <span className="cabinet-swatch cabinet-swatch-mahogany" aria-hidden />
+                    <span>
+                      <strong>Mahogany</strong>
+                      <small>Dim and rich</small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={preferences.cabinetTheme === 'oak'}
+                    onClick={() => void onPreference('cabinetTheme', 'oak')}
+                  >
+                    <span className="cabinet-swatch cabinet-swatch-oak" aria-hidden />
+                    <span>
+                      <strong>Oak</strong>
+                      <small>Bright and natural</small>
+                    </span>
+                  </button>
+                </div>
+              </div>
+
               <div className="panel-setting-row">
                 <span>
                   <strong>Reaction download location</strong>

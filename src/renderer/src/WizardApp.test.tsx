@@ -392,13 +392,16 @@ function createApi(): WatchAlongApi {
     confirmMainWindowClose: vi.fn(async () => undefined),
     onMainWindowCloseRequest: vi.fn(() => vi.fn()),
     getPreferences: vi.fn(),
+    getCabinetThemePreference: vi.fn(async () => 'system' as const),
+    onCabinetThemePreference: vi.fn(() => vi.fn()),
     setPreference: vi.fn(),
     selectDownloadDirectory: vi.fn(),
     completeOnboarding: vi.fn(async () => ({
       hasCompletedOnboarding: true,
       openLibraryOnLaunch: true,
       libraryView: 'grid' as const,
-      reactionDownloadDirectory: null
+      reactionDownloadDirectory: null,
+      cabinetTheme: 'system' as const
     }))
   }
 }

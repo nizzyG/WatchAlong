@@ -11,7 +11,7 @@ vi.mock('electron', () => ({
   shell: { openExternal: electronMocks.openExternal }
 }))
 
-import { handleTrustedIpc, hardenRendererWindow, isTrustedIpcSender } from './security'
+import { handleTrustedIpc, hardenRendererWindow, isTrustedIpcSender, isTrustedRendererWebContents } from './security'
 
 describe('trusted renderer boundary', () => {
   beforeEach(() => {
@@ -27,6 +27,8 @@ describe('trusted renderer boundary', () => {
     expect(isTrustedIpcSender(harness.event(), ['main'])).toBe(false)
     expect(isTrustedIpcSender(harness.event('https://attacker.example/'), ['wizard'])).toBe(false)
     expect(isTrustedIpcSender(harness.event(harness.url, {}), ['wizard'])).toBe(false)
+    expect(isTrustedRendererWebContents(harness.window.webContents, ['wizard'])).toBe(true)
+    expect(isTrustedRendererWebContents(harness.window.webContents, ['main'])).toBe(false)
   })
 
   it('rejects privileged handlers before calling application code', () => {

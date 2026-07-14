@@ -1,29 +1,117 @@
 :root {
-  --wa-ink: #15130f;
-  --wa-ink-deep: #0c0b09;
-  --wa-panel: #211e18;
-  --wa-panel-raised: #302b22;
-  --wa-paper: #f4ead6;
-  --wa-paper-dim: #d9cdb5;
-  --wa-muted: #bdb198;
-  --wa-rule: #7f7564;
-  --wa-rule-soft: #514b41;
+  color-scheme: dark;
+  --wa-ink: #1b0d0c;
+  --wa-ink-deep: #0e0707;
+  --wa-panel: #2b1713;
+  --wa-panel-raised: #3d241d;
+  --wa-paper: #f6ead2;
+  --wa-paper-dim: #dfcfb2;
+  --wa-muted: #bfae91;
+  --wa-rule: #806456;
+  --wa-rule-soft: #513b34;
   --wa-green: #8ee2b1;
   --wa-green-dark: #315f45;
   --wa-green-hover: #a9edc4;
+  --wa-green-readable: #8ee2b1;
+  --wa-focus: #8ee2b1;
   --wa-active-ink: #102018;
-  --wa-aluminum: #c7c5bd;
-  --wa-amber: #efc66c;
+  --wa-aluminum: #cec4b3;
+  --wa-amber: #efbd63;
+  --wa-amber-readable: #efbd63;
   --wa-brass: var(--wa-aluminum);
   --wa-copper: var(--wa-amber);
   --wa-danger: var(--wa-amber);
   --wa-danger-text: var(--wa-paper);
+  --wa-action-surface: #f6ead2;
+  --wa-action-surface-hover: #dfcfb2;
+  --wa-action-ink: #160b09;
+  --wa-canvas-sheen: rgba(213, 115, 54, 0.09);
+  --wa-panel-glass: rgba(47, 25, 20, 0.86);
+  --wa-panel-glass-soft: rgba(53, 30, 23, 0.68);
+  --wa-panel-glass-strong: rgba(33, 16, 14, 0.96);
+  --wa-panel-inset: rgba(13, 6, 6, 0.5);
+  --wa-panel-hover: rgba(75, 43, 32, 0.9);
+  --wa-media-well: #090505;
+  --wa-scrim: rgba(12, 6, 6, 0.76);
+  --wa-scrim-soft: rgba(12, 6, 6, 0.6);
+  --wa-line: rgba(246, 234, 210, 0.17);
+  --wa-line-soft: rgba(246, 234, 210, 0.1);
+  --wa-line-strong: rgba(246, 234, 210, 0.28);
+  --wa-surface-highlight: rgba(255, 249, 233, 0.07);
+  --wa-shadow: rgba(5, 2, 2, 0.52);
+  --wa-shadow-soft: rgba(5, 2, 2, 0.28);
+  --wa-shadow-inset: rgba(4, 1, 1, 0.42);
+  --wa-danger-surface: rgba(83, 51, 24, 0.92);
+  --wa-danger-border: rgba(239, 189, 99, 0.48);
+  --wa-success-surface: #1d3225;
+  --wa-success-ink: #dff8e8;
+  --wa-wood-glow: rgba(222, 133, 59, 0.12);
+  --wa-vignette: rgba(8, 2, 2, 0.52);
+  --wa-grain-light: rgba(255, 243, 219, 0.012);
+  --wa-grain-dark: rgba(31, 7, 5, 0.035);
+  --wa-wood-grain:
+    repeating-linear-gradient(88deg, transparent 0 17px, var(--wa-grain-light) 18px, transparent 20px 43px),
+    repeating-linear-gradient(92deg, transparent 0 47px, var(--wa-grain-dark) 49px, transparent 51px 96px);
+  --wa-wood-sheen: linear-gradient(148deg, var(--wa-surface-highlight), transparent 38%, rgba(0, 0, 0, 0.08));
   color: var(--wa-paper);
   background: var(--wa-ink);
   font-family:
     "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+}
+
+:root[data-cabinet='oak'],
+[data-cabinet='oak'] {
+  color-scheme: light;
+  --wa-ink: #d8c092;
+  --wa-ink-deep: #c3a574;
+  --wa-panel: #ead8b5;
+  --wa-panel-raised: #f3e4c7;
+  --wa-paper: #382719;
+  --wa-paper-dim: #513a27;
+  --wa-muted: #70583e;
+  --wa-rule: #96734a;
+  --wa-rule-soft: #c3a373;
+  --wa-green: #8ee2b1;
+  --wa-green-dark: #315f45;
+  --wa-green-hover: #a9edc4;
+  --wa-green-readable: #315f45;
+  --wa-focus: #315f45;
+  --wa-active-ink: #102018;
+  --wa-aluminum: #6d6254;
+  --wa-amber: #9b681d;
+  --wa-amber-readable: #855414;
+  --wa-danger: #855414;
+  --wa-danger-text: #382719;
+  --wa-action-surface: #4b3422;
+  --wa-action-surface-hover: #61452e;
+  --wa-action-ink: #f6ead2;
+  --wa-canvas-sheen: rgba(255, 246, 219, 0.34);
+  --wa-panel-glass: rgba(235, 216, 181, 0.9);
+  --wa-panel-glass-soft: rgba(235, 216, 181, 0.74);
+  --wa-panel-glass-strong: rgba(246, 232, 203, 0.97);
+  --wa-panel-inset: rgba(151, 115, 69, 0.2);
+  --wa-panel-hover: rgba(249, 235, 207, 0.96);
+  --wa-media-well: #21170f;
+  --wa-scrim: rgba(49, 34, 21, 0.58);
+  --wa-scrim-soft: rgba(49, 34, 21, 0.46);
+  --wa-line: rgba(67, 43, 24, 0.18);
+  --wa-line-soft: rgba(67, 43, 24, 0.1);
+  --wa-line-strong: rgba(67, 43, 24, 0.3);
+  --wa-surface-highlight: rgba(255, 252, 239, 0.38);
+  --wa-shadow: rgba(67, 43, 22, 0.28);
+  --wa-shadow-soft: rgba(67, 43, 22, 0.16);
+  --wa-shadow-inset: rgba(86, 55, 29, 0.2);
+  --wa-danger-surface: rgba(233, 194, 126, 0.78);
+  --wa-danger-border: rgba(117, 73, 18, 0.42);
+  --wa-success-surface: #c4dfbd;
+  --wa-success-ink: #315f45;
+  --wa-wood-glow: rgba(255, 245, 215, 0.36);
+  --wa-vignette: rgba(92, 59, 28, 0.2);
+  --wa-grain-light: rgba(255, 253, 239, 0.035);
+  --wa-grain-dark: rgba(103, 67, 31, 0.022);
+  --wa-wood-sheen: linear-gradient(148deg, var(--wa-surface-highlight), transparent 40%, rgba(105, 67, 30, 0.035));
 }
 
 * {
@@ -2566,7 +2654,7 @@ input:focus-visible,
 textarea:focus-visible,
 summary:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--wa-green);
+  outline: 2px solid var(--wa-focus);
   outline-offset: 2px;
 }
 
@@ -2657,7 +2745,7 @@ summary:focus-visible,
 }
 
 .wizard-kicker {
-  color: var(--wa-green);
+  color: var(--wa-green-readable);
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   letter-spacing: 0.12em;
 }
@@ -2895,7 +2983,7 @@ summary:focus-visible,
 }
 
 .auto-sync-rollin-copy p {
-  color: var(--wa-green);
+  color: var(--wa-green-readable);
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   font-size: 10px;
   font-weight: 750;
@@ -3065,7 +3153,7 @@ summary:focus-visible,
 
 .timing-session-details .automatic-timing-detail,
 .tool-ok svg {
-  color: var(--wa-green);
+  color: var(--wa-green-readable);
 }
 
 .error-banner,
@@ -3426,7 +3514,7 @@ summary:focus-visible,
 }
 
 .command-panel-content:focus-visible {
-  outline: 1px solid rgba(142, 226, 177, 0.52);
+  outline: 2px solid var(--wa-focus);
   outline-offset: -2px;
 }
 
@@ -3525,7 +3613,7 @@ summary:focus-visible,
 
 .panel-sync-automatic .panel-sync-status-icon {
   border-color: rgba(142, 226, 177, 0.38);
-  color: var(--wa-green);
+  color: var(--wa-green-readable);
   background: rgba(49, 95, 69, 0.22);
 }
 
@@ -3872,5 +3960,571 @@ summary:focus-visible,
   .download-progress-indeterminate .download-progress-track > span {
     width: 58%;
     transform: none;
+  }
+}
+
+/* Wood-tone material system. The furniture changes stain; its construction does not. */
+
+body,
+body.wizard-body,
+.app-shell {
+  color: var(--wa-paper);
+  background-color: var(--wa-ink);
+}
+
+.app-shell {
+  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+}
+
+.wizard-window,
+.onboarding-window {
+  color: var(--wa-paper);
+  background-color: var(--wa-ink);
+  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  box-shadow: inset 0 0 0 1px var(--wa-shadow-inset);
+}
+
+.wizard-titlebar,
+.onboarding-titlebar,
+.pip-titlebar,
+.movie-window-titlebar {
+  border-color: var(--wa-line);
+  color: var(--wa-paper-dim);
+  background-color: var(--wa-panel-glass-strong);
+  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+}
+
+.wizard-card,
+.smart-input,
+.wizard-reaction-step .smart-input,
+.onboarding-shell,
+.startup-error-card,
+.welcome-card,
+.missing-media-card,
+.session-dialog,
+.auto-sync-rollin-card,
+.playback-settings-body {
+  border-color: var(--wa-line-strong);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-glass-strong);
+  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  box-shadow:
+    0 24px 64px var(--wa-shadow),
+    inset 0 1px 0 var(--wa-surface-highlight);
+}
+
+.wizard-summary div,
+.reaction-card,
+.patreon-connect,
+.download-status,
+.tool-row,
+.first-movie-prompt,
+.first-ready,
+.library-panel,
+.setup-panel,
+.panel-download-item,
+.panel-setting-row,
+.panel-toggle-row,
+.panel-segmented,
+.timing-summary,
+.timing-settings-body {
+  border-color: var(--wa-line);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-glass-soft);
+  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+}
+
+.expanded-form input,
+.expanded-form textarea,
+.session-dialog input,
+.session-dialog select,
+.smart-input input,
+.smart-input textarea {
+  border-color: var(--wa-line-strong);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-inset);
+}
+
+.expanded-form input::placeholder,
+.expanded-form textarea::placeholder,
+.session-dialog input::placeholder,
+.smart-input input::placeholder,
+.smart-input textarea::placeholder {
+  color: var(--wa-muted);
+}
+
+.session-dialog label,
+.expanded-form label,
+.storage-toggle,
+.wizard-summary dd {
+  color: var(--wa-paper-dim);
+}
+
+.privacy-badge,
+.inline-status,
+.login-hint,
+.tier-divider,
+.wizard-summary dt,
+.wizard-close-button {
+  color: var(--wa-muted);
+}
+
+.tier-divider::before,
+.tier-divider::after {
+  background: var(--wa-line);
+}
+
+.wizard-close-button:hover {
+  color: var(--wa-paper);
+  background: var(--wa-line-soft);
+}
+
+.wizard-file-pill {
+  color: var(--wa-green-readable);
+}
+
+.wizard-file-pill,
+.privacy-badge {
+  border-color: var(--wa-green-dark);
+  color: var(--wa-success-ink);
+  background: var(--wa-success-surface);
+}
+
+.missing-media-list div {
+  border-color: var(--wa-line);
+  background: var(--wa-panel-inset);
+}
+
+.missing-media-list strong {
+  color: var(--wa-paper);
+}
+
+.missing-media-list span,
+.session-dialog label small {
+  color: var(--wa-paper-dim);
+}
+
+.missing-media-list svg {
+  color: var(--wa-amber-readable);
+}
+
+.wizard-notice {
+  color: var(--wa-amber-readable);
+}
+
+.wizard-error {
+  color: var(--wa-danger);
+}
+
+.secondary-button,
+.icon-button,
+.mini-button,
+.speed-control button,
+.source-rate-control button,
+.playback-settings-summary,
+.pip-titlebar .icon-button,
+.movie-window-titlebar .icon-button,
+.pip-resize {
+  border-color: var(--wa-line-strong);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-raised);
+  background-image: var(--wa-wood-sheen);
+}
+
+.secondary-button:hover,
+.icon-button:hover,
+.mini-button:hover,
+.speed-control button:hover,
+.source-rate-control button:hover {
+  border-color: var(--wa-rule);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-hover);
+}
+
+.danger-button,
+.danger-button:hover {
+  border-color: var(--wa-danger-border);
+  color: var(--wa-danger-text);
+  background-color: var(--wa-danger-surface);
+  background-image: var(--wa-wood-sheen);
+}
+
+.primary-button,
+.transport-button,
+.status-playing,
+.panel-segmented .segment-active,
+.panel-frame-rate-control .segment-active,
+.playback-settings[open] .playback-settings-summary {
+  border-color: var(--wa-green-dark);
+  color: var(--wa-active-ink);
+  background-color: var(--wa-green);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent);
+}
+
+.primary-button:hover,
+.transport-button:hover {
+  border-color: var(--wa-green-dark);
+  color: var(--wa-active-ink);
+  background-color: var(--wa-green-hover);
+}
+
+.smart-input-overlay,
+.startup-error-state,
+.welcome-backdrop,
+.missing-media-backdrop,
+.session-dialog-backdrop,
+.onboarding-backdrop {
+  background: var(--wa-scrim);
+  backdrop-filter: blur(8px) saturate(0.92);
+}
+
+.auto-sync-rollin-overlay,
+.command-panel-scrim {
+  background: var(--wa-scrim-soft);
+}
+
+.error-banner,
+.fallback-reason,
+.library-poster-notice-error {
+  border-color: var(--wa-danger-border);
+  color: var(--wa-danger-text);
+  background-color: var(--wa-danger-surface);
+  background-image: var(--wa-wood-sheen);
+}
+
+.control-bar {
+  border-color: var(--wa-line);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-glass-strong);
+  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  box-shadow:
+    0 24px 58px var(--wa-shadow),
+    inset 0 1px 0 var(--wa-surface-highlight);
+}
+
+.control-meta,
+.control-meta .volume-control,
+.control-row .status-pill {
+  border-color: var(--wa-line-soft);
+}
+
+.control-meta .volume-control,
+.panel-sync-facts,
+.panel-offset-control,
+.panel-frame-rate-control > div,
+.panel-detected-rate,
+.panel-shortcuts {
+  background-color: var(--wa-panel-inset);
+}
+
+.status-pill {
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-raised);
+}
+
+.status-playing {
+  color: var(--wa-active-ink);
+}
+
+.find-sync-button {
+  border-color: rgba(49, 95, 69, 0.62);
+  color: var(--wa-paper);
+  background:
+    linear-gradient(180deg, rgba(142, 226, 177, 0.14), rgba(142, 226, 177, 0.04)),
+    var(--wa-panel-inset);
+}
+
+.find-sync-button:not(:disabled):hover {
+  color: var(--wa-paper);
+  background:
+    linear-gradient(180deg, rgba(142, 226, 177, 0.22), rgba(142, 226, 177, 0.08)),
+    var(--wa-panel-hover);
+}
+
+.command-panel {
+  border-left-color: var(--wa-line-strong);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-glass-strong);
+  background-image:
+    radial-gradient(circle at 18% 2%, var(--wa-wood-glow), transparent 31%),
+    var(--wa-wood-grain),
+    var(--wa-wood-sheen);
+  box-shadow:
+    -32px 0 80px var(--wa-shadow),
+    inset 1px 0 0 var(--wa-surface-highlight);
+}
+
+.command-panel-titlebar {
+  border-color: var(--wa-line-soft);
+  background-color: var(--wa-panel-glass-strong);
+  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+}
+
+.command-panel-content {
+  scrollbar-color: var(--wa-rule) var(--wa-panel-inset);
+}
+
+.command-panel-content::-webkit-scrollbar-track {
+  background: var(--wa-panel-inset);
+}
+
+.command-panel-content::-webkit-scrollbar-thumb {
+  background-color: var(--wa-rule);
+}
+
+.command-panel-content::-webkit-scrollbar-thumb:hover {
+  background-color: var(--wa-paper-dim);
+}
+
+.command-section {
+  border-color: var(--wa-line);
+  background-color: var(--wa-panel-glass-soft);
+  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  box-shadow:
+    0 7px 18px var(--wa-shadow-soft),
+    inset 0 1px 0 var(--wa-surface-highlight);
+}
+
+.command-section-expanded {
+  border-color: var(--wa-line-strong);
+  background-color: var(--wa-panel-glass);
+}
+
+.command-section-header:hover,
+.panel-frame-rate-control button:hover {
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-hover);
+}
+
+.link-button,
+.panel-segmented button {
+  color: var(--wa-paper-dim);
+}
+
+.link-button:hover,
+.link-button:focus-visible {
+  color: var(--wa-paper);
+}
+
+.panel-sync-overview {
+  border-color: var(--wa-line);
+  background-color: var(--wa-panel-glass);
+  background-image:
+    linear-gradient(145deg, var(--wa-surface-highlight), transparent 58%),
+    var(--wa-wood-grain);
+  box-shadow:
+    0 10px 24px var(--wa-shadow-soft),
+    inset 0 1px 0 var(--wa-surface-highlight);
+}
+
+.panel-sync-status-icon {
+  border-color: var(--wa-line-strong);
+  color: var(--wa-aluminum);
+  background-color: var(--wa-panel-inset);
+}
+
+.panel-sync-running .panel-sync-status-icon {
+  border-color: var(--wa-danger-border);
+  color: var(--wa-amber);
+}
+
+.panel-sync-facts,
+.panel-sync-facts > div + div,
+.panel-manual-timing,
+.panel-offset-control,
+.panel-frame-rate-control > div,
+.panel-detected-rate,
+.panel-shortcuts {
+  border-color: var(--wa-line-soft);
+}
+
+.panel-find-sync-button small {
+  color: rgba(16, 32, 24, 0.78);
+}
+
+@media (prefers-contrast: more) {
+  .wizard-card,
+  .smart-input,
+  .session-dialog,
+  .control-bar,
+  .command-panel,
+  .command-section,
+  .panel-sync-overview {
+    border-color: var(--wa-rule);
+  }
+}
+
+.panel-cabinet-setting {
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid var(--wa-line-soft);
+  border-radius: 10px;
+  background-color: var(--wa-panel-inset);
+  background-image: var(--wa-wood-sheen);
+}
+
+.panel-cabinet-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.panel-cabinet-copy strong {
+  color: var(--wa-paper);
+  font-size: 13px;
+}
+
+.panel-cabinet-copy small {
+  color: var(--wa-muted);
+  font-size: 11px;
+}
+
+.panel-cabinet-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.panel-cabinet-choices button {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 6px 8px;
+  overflow: hidden;
+  border: 1px solid var(--wa-line);
+  border-radius: 8px;
+  color: var(--wa-paper-dim);
+  background-color: var(--wa-panel-glass-soft);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.panel-cabinet-choices button:hover {
+  border-color: var(--wa-line-strong);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-hover);
+  transform: translateY(-1px);
+}
+
+.panel-cabinet-choices button[aria-pressed='true'] {
+  border-color: var(--wa-green-dark);
+  color: var(--wa-paper);
+  box-shadow:
+    inset 0 0 0 1px var(--wa-green),
+    0 0 0 1px rgba(49, 95, 69, 0.28);
+}
+
+.panel-cabinet-choices button[aria-pressed='true']::after {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--wa-active-ink);
+  border-radius: 50%;
+  background: var(--wa-green);
+  box-shadow: 0 0 8px rgba(142, 226, 177, 0.62);
+  content: '';
+}
+
+.panel-cabinet-choices button > span:last-child {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.panel-cabinet-choices button strong,
+.panel-cabinet-choices button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-cabinet-choices button strong {
+  font-size: 11px;
+}
+
+.panel-cabinet-choices button small {
+  color: var(--wa-muted);
+  font-size: 9px;
+}
+
+.cabinet-swatch {
+  display: block;
+  width: 100%;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 5px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(31, 14, 8, 0.2);
+}
+
+.cabinet-swatch-system {
+  background:
+    linear-gradient(90deg, transparent 49%, rgba(255, 255, 255, 0.32) 49% 51%, transparent 51%),
+    linear-gradient(90deg, #321813 0 50%, #dfc99e 50% 100%);
+}
+
+.cabinet-swatch-mahogany {
+  background:
+    repeating-linear-gradient(88deg, transparent 0 8px, rgba(255, 231, 201, 0.06) 9px, transparent 10px 18px),
+    linear-gradient(145deg, #54281f, #210e0d);
+}
+
+.cabinet-swatch-oak {
+  background:
+    repeating-linear-gradient(88deg, transparent 0 8px, rgba(103, 67, 31, 0.09) 9px, transparent 10px 18px),
+    linear-gradient(145deg, #f0ddb8, #c3a574);
+}
+
+@media (max-width: 380px) {
+  .panel-cabinet-choices {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (forced-colors: active) {
+  .app-shell,
+  .wizard-window,
+  .wizard-card,
+  .smart-input,
+  .onboarding-shell,
+  .startup-error-card,
+  .welcome-card,
+  .missing-media-card,
+  .session-dialog,
+  .auto-sync-rollin-card,
+  .control-bar,
+  .playback-settings-body,
+  .command-panel,
+  .command-section,
+  .panel-sync-overview,
+  .panel-cabinet-setting,
+  .panel-cabinet-choices button {
+    border-color: CanvasText;
+    color: CanvasText;
+    background: Canvas;
+  }
+
+  .primary-button,
+  .transport-button,
+  .status-playing,
+  .panel-segmented .segment-active,
+  .panel-frame-rate-control .segment-active,
+  .playback-settings[open] .playback-settings-summary,
+  .panel-cabinet-choices button[aria-pressed='true'] {
+    color: HighlightText;
+    background: Highlight;
+  }
+
+  .panel-cabinet-choices button[aria-pressed='true']::after {
+    background: HighlightText;
   }
 }

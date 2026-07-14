@@ -127,7 +127,7 @@
 .library-header-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .library-mode-switch,
@@ -249,7 +249,7 @@
 }
 
 .library-poster-notice-success svg {
-  color: var(--wa-green);
+  color: var(--wa-green-readable);
 }
 
 .library-poster-notice-error {
@@ -324,7 +324,7 @@
 }
 
 .library-sort-control button:focus-visible {
-  outline: 3px solid var(--wa-green);
+  outline: 3px solid var(--wa-focus);
   outline-offset: 2px;
 }
 
@@ -609,7 +609,7 @@
 .library-card-main:focus-visible,
 .library-card-menu-button:focus-visible {
   outline: 0;
-  box-shadow: inset 0 0 0 3px var(--wa-green), 0 0 0 2px var(--wa-ink-deep);
+  box-shadow: inset 0 0 0 3px var(--wa-focus), 0 0 0 2px var(--wa-ink-deep);
 }
 
 .library-card-thumbnail {
@@ -1366,24 +1366,301 @@
   .library-sort-control button[aria-pressed='true'],
   .library-card-main:focus-visible,
   .library-card-menu-button:focus-visible {
-    outline: 3px solid var(--wa-green);
+    outline: 3px solid var(--wa-focus);
     outline-offset: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .library-browser {
+    scroll-behavior: auto;
+  }
+}
+
+/* Cabinet stains share one material language: only the light and color tokens change. */
+
+.library-home {
+  color: var(--wa-paper);
+  background-color: var(--wa-ink);
+  background-image:
+    radial-gradient(circle at 16% -12%, var(--wa-wood-glow), transparent 34%),
+    radial-gradient(circle at 88% 4%, var(--wa-surface-highlight), transparent 28%),
+    var(--wa-wood-sheen);
+}
+
+.library-home::before {
+  opacity: 1;
+  background-image: var(--wa-wood-grain);
+  mix-blend-mode: normal;
+}
+
+.library-home::after {
+  background: radial-gradient(ellipse at center, transparent 46%, var(--wa-vignette) 126%);
+}
+
+.library-home-header {
+  border-color: var(--wa-line);
+  background-color: var(--wa-panel-glass-soft);
+  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  box-shadow:
+    0 24px 58px var(--wa-shadow-soft),
+    inset 0 1px 0 var(--wa-surface-highlight),
+    inset 0 -1px 0 var(--wa-shadow-inset);
+}
+
+.library-home-mark {
+  border-color: var(--wa-line-strong);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-inset);
+  background-image: var(--wa-wood-sheen);
+  box-shadow:
+    0 10px 24px var(--wa-shadow-soft),
+    inset 0 1px 0 var(--wa-surface-highlight);
+}
+
+.library-mode-switch,
+.library-layout-switch,
+.library-sort-control {
+  border-color: var(--wa-line);
+  background-color: var(--wa-panel-inset);
+  box-shadow: inset 0 1px 4px var(--wa-shadow-inset);
+}
+
+.library-mode-switch button,
+.library-layout-switch button,
+.library-sort-control button {
+  color: var(--wa-paper-dim);
+}
+
+.library-mode-switch button:hover,
+.library-layout-switch button:hover,
+.library-sort-control button:hover {
+  border-color: var(--wa-line-strong);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-hover);
+}
+
+.library-mode-switch button[aria-pressed='true'],
+.library-layout-switch button[aria-pressed='true'],
+.library-sort-control button[aria-pressed='true'] {
+  border-color: var(--wa-green-dark);
+  color: var(--wa-active-ink);
+  background-color: var(--wa-green);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent);
+}
+
+.library-home-header .primary-button {
+  border-color: var(--wa-line-strong);
+  color: var(--wa-action-ink);
+  background: linear-gradient(180deg, var(--wa-action-surface), var(--wa-action-surface-hover));
+  box-shadow:
+    0 10px 22px var(--wa-shadow-soft),
+    inset 0 1px 0 var(--wa-surface-highlight);
+}
+
+.library-home-header .primary-button:hover {
+  border-color: var(--wa-line-strong);
+  color: var(--wa-action-ink);
+  background: var(--wa-action-surface-hover);
+}
+
+.library-poster-notice,
+.library-empty-state,
+.library-card,
+.reactor-shelf,
+.movie-shelf-card,
+.movie-shelf-pairings .library-card,
+.movie-library-grid-compact .movie-shelf-card {
+  border-color: var(--wa-line);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-glass-soft);
+  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  box-shadow:
+    0 20px 48px var(--wa-shadow-soft),
+    inset 0 1px 0 var(--wa-surface-highlight);
+}
+
+.library-poster-notice-success {
+  border-left: 4px solid var(--wa-green-readable);
+}
+
+.library-poster-notice-error {
+  border-color: var(--wa-danger-border);
+  border-left: 4px solid var(--wa-danger);
+  color: var(--wa-danger-text);
+  background-color: var(--wa-danger-surface);
+  background-image: var(--wa-wood-sheen);
+}
+
+.library-card:hover,
+.library-card:focus-within,
+.movie-shelf-pairings .library-card:focus-within {
+  border-color: var(--wa-line-strong);
+  background-color: var(--wa-panel-hover);
+}
+
+.pairing-library-grid .library-card,
+.pairing-library-grid .library-card:hover,
+.pairing-library-grid .library-card:focus-within,
+.reactor-shelf-movies .library-card,
+.reactor-shelf-movies .library-card:hover,
+.reactor-shelf-movies .library-card:focus-within {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+
+.pairing-library-grid-compact .library-card,
+.reactor-library-compact .reactor-shelf-movies .library-card-main {
+  border-color: var(--wa-line);
+  background-color: var(--wa-panel-glass-soft);
+  background-image: var(--wa-wood-sheen);
+}
+
+.library-empty-state-reactors,
+.library-empty-state-movies,
+.reactor-shelf-header {
+  background-color: var(--wa-panel-glass-soft);
+  background-image:
+    radial-gradient(circle at 50% 8%, var(--wa-wood-glow), transparent 38%),
+    var(--wa-wood-grain),
+    var(--wa-wood-sheen);
+}
+
+.reactor-shelf-header {
+  border-color: var(--wa-line);
+}
+
+.library-empty-icon {
+  border-color: var(--wa-line-strong);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-inset);
+  background-image: var(--wa-wood-sheen);
+}
+
+.movie-poster-frame {
+  border-color: var(--wa-line-strong);
+  background-color: var(--wa-media-well);
+  box-shadow:
+    0 18px 38px var(--wa-shadow),
+    0 3px 8px var(--wa-shadow-soft),
+    inset 0 1px 0 var(--wa-surface-highlight);
+}
+
+.movie-poster-fallback,
+.reactor-avatar-fallback {
+  color: var(--wa-paper);
+  background-color: var(--wa-panel);
+  background-image:
+    radial-gradient(circle at 22% 16%, var(--wa-wood-glow), transparent 34%),
+    var(--wa-wood-grain),
+    var(--wa-wood-sheen);
+}
+
+.movie-poster-fallback::before {
+  border-color: var(--wa-line);
+}
+
+.reactor-avatar {
+  border-color: var(--wa-line-strong);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-raised);
+  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  box-shadow:
+    0 12px 28px var(--wa-shadow-soft),
+    inset 0 1px 0 var(--wa-surface-highlight);
+}
+
+.library-card-thumbnail {
+  color: var(--wa-paper-dim);
+  background-color: var(--wa-panel-inset);
+  background-image:
+    radial-gradient(circle at 50% 15%, var(--wa-wood-glow), transparent 42%),
+    var(--wa-wood-grain);
+}
+
+.library-card-progress {
+  background-color: var(--wa-panel-inset);
+}
+
+.library-card-menu-button {
+  border-color: var(--wa-line-strong);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-glass-strong);
+}
+
+.library-card:hover .library-card-menu-button,
+.library-card:focus-within .library-card-menu-button,
+.library-card-menu-button[aria-expanded='true'],
+.library-card-menu-button:hover {
+  border-color: var(--wa-line-strong);
+  background-color: var(--wa-panel-hover);
+}
+
+.library-card-menu {
+  border-color: var(--wa-line-strong);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-glass-strong);
+  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  box-shadow: 0 22px 54px var(--wa-shadow);
+}
+
+.library-card-menu button:hover,
+.library-card-menu button:focus-visible {
+  color: var(--wa-ink-deep);
+  background: var(--wa-paper);
+}
+
+.library-card-reactor-badge {
+  background-color: var(--wa-media-well);
+  box-shadow: 0 14px 28px var(--wa-shadow);
+}
+
+.movie-shelf-pairings {
+  border-color: var(--wa-line);
+  background-color: var(--wa-panel-inset);
+}
+
+@media (prefers-contrast: more) {
+  .library-home-header,
+  .reactor-shelf,
+  .library-card,
+  .movie-poster-frame,
+  .movie-shelf-card {
+    border-color: var(--wa-rule);
   }
 }
 
 @media (forced-colors: active) {
   .library-home,
   .library-home-header,
-  .reactor-shelf,
+  .library-home-mark,
+  .library-poster-notice,
+  .library-empty-state,
   .library-card,
-  .movie-poster-fallback {
+  .reactor-shelf,
+  .movie-shelf-card,
+  .movie-poster-fallback,
+  .reactor-avatar-fallback,
+  .library-card-menu,
+  .movie-shelf-pairings {
+    border-color: CanvasText;
+    color: CanvasText;
     background: Canvas;
+    background-image: none;
+    box-shadow: none;
+  }
+
+  .library-home::before,
+  .library-home::after {
+    display: none;
   }
 
   .library-mode-switch button[aria-pressed='true'],
   .library-layout-switch button[aria-pressed='true'],
   .library-sort-control button[aria-pressed='true'],
   .library-card-progress span {
+    color: HighlightText;
     background: Highlight;
   }
 
@@ -1392,11 +1669,5 @@
   .library-card-menu-button:focus-visible {
     outline: 3px solid Highlight;
     outline-offset: -3px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .library-browser {
-    scroll-behavior: auto;
   }
 }

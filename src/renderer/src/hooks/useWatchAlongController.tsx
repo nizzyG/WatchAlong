@@ -28,6 +28,7 @@ import { usePlayerControls } from './usePlayerControls'
 import { useMovieWindow } from './useMovieWindow'
 import { useSessionActions } from './useSessionActions'
 import { useAppSubscriptions } from './useAppSubscriptions'
+import { useCabinetTheme } from './useCabinetTheme'
 
 type MediaUrls = Record<MediaRole, string | null>
 type MetadataReady = Record<MediaRole, boolean>
@@ -39,7 +40,8 @@ const defaultPreferences: AppPreferences = {
   hasCompletedOnboarding: false,
   openLibraryOnLaunch: true,
   libraryView: 'grid',
-  reactionDownloadDirectory: null
+  reactionDownloadDirectory: null,
+  cabinetTheme: 'system'
 }
 const CONTROL_IDLE_DELAY_MS = 2400
 const UNSUPPORTED_SUBTITLE_FORMAT_ERROR = "This subtitle format isn't supported. Use SRT or VTT."
@@ -79,6 +81,7 @@ export function useWatchAlongController({
   const { setDownloadIndicator, setDownloadEvents } = downloads
   const autoSync = useAutoSync()
   const wizardSwapMovieMomentRef = useRef<number | null>(null)
+  useCabinetTheme(preferences.cabinetTheme)
 
   const activeSession = useMemo(() => getActiveSession(library), [library])
   const session = activeSession ?? emptySession

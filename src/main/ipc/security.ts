@@ -46,6 +46,11 @@ export function isTrustedIpcSender(event: IpcMainInvokeEvent, allowedRoles: read
   return isTrustedRendererNavigation(senderFrame.url, trusted.url)
 }
 
+export function isTrustedRendererWebContents(webContents: WebContents, allowedRoles: readonly RendererRole[]): boolean {
+  const trusted = trustedRenderers.get(webContents)
+  return Boolean(trusted && allowedRoles.includes(trusted.role))
+}
+
 export function handleTrustedIpc<Args extends unknown[], Result>(
   channel: string,
   allowedRoles: readonly RendererRole[],
