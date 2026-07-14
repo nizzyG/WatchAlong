@@ -1,62 +1,129 @@
-import { ipcMain } from 'electron'
-import { existsSync, readFileSync } from 'node:fs'
-import type { BrowserWindow } from 'electron'
+import { existsSync } from 'node:fs'
+import { shell, type BrowserWindow } from 'electron'
 import type { LibrarySession, MediaFile, MediaRole, OpenVideosResult, ReactionSource } from '@shared/types'
-import { IPC_PREFIX, MEDIA_SCHEME } from '../constants'
+import { IPC_PREFIX } from '../constants'
+import { createSessionMediaUrl } from '../mediaProtocol'
+import { pickMovieWindowSessionPatch, pickRendererSessionPatch } from '../sessionPatch'
+import { MediaPathGrantStore } from '../services/mediaPathGrants'
+import { readSubtitleFile } from '../services/subtitleFiles'
 import { SessionStore } from '../sessionStore'
+import { handleTrustedIpc } from './security'
 import { getMediaPath, getSenderWindow, selectSubtitle, selectVideo } from './utils'
+
+const MAIN_RENDERER = ['main'] as const
+const APP_RENDERERS = ['main', 'wizard'] as const
 
 export function registerSessionIpc(deps: {
   sessionStore: SessionStore
+  mediaPathGrants?: MediaPathGrantStore
   mainWindowGetter: () => BrowserWindow | null
 }): void {
   const { sessionStore, mainWindowGetter } = deps
-  ipcMain.handle(`${IPC_PREFIX}:get-library`, () => sessionStore.read())
-  ipcMain.handle(`${IPC_PREFIX}:save-active-session`, (_event, patch: Partial<LibrarySession>) => sessionStore.updateActive(patch))
-  ipcMain.handle(`${IPC_PREFIX}:save-session-position`, (_event, id: string, time: number) => sessionStore.saveSessionPosition(id, time))
-  ipcMain.handle(`${IPC_PREFIX}:set-session-media`, (_event, role: MediaRole, path: string, source?: ReactionSource) => sessionStore.setSessionMedia(role, path, source))
-  ipcMain.handle(`${IPC_PREFIX}:replace-session-media`, (_event, id: string, role: MediaRole, path: string, source?: ReactionSource) => sessionStore.replaceSessionMedia(id, role, path, source))
-  ipcMain.handle(`${IPC_PREFIX}:create-or-switch-session-from-paths`, (_event, reaction: string, movie: string, source?: ReactionSource) => sessionStore.createOrSwitchSession(reaction, movie, source))
-  ipcMain.handle(`${IPC_PREFIX}:set-active-session`, (_event, id: string) => sessionStore.setActiveSession(id))
-  ipcMain.handle(`${IPC_PREFIX}:delete-session`, (_event, id: string) => sessionStore.deleteSession(id))
-  ipcMain.handle(`${IPC_PREFIX}:rename-session`, (_event, id: string, title: string) => sessionStore.renameSession(id, title))
+  const mediaPathGrants = deps.mediaPathGrants ?? new MediaPathGrantStore(() =>
+    sessionStore.read().sessions.flatMap((session) => [session.reactionPath, session.moviePath]))
+  handleTrustedIpc(`${IPC_PREFIX}:get-library`, APP_RENDERERS, () => sessionStore.read())
+  handleTrustedIpc(`${IPC_PREFIX}:get-library-recovery-status`, MAIN_RENDERER, () => ({
+    available: Boolean(sessionStore.getLatestRecoveryPath())
+  }))
+  handleTrustedIpc(`${IPC_PREFIX}:reveal-library-recovery-file`, MAIN_RENDERER, () => {
+    const path = sessionStore.getLatestRecoveryPath()
+    if (!path) return false
+    shell.showItemInFolder(path)
+    return true
+  })
+  handleTrustedIpc(`${IPC_PREFIX}:start-fresh-library-after-recovery`, MAIN_RENDERER, () =>
+    sessionStore.startFreshLibraryAfterRecovery())
+  handleTrustedIpc(`${IPC_PREFIX}:save-active-session`, MAIN_RENDERER, (_event, patch: Partial<LibrarySession>) =>
+    sessionStore.updateActive(pickRendererSessionPatch(patch)))
+  handleTrustedIpc(`${IPC_PREFIX}:save-session-position`, MAIN_RENDERER, (_event, id: string, time: number) =>
+    sessionStore.saveSessionPosition(id, time))
+  handleTrustedIpc(`${IPC_PREFIX}:save-movie-window-state`, MAIN_RENDERER, (_event, id: string, patch: unknown) =>
+    sessionStore.updateSession(id, pickMovieWindowSessionPatch(patch)))
+  handleTrustedIpc(
+    `${IPC_PREFIX}:set-session-media`,
+    APP_RENDERERS,
+    (_event, role: MediaRole, path: string, source?: ReactionSource, suggestedTitle?: string) =>
+      mediaPathGrants.withAuthorizedPaths([path], ([authorizedPath]) =>
+        sessionStore.setSessionMedia(role, authorizedPath, source, suggestedTitle))
+  )
+  handleTrustedIpc(
+    `${IPC_PREFIX}:replace-session-media`,
+    APP_RENDERERS,
+    (_event, id: string, role: MediaRole, path: string, source?: ReactionSource, suggestedTitle?: string) =>
+      mediaPathGrants.withAuthorizedPaths([path], ([authorizedPath]) =>
+        sessionStore.replaceSessionMedia(id, role, authorizedPath, source, suggestedTitle),
+      (result) => result.status !== 'missing')
+  )
+  handleTrustedIpc(
+    `${IPC_PREFIX}:create-or-switch-session-from-paths`,
+    APP_RENDERERS,
+    (_event, reaction: string, movie: string, source?: ReactionSource, suggestedTitle?: string) =>
+      mediaPathGrants.withAuthorizedPaths([reaction, movie], ([authorizedReaction, authorizedMovie]) =>
+        sessionStore.createOrSwitchSession(authorizedReaction, authorizedMovie, source, suggestedTitle))
+  )
+  handleTrustedIpc(`${IPC_PREFIX}:set-active-session`, MAIN_RENDERER, (_event, id: string) => sessionStore.setActiveSession(id))
+  handleTrustedIpc(`${IPC_PREFIX}:delete-session`, MAIN_RENDERER, (_event, id: string) => sessionStore.deleteSession(id))
+  handleTrustedIpc(`${IPC_PREFIX}:rename-session`, MAIN_RENDERER, (_event, id: string, title: string) => sessionStore.renameSession(id, title))
 
-  ipcMain.handle(`${IPC_PREFIX}:get-media-url`, (_event, role: MediaRole, sessionId: string) => {
+  handleTrustedIpc(`${IPC_PREFIX}:get-media-url`, MAIN_RENDERER, (_event, role: MediaRole, sessionId: string) => {
     const session = sessionStore.getSession(sessionId)
     const path = getMediaPath(session, role)
     return path && existsSync(path)
-      ? `${MEDIA_SCHEME}://media/${encodeURIComponent(sessionId)}/${role}?updated=${encodeURIComponent(session!.updatedAt)}`
+      ? createSessionMediaUrl(session!, role)
       : null
   })
 
-  ipcMain.handle(`${IPC_PREFIX}:open-videos`, async (event): Promise<OpenVideosResult | null> => {
+  handleTrustedIpc(`${IPC_PREFIX}:open-videos`, MAIN_RENDERER, async (event): Promise<OpenVideosResult | null> => {
     const parent = getSenderWindow(event, mainWindowGetter)
     if (!parent) return null
-    const reaction = await selectVideo(parent, 'Select the reaction watchalong video')
+    const reaction = await selectGrantedVideo(parent, 'Select the reaction watchalong video', mediaPathGrants)
     if (!reaction) return null
-    const movie = await selectVideo(parent, 'Select the movie video')
-    if (!movie) return null
-    const previousCount = sessionStore.read().sessions.length
-    const library = sessionStore.createOrSwitchSession(reaction.path, movie.path)
-    return { library, session: sessionStore.getActiveSession(), created: library.sessions.length > previousCount, reaction, movie }
+    const movie = await selectGrantedVideo(parent, 'Select the movie video', mediaPathGrants)
+    if (!movie) {
+      mediaPathGrants.revoke(reaction.path)
+      return null
+    }
+    return mediaPathGrants.withAuthorizedPaths([reaction.path, movie.path], ([reactionPath, moviePath]) => {
+      const previousCount = sessionStore.read().sessions.length
+      const library = sessionStore.createOrSwitchSession(reactionPath, moviePath)
+      return {
+        library,
+        session: sessionStore.getActiveSession(),
+        created: library.sessions.length > previousCount,
+        reaction,
+        movie
+      }
+    })
   })
 
   const select = (title: string) => async (event: Electron.IpcMainInvokeEvent): Promise<MediaFile | null> => {
     const parent = getSenderWindow(event, mainWindowGetter)
-    return parent ? selectVideo(parent, title) : null
+    return parent ? selectGrantedVideo(parent, title, mediaPathGrants) : null
   }
-  ipcMain.handle(`${IPC_PREFIX}:select-movie-file`, select('Select the movie video'))
-  ipcMain.handle(`${IPC_PREFIX}:select-reaction-file`, select('Select the reaction watchalong video'))
-  ipcMain.handle(`${IPC_PREFIX}:open-subtitle`, async (event) => {
+  handleTrustedIpc(`${IPC_PREFIX}:select-movie-file`, APP_RENDERERS, select('Select the movie video'))
+  handleTrustedIpc(`${IPC_PREFIX}:select-reaction-file`, APP_RENDERERS, select('Select the reaction watchalong video'))
+  handleTrustedIpc(`${IPC_PREFIX}:open-subtitle`, MAIN_RENDERER, async (event) => {
     const parent = getSenderWindow(event, mainWindowGetter)
     if (!parent || !sessionStore.getActiveSession()) return null
     const subtitle = await selectSubtitle(parent)
     return subtitle ? sessionStore.updateActive({ subtitlePath: subtitle.path }) : null
   })
-  ipcMain.handle(`${IPC_PREFIX}:clear-subtitle`, () => sessionStore.updateActive({ subtitlePath: null }))
-  ipcMain.handle(`${IPC_PREFIX}:get-subtitle-text`, (_event, sessionId: string) => {
+  handleTrustedIpc(`${IPC_PREFIX}:clear-subtitle`, MAIN_RENDERER, () => sessionStore.updateActive({ subtitlePath: null }))
+  handleTrustedIpc(`${IPC_PREFIX}:get-subtitle-text`, MAIN_RENDERER, (_event, sessionId: string) => {
+    // Only read the path already bound to a stored session. subtitlePath is not
+    // renderer-writable; new paths can enter the store only through the picker.
     const path = sessionStore.getSession(sessionId)?.subtitlePath
-    if (!path || !existsSync(path)) return null
-    try { return readFileSync(path, 'utf8') } catch { return null }
+    return path ? readSubtitleFile(path) : null
   })
+}
+
+async function selectGrantedVideo(
+  parent: BrowserWindow,
+  title: string,
+  mediaPathGrants: MediaPathGrantStore
+): Promise<MediaFile | null> {
+  const selected = await selectVideo(parent, title)
+  if (!selected) return null
+  const grantedPath = mediaPathGrants.grantPickerPath(selected.path)
+  return grantedPath ? { ...selected, path: grantedPath } : null
 }

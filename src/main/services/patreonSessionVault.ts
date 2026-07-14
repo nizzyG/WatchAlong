@@ -5,23 +5,47 @@ import { dirname } from 'node:path'
 import type { PatreonSessionSource, SavedPatreonSessionStatus } from '@shared/types'
 
 export class PatreonSessionVault {
-  private readonly tokens = new Map<string, string>()
+  private readonly tokens = new Map<string, HeldSessionToken>()
+  private authorizationEpoch = 0
 
   constructor(private readonly encryptedCookiePath: string) {}
 
-  createToken(cookie: string): string {
+  get authEpoch(): number {
+    return this.authorizationEpoch
+  }
+
+  createToken(cookie: string): string
+  createToken(cookie: string, expectedEpoch: number): string | null
+  createToken(cookie: string, expectedEpoch = this.authorizationEpoch): string | null {
+    if (expectedEpoch !== this.authorizationEpoch) {
+      return null
+    }
+
     const token = randomUUID()
-    this.tokens.set(token, cookie)
+    const entry: HeldSessionToken = {
+      cookie,
+      expiresAt: Date.now() + AUTH_TOKEN_TTL_MS,
+      expiryTimer: setTimeout(() => {
+        if (this.tokens.get(token) === entry) this.tokens.delete(token)
+      }, AUTH_TOKEN_TTL_MS)
+    }
+    entry.expiryTimer.unref?.()
+    this.tokens.set(token, entry)
     return token
   }
 
-  resolve(source: PatreonSessionSource): string | null {
-    if (source.type === 'browser') {
-      return this.tokens.get(source.token) ?? null
+  resolve(source: PatreonSessionSource, expectedEpoch = this.authorizationEpoch): string | null {
+    if (expectedEpoch !== this.authorizationEpoch) {
+      if (source.type === 'browser' || source.type === 'token') {
+        this.clearToken(source.token)
+      }
+      return null
     }
 
-    if (source.type === 'token') {
-      return this.tokens.get(source.token) ?? null
+    if (source.type === 'browser' || source.type === 'token') {
+      const entry = this.tokens.get(source.token)
+      this.clearToken(source.token)
+      return entry && entry.expiresAt > Date.now() ? entry.cookie : null
     }
 
     if (source.type === 'manual') {
@@ -29,6 +53,10 @@ export class PatreonSessionVault {
     }
 
     return this.readSavedCookie()
+  }
+
+  discardToken(token: string): void {
+    this.clearToken(token)
   }
 
   status(): SavedPatreonSessionStatus {
@@ -49,6 +77,10 @@ export class PatreonSessionVault {
   }
 
   forget(): SavedPatreonSessionStatus {
+    // Invalidate any browser extraction or login window that began before
+    // Forget was pressed, even if it produces a cookie later.
+    this.authorizationEpoch += 1
+    for (const token of this.tokens.keys()) this.clearToken(token)
     rmSync(this.encryptedCookiePath, { force: true })
     return this.status()
   }
@@ -64,6 +96,20 @@ export class PatreonSessionVault {
       return null
     }
   }
+
+  private clearToken(token: string): void {
+    const entry = this.tokens.get(token)
+    if (entry) clearTimeout(entry.expiryTimer)
+    this.tokens.delete(token)
+  }
+}
+
+const AUTH_TOKEN_TTL_MS = 10 * 60 * 1000
+
+interface HeldSessionToken {
+  cookie: string
+  expiresAt: number
+  expiryTimer: ReturnType<typeof setTimeout>
 }
 
 export function sessionIdToCookie(value: string): string {

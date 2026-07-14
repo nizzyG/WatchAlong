@@ -16,7 +16,7 @@ export function usePlayback() {
   const lastPositionSaveRef = useRef(0)
   const positionRef = useRef(0)
   const restoredPopOutSessionRef = useRef<string | null>(null)
-  const pendingMovieWindowGeometryRef = useRef<OverlayGeometry | null>(null)
+  const pendingMovieWindowGeometryRef = useRef<{ sessionId: string; geometry: OverlayGeometry } | null>(null)
   const movieWindowGeometryTimerRef = useRef<number | null>(null)
   const closingMovieWindowRef = useRef(false)
   const canPlayRef = useRef(false)

@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, isAbsolute } from 'node:path'
 import type { AppPreferences, LibraryViewPreference } from '@shared/types'
 
 const defaultPreferences: AppPreferences = {
@@ -50,7 +50,7 @@ export function normalizePreferences(value: unknown): AppPreferences {
     openLibraryOnLaunch:
       typeof source.openLibraryOnLaunch === 'boolean' ? source.openLibraryOnLaunch : defaultPreferences.openLibraryOnLaunch,
     libraryView: normalizeLibraryView(source.libraryView),
-    reactionDownloadDirectory: stringOrNull(source.reactionDownloadDirectory)
+    reactionDownloadDirectory: normalizeDownloadDirectory(source.reactionDownloadDirectory)
   }
 }
 
@@ -62,6 +62,8 @@ function normalizeLibraryView(value: unknown): LibraryViewPreference {
   return value === 'list' || value === 'grid' ? value : defaultPreferences.libraryView
 }
 
-function stringOrNull(value: unknown): string | null {
-  return typeof value === 'string' && value.trim().length > 0 ? value : null
+function normalizeDownloadDirectory(value: unknown): string | null {
+  if (typeof value !== 'string' || value.includes('\0')) return null
+  const path = value.trim()
+  return path && isAbsolute(path) ? path : null
 }

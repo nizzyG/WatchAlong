@@ -12,7 +12,7 @@ WatchAlong replaces that with one app. Load your movie. Add the reaction. The ap
 - **Fixes frame-rate drift automatically.** Your movie and the creator's copy might run at slightly different speeds. Over two hours, that gap becomes seconds. WatchAlong measures the difference and corrects it.
 - **Keeps both videos locked.** Pause, seek, close the app, come back next week. The sync holds.
 - **Picture-in-picture or pop-out.** Watch the movie with the reactor in a draggable overlay, or pop the movie out to a second screen.
-- **Add reactions any way they're hosted.** Paste a Patreon post URL, an unlisted YouTube link, or a Google Drive link. WatchAlong grabs the full-length reaction for you.
+- **Download reactions directly.** Paste a Patreon post URL or a YouTube link and WatchAlong grabs the full-length reaction for you.
 - **Your library, remembered.** Every pairing is saved. Sync, position, PiP layout — everything comes back.
 - **Subtitles.** Load SRT or VTT files. They display over the movie.
 - **Keyboard shortcuts for everything.** Space to play or pause. Arrows to skip. R and M for mute. Full list in the [FAQ](FAQ.md).

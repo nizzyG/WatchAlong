@@ -65,7 +65,7 @@ Shortcuts are ignored when you're typing in a text field.
 
 Patreon doesn't provide a public video-download API for subscriber-only watchalong videos. WatchAlong needs to prove you have an active subscription — your browser login cookie contains that proof.
 
-Your session is never sent to WatchAlong-operated servers. It's used locally by WatchAlong and bundled tools to authenticate directly with Patreon. During extraction and download, it may be written temporarily to OS temp files (deleted immediately after). If you choose to save it, WatchAlong stores it encrypted with Electron safeStorage, using your operating system's secure storage where available. You can delete the saved session or revoke it from Patreon's account settings at any time.
+Your session is never sent to WatchAlong-operated servers. It's used locally by WatchAlong and bundled tools to authenticate directly with Patreon. During extraction and download, it may be written temporarily to OS temp files; WatchAlong scrubs and removes them during cleanup and retries crash leftovers at startup. If you choose to save it, WatchAlong stores it encrypted with Electron safeStorage, using your operating system's secure storage where available. You can delete the saved session or revoke it from Patreon's account settings at any time.
 
 ### 11. Why browser cookies instead of a normal login screen?
 
@@ -77,11 +77,11 @@ You'll get simple manual instructions: open your browser's Developer Tools (F12)
 
 ### 13. Which browsers work for Patreon extraction?
 
-Firefox is the most reliable on both Windows and macOS. Chromium-based browsers (Chrome, Edge, Brave, Opera) work on a best-effort basis — recent browser security changes can block extraction. Safari on macOS is manual-only due to macOS restrictions.
+Firefox is the most reliable on both Windows and macOS. On macOS, Chromium-based browsers (Chrome, Edge, Brave, Opera) work on a best-effort basis because recent browser security changes can block extraction. Chromium browsers on Windows and Safari on macOS use the guided manual flow.
 
-### 14. I have a private/unlisted YouTube link. Can I use that?
+### 14. I have an unlisted YouTube link. Can I use that?
 
-Yes — paste the URL and WatchAlong downloads it. No login needed.
+Yes — paste the unlisted URL and WatchAlong downloads it without a login. Genuinely private videos require YouTube authentication, which WatchAlong does not request or store.
 
 Only download YouTube videos when you have permission from the content owner and when YouTube's terms allow it. WatchAlong doesn't grant rights to download or retain YouTube content.
 
@@ -151,7 +151,7 @@ Click the pop-out icon in the PiP toolbar. The movie lifts out into its own wind
 
 ### 26. What's the Command Panel?
 
-Press `Ctrl+Shift+P` (or click the gear icon) during playback. A translucent overlay slides in with: Now Playing, compact Library, active Downloads, Preferences, and Help. Navigate with arrow keys or click.
+Press `Ctrl+Shift+P` (or click the gear icon) during playback. A solid, focused panel slides in with: Now Playing, compact Library, active Downloads, Preferences, and Help. Navigate with arrow keys or click.
 
 ### 27. I opened a session and got "file can't be found."
 
@@ -177,15 +177,15 @@ Yes, intentionally. Sessions and downloaded reactions stay in the locations abov
 
 ### 31. The app is stuck on a loading spinner.
 
-A rare startup issue from corrupted session or preference files. Restart the app — it should show a recovery screen with Retry and Open Library options.
+A rare startup issue can come from a damaged library file. Restart the app. If the library is damaged, WatchAlong moves it to a recovery file and offers **Show Recovery File**, **Retry**, or **Start New Library** without deleting the preserved copy.
 
 ### 32. YouTube download failed.
 
-Common causes: age-restricted, region-blocked, or genuinely private (not unlisted). The error message in WatchAlong will say why.
+Common causes include age restrictions, regional restrictions, a genuinely private video (not unlisted), a network interruption, or a downloader problem. WatchAlong reports that the video may be private or restricted; if it is accessible in your browser, try the download again.
 
 ### 33. Downloaded Patreon reaction won't play or is corrupted.
 
-Some Patreon content uses DRM. The bundled patreon-dl tool skips DRM-protected files. Check if the reactor offers an alternative (private YouTube link, Google Drive).
+Some Patreon content uses DRM. The bundled patreon-dl tool skips DRM-protected files. Check if the reactor offers an unlisted YouTube link or a file you can download separately and add locally.
 
 ### 34. Why won't my movie file play?
 

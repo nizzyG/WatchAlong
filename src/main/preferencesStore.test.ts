@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import { resolve } from 'node:path'
 import { normalizePreferences } from './preferencesStore'
 
 describe('preferences', () => {
   it('normalizes onboarding preferences', () => {
+    const downloadDirectory = resolve('Downloads')
     expect(normalizePreferences(null)).toEqual({
       hasCompletedOnboarding: false,
       openLibraryOnLaunch: true,
@@ -14,13 +16,14 @@ describe('preferences', () => {
         hasCompletedOnboarding: true,
         openLibraryOnLaunch: false,
         libraryView: 'list',
-        reactionDownloadDirectory: 'C:\\Downloads'
+        reactionDownloadDirectory: downloadDirectory
       })
     ).toEqual({
       hasCompletedOnboarding: true,
       openLibraryOnLaunch: false,
       libraryView: 'list',
-      reactionDownloadDirectory: 'C:\\Downloads'
+      reactionDownloadDirectory: downloadDirectory
     })
+    expect(normalizePreferences({ reactionDownloadDirectory: '..\\network-share' }).reactionDownloadDirectory).toBeNull()
   })
 })

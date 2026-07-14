@@ -1,4 +1,4 @@
-import type { LibrarySession, OverlayGeometry, PlaybackRate, ReactionSource, ReactorSource, SessionLibrary, SessionData } from './types'
+import type { LibrarySession, OverlayGeometry, PlaybackRate, ReactionSource, ReactorSource, SessionLibrary, SessionData, SessionTitleOrigin } from './types'
 
 export const SESSION_LIBRARY_VERSION = 4
 
@@ -20,6 +20,7 @@ export function createDefaultSession(now = new Date(), patch: Partial<LibrarySes
   return {
     id: stringOrNull(patch.id) ?? createSessionId(now),
     title: stringOrDefault(patch.title, defaultSessionTitle(moviePath, reactionPath)),
+    titleOrigin: normalizeTitleOrigin(patch.titleOrigin, hasExplicitTitle(patch.title) ? 'custom' : 'generated'),
     reactionPath,
     reactionSource: normalizeReactionSource(patch.reactionSource),
     reactionDurationSeconds: nullableFinite(patch.reactionDurationSeconds),
@@ -79,6 +80,10 @@ export function normalizeSession(value: unknown, now = new Date()): SessionData 
   return {
     id: stringOrNull(source?.id) ?? fallback.id,
     title: stringOrDefault(source?.title, defaultSessionTitle(moviePath, reactionPath)),
+    // Libraries written before title provenance existed cannot prove that an
+    // existing title was generated. Treat it as custom so an upgrade can
+    // never overwrite a name the user chose.
+    titleOrigin: normalizeTitleOrigin(source?.titleOrigin, hasExplicitTitle(source?.title) ? 'custom' : 'generated'),
     reactionPath,
     reactionSource: normalizeReactionSource(source?.reactionSource),
     reactionDurationSeconds: nullableFinite(source?.reactionDurationSeconds),
@@ -112,6 +117,7 @@ export function mergeSession(session: SessionData, patch: Partial<SessionData>, 
     {
       ...session,
       ...patch,
+      titleOrigin: titleOriginAfterPatch(session, patch),
       overlay: patch.overlay ? { ...session.overlay, ...patch.overlay } : session.overlay,
       movieWindowGeometry: patch.movieWindowGeometry
         ? { ...session.movieWindowGeometry, ...patch.movieWindowGeometry }
@@ -160,13 +166,15 @@ export function createSessionFromPaths(
   reactionPath: string,
   moviePath: string,
   now = new Date(),
-  reactionSource: ReactionSource = 'local'
+  reactionSource: ReactionSource = 'local',
+  suggestedTitle?: string
 ): LibrarySession {
   return createDefaultSession(now, {
     reactionPath,
     reactionSource,
     moviePath,
-    title: defaultSessionTitle(moviePath, reactionPath)
+    title: sanitizeSuggestedSessionTitle(suggestedTitle) ?? defaultSessionTitle(moviePath, reactionPath),
+    titleOrigin: 'generated'
   })
 }
 
@@ -180,7 +188,8 @@ export function createSessionFromMedia(
     reactionPath,
     reactionSource: normalizeReactionSource(media.reactionSource),
     moviePath,
-    title: defaultSessionTitle(moviePath, reactionPath)
+    title: defaultSessionTitle(moviePath, reactionPath),
+    titleOrigin: 'generated'
   })
 }
 
@@ -226,18 +235,59 @@ export function defaultSessionTitle(moviePath: string | null, reactionPath: stri
   return fileName(moviePath ?? reactionPath ?? 'Untitled watchalong')
 }
 
+function normalizeTitleOrigin(value: unknown, fallback: SessionTitleOrigin): SessionTitleOrigin {
+  return value === 'generated' || value === 'custom' ? value : fallback
+}
+
+function titleOriginAfterPatch(
+  session: SessionData,
+  patch: Partial<SessionData>
+): SessionTitleOrigin {
+  if (!Object.prototype.hasOwnProperty.call(patch, 'title')) {
+    return session.titleOrigin
+  }
+  return patch.titleOrigin === 'generated' ? 'generated' : 'custom'
+}
+
+export function sanitizeSuggestedSessionTitle(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const printable = [...value].map((character) => {
+    const codePoint = character.codePointAt(0) ?? 0
+    return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f) ? ' ' : character
+  }).join('')
+  const normalized = printable.replace(/\s+/g, ' ').trim()
+  return normalized.length > 0 ? normalized : null
+}
+
 function legacySessionsFromValue(value: unknown): unknown[] {
   const legacy = value as Partial<SessionData> | null
   return legacy?.reactionPath || legacy?.moviePath ? [legacy] : []
 }
 
 function dedupeKey(session: LibrarySession): string {
-  const mediaKey = pairKey(session.reactionPath, session.moviePath)
-  return mediaKey === '|' ? session.id : mediaKey
+  return session.reactionPath || session.moviePath
+    ? pairKey(session.reactionPath, session.moviePath)
+    : session.id
 }
 
 function pairKey(reactionPath: string | null, moviePath: string | null): string {
-  return `${reactionPath ?? ''}|${moviePath ?? ''}`.toLocaleLowerCase()
+  return JSON.stringify([mediaPathIdentity(reactionPath), mediaPathIdentity(moviePath)])
+}
+
+/**
+ * File identity follows the path's own platform syntax, not the platform doing
+ * the comparison. This keeps Windows drive/UNC paths case-insensitive while
+ * preserving case and legal delimiter characters on POSIX volumes.
+ */
+export function mediaPathIdentity(value: string | null): string | null {
+  if (value === null) return null
+  const windowsPath = /^[a-z]:[\\/]/i.test(value) || /^(?:\\\\|\/\/)[^\\/]/.test(value)
+  return windowsPath
+    ? `win:${value.replace(/\//g, '\\').toLowerCase()}`
+    : `posix:${value}`
 }
 
 function createSessionId(now: Date): string {
@@ -262,6 +312,10 @@ function stringOrNull(value: unknown): string | null {
 
 function stringOrDefault(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback
+}
+
+function hasExplicitTitle(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0
 }
 
 function clamp(value: number, min: number, max: number): number {

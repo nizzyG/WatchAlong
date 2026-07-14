@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AutoSyncCompleteEvent, AutoSyncProgressEvent } from '@shared/types'
+import type { AutoSyncCompleteEvent, AutoSyncIntent, AutoSyncProgressEvent } from '@shared/types'
 
 interface PendingAutoSync {
   sessionId: string
+  intent: AutoSyncIntent
   resolve: (event: AutoSyncCompleteEvent) => void
+  promise: Promise<AutoSyncCompleteEvent>
 }
 
 const initialProgress: AutoSyncProgressEvent = {
@@ -37,15 +39,29 @@ export function useAutoSync() {
     }
   }, [])
 
-  const start = useCallback(async (sessionId: string): Promise<AutoSyncCompleteEvent> => {
+  const start = useCallback(async (sessionId: string, intent: AutoSyncIntent): Promise<AutoSyncCompleteEvent> => {
+    const existing = pendingRef.current
+    if (existing) {
+      if (existing.sessionId === sessionId && existing.intent === intent) return existing.promise
+      return {
+        sessionId,
+        outcome: 'cancelled',
+        message: 'Another automatic sync check is already running.'
+      }
+    }
+
+    let resolveCompletion!: (event: AutoSyncCompleteEvent) => void
+    const completion = new Promise<AutoSyncCompleteEvent>((resolve) => {
+      resolveCompletion = resolve
+    })
+    // Set the ref before the first state update/await so two starts in the same
+    // event turn cannot replace one another's resolver.
+    pendingRef.current = { sessionId, intent, resolve: resolveCompletion, promise: completion }
     setRunningSessionId(sessionId)
     setProgress({ ...initialProgress, sessionId })
-    const completion = new Promise<AutoSyncCompleteEvent>((resolve) => {
-      pendingRef.current = { sessionId, resolve }
-    })
     let result
     try {
-      result = await window.watchAlong.startSessionAutoSync(sessionId)
+      result = await window.watchAlong.startSessionAutoSync(sessionId, intent)
     } catch {
       result = { started: false as const, reason: 'tools-unavailable' as const }
     }

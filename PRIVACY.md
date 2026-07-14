@@ -36,10 +36,10 @@ Stored as `patreon-session.bin` in the same `userData` directory. Encrypted with
 
 ## Temporary files during download
 
-When you download a reaction from Patreon, WatchAlong writes temporary files that are deleted immediately after the download completes:
+When you connect to Patreon or download a reaction, WatchAlong uses short-lived temporary files. It scrubs and removes them during normal cleanup; if the OS prevents removal or the app crashes, WatchAlong retries matching leftovers the next time it starts.
 
-- **Browser cookie extraction:** If you use automatic browser extraction, `yt-dlp` writes a temporary `cookies.txt` file to your OS temp directory to extract the `session_id` cookie. This file is deleted once the cookie is read.
-- **patreon-dl config:** During download, a temporary config file containing your session cookie is written to an OS temp directory with `0600` permissions (owner read/write only). It's deleted during cleanup after the download finishes.
+- **Browser cookie extraction:** If you use automatic browser extraction, `yt-dlp` writes a temporary browser cookie jar in a private OS temp directory. That jar can contain cookies beyond Patreon; WatchAlong reads only Patreon's `session_id`, then removes the directory. Crash leftovers are removed at the next launch.
+- **patreon-dl config:** During download, a temporary config file containing your session cookie is written to an OS temp directory with `0600` permissions where supported (owner read/write only). WatchAlong clears the credential contents before removal and retries any locked leftovers at startup.
 - **In-memory holding:** After a successful Patreon download, the session cookie is held briefly in memory so the app can offer to save it. If you decline or dismiss, it's discarded.
 
 ## Network requests
@@ -50,7 +50,7 @@ WatchAlong makes network requests only when you trigger them:
 |---|---|---|
 | Patreon login | `patreon.com` (and identity providers: Google, Facebook, Apple) | Your Patreon credentials (handled by Patreon's login page in an isolated browser window) |
 | Patreon download | `patreon.com` | Your session cookie, the post URL |
-| YouTube download | `youtube.com` (via yt-dlp) | The video URL |
+| YouTube download and creator picture | YouTube and Google-owned media/CDN hosts (via yt-dlp) | The video URL, followed by the public channel and creator-picture requests |
 | External links | Various | When you click a help link, donation link, or open the GitHub issues page |
 
 No data is ever sent to a WatchAlong-operated server — there isn't one.

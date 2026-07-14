@@ -1,4 +1,9 @@
-import type { RemoteMediaCommandResult, RemoteMediaState } from '@shared/types'
+import type {
+  MovieMediaCommandRequest,
+  RemoteMediaCommand,
+  RemoteMediaCommandResult,
+  RemoteMediaState
+} from '@shared/types'
 
 export interface RectangleLike {
   x: number
@@ -15,6 +20,31 @@ export const MOVIE_WINDOW_MIN_WIDTH = 320
 export const MOVIE_WINDOW_MIN_HEIGHT = 180
 export const MOVIE_MEDIA_COMMAND_TIMEOUT_MS = 5000
 export const MOVIE_MEDIA_COMMAND_TIMEOUT_ERROR = 'Movie window stopped responding.'
+
+export class SerialTaskQueue {
+  private tail: Promise<void> = Promise.resolve()
+
+  run<T>(task: () => Promise<T>): Promise<T> {
+    const result = this.tail.then(task)
+    this.tail = result.then(() => undefined, () => undefined)
+    return result
+  }
+}
+
+export function bindTrustedMovieSource(
+  command: MovieMediaCommandRequest,
+  source: { mediaUrl: string; title: string }
+): RemoteMediaCommand {
+  if (command.type !== 'setSource') {
+    return command
+  }
+
+  return {
+    ...command,
+    mediaUrl: source.mediaUrl,
+    title: source.title
+  }
+}
 
 interface PendingMovieCommand {
   resolve(result: RemoteMediaCommandResult): void

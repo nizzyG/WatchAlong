@@ -1,6 +1,6 @@
 import type {
   MediaRole,
-  RemoteMediaCommand,
+  MovieMediaCommandRequest,
   RemoteMediaCommandResult,
   RemoteMediaEvent,
   RemoteMediaState
@@ -8,12 +8,12 @@ import type {
 import type { VideoAdapter } from './SyncController'
 
 export interface RemoteVideoTransport {
-  sendCommand(command: RemoteMediaCommand): Promise<RemoteMediaCommandResult>
+  sendCommand(command: MovieMediaCommandRequest): Promise<RemoteMediaCommandResult>
   onEvent(callback: (event: RemoteMediaEvent) => void): () => void
 }
 
-type RemoteMediaCommandInput = RemoteMediaCommand extends infer Command
-  ? Command extends RemoteMediaCommand
+type RemoteMediaCommandInput = MovieMediaCommandRequest extends infer Command
+  ? Command extends MovieMediaCommandRequest
     ? Omit<Command, 'id'>
     : never
   : never
@@ -129,7 +129,7 @@ export class RemoteVideoAdapter implements VideoAdapter {
   }
 
   private async send(command: RemoteMediaCommandInput): Promise<RemoteMediaCommandResult> {
-    const result = await this.transport.sendCommand({ ...command, id: `movie-${++nextCommandId}` } as RemoteMediaCommand)
+    const result = await this.transport.sendCommand({ ...command, id: `movie-${++nextCommandId}` } as MovieMediaCommandRequest)
     if (!result.ok) {
       throw new Error(result.error ?? 'Movie command failed')
     }

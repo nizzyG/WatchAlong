@@ -4,6 +4,7 @@ import type { AppPreferences, DownloadProgressEvent, LibrarySession, SavedPatreo
 import { LibrarySessionCard } from './LibraryHome'
 import { ReactionSourceIcon, reactionSourceLabel } from './ReactionSource'
 import { fileName, formatTime } from './appFormat'
+import { DownloadProgress } from './DownloadProgress'
 
 export type CommandPanelSection = 'now-playing' | 'library' | 'downloads' | 'preferences' | 'help'
 
@@ -199,7 +200,7 @@ export function CommandPanel({
                 <small>{patreonStatus.available ? 'Saved' : 'Not saved'} / {patreonStatus.canEncrypt ? 'encrypted storage available' : 'encryption unavailable'}</small>
                 {showPatreonLearnMore && (
                   <small className="panel-learn-more">
-                    Your Patreon session is used only to authenticate downloads directly with Patreon. It's never sent to WatchAlong or any third party, and it's stored on your device only if you choose to save it.
+                    Your Patreon session is used only for Patreon downloads. It never goes to a WatchAlong server or anyone besides Patreon, and it is saved on this device only if you choose.
                   </small>
                 )}
               </span>
@@ -355,7 +356,8 @@ function DownloadPanelItem({
           Attach
         </button>
       )}
-      <ReadOnlyProgress value={event.percent ?? (working ? 42 : ready ? 100 : 0)} />
+      {working && <DownloadProgress event={event} compact />}
+      {ready && <ReadOnlyProgress value={100} />}
     </div>
   )
 }

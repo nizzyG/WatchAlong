@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_OVERLAY,
   createDefaultSession,
+  createSessionFromPaths,
   findMatchingSession,
   mergeSession,
   normalizeLibrary,
@@ -17,6 +18,7 @@ describe('session helpers', () => {
     expect(session.overlay.width).toBe(320)
     expect(session.overlay.height).toBe(180)
     expect(session.reactionPath).toBeNull()
+    expect(session.titleOrigin).toBe('generated')
     expect(session.playbackRate).toBe(1)
     expect(session.reactorSource).toBe('ntsc')
     expect(session.detectedMovieFps).toBeNull()
@@ -56,6 +58,17 @@ describe('session helpers', () => {
     })
   })
 
+  it('treats generic title patches as custom unless generation is explicit', () => {
+    const session = createSessionFromPaths('reaction.mp4', 'movie.mp4')
+
+    expect(mergeSession(session, { title: 'My own title' }).titleOrigin).toBe('custom')
+    expect(mergeSession(session, {
+      title: 'Movie — Reactor',
+      titleOrigin: 'generated'
+    }).titleOrigin).toBe('generated')
+    expect(mergeSession(session, { titleOrigin: 'custom' }).titleOrigin).toBe('generated')
+  })
+
   it('migrates legacy single-session data into a library', () => {
     const library = normalizeLibrary({
       reactionPath: 'C:\\Videos\\reaction.mp4',
@@ -83,16 +96,76 @@ describe('session helpers', () => {
 
   it('deduplicates and finds sessions by media pair', () => {
     const first = createDefaultSession(new Date('2026-01-01T00:00:00.000Z'), {
-      reactionPath: 'A.mp4',
-      moviePath: 'B.mp4'
+      reactionPath: 'C:\\Reactions\\A.mp4',
+      moviePath: 'C:\\Movies\\B.mp4'
     })
     const duplicate = createDefaultSession(new Date('2026-01-02T00:00:00.000Z'), {
-      reactionPath: 'a.mp4',
-      moviePath: 'b.mp4'
+      reactionPath: 'c:\\reactions\\a.mp4',
+      moviePath: 'c:\\movies\\b.mp4'
     })
     const library = normalizeLibrary({ sessions: [first, duplicate], activeSessionId: duplicate.id })
 
     expect(library.sessions).toHaveLength(1)
-    expect(findMatchingSession(library, 'A.mp4', 'B.mp4')?.id).toBe(first.id)
+    expect(findMatchingSession(library, 'C:\\REACTIONS\\A.mp4', 'C:\\MOVIES\\B.mp4')?.id).toBe(first.id)
+  })
+
+  it('keeps case-distinct and delimiter-containing POSIX media pairs separate', () => {
+    const upper = createDefaultSession(new Date('2026-01-01T00:00:00.000Z'), {
+      reactionPath: '/media/Reactions/A|B.mp4',
+      moviePath: '/media/Movies/C.mp4'
+    })
+    const lower = createDefaultSession(new Date('2026-01-02T00:00:00.000Z'), {
+      reactionPath: '/media/reactions/a.mp4',
+      moviePath: '/media/movies/B|C.mp4'
+    })
+    const caseVariant = createDefaultSession(new Date('2026-01-03T00:00:00.000Z'), {
+      reactionPath: '/media/Reactions/a|b.mp4',
+      moviePath: '/media/Movies/C.mp4'
+    })
+
+    const library = normalizeLibrary({ sessions: [upper, lower, caseVariant] })
+
+    expect(library.sessions.map((session) => session.id)).toEqual([
+      upper.id,
+      lower.id,
+      caseVariant.id
+    ])
+  })
+
+  it('sanitizes a suggested title and falls back to the movie filename when it is blank', () => {
+    const named = createSessionFromPaths(
+      'C:\\Reactions\\Reaction.mp4',
+      'C:\\Movies\\Movie.mp4',
+      new Date('2026-07-13T00:00:00.000Z'),
+      'youtube',
+      '  Movie\nTitle\u0000 —\t Reactor\u0085Name  '
+    )
+    const fallback = createSessionFromPaths(
+      'C:\\Reactions\\Reaction.mp4',
+      'C:\\Movies\\Movie.mp4',
+      new Date('2026-07-13T00:00:00.000Z'),
+      'patreon',
+      '\n\u0000\t\u0085'
+    )
+
+    expect(named.title).toBe('Movie Title — Reactor Name')
+    expect(named.titleOrigin).toBe('generated')
+    expect(fallback.title).toBe('Movie.mp4')
+    expect(fallback.titleOrigin).toBe('generated')
+  })
+
+  it('migrates titles without provenance conservatively as custom', () => {
+    const legacyNamed = normalizeSession({
+      title: 'Movie — My Favorite Reactor',
+      moviePath: 'C:\\Movies\\Movie.mp4',
+      reactionPath: 'C:\\Reactions\\Reaction.mp4'
+    })
+    const legacyDefault = normalizeSession({
+      title: 'Movie.mp4',
+      moviePath: 'C:\\Movies\\Movie.mp4'
+    })
+
+    expect(legacyNamed.titleOrigin).toBe('custom')
+    expect(legacyDefault.titleOrigin).toBe('custom')
   })
 })

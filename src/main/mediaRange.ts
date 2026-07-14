@@ -1,4 +1,4 @@
-import { createReadStream, statSync } from 'node:fs'
+import { closeSync, constants, createReadStream, fstatSync, openSync } from 'node:fs'
 import { extname } from 'node:path'
 import { Readable } from 'node:stream'
 
@@ -7,46 +7,70 @@ export interface ByteRange {
   end: number
 }
 
-export function createMediaResponse(filePath: string, rangeHeader: string | null): Response {
-  const fileStat = statSync(filePath)
-  const fileSize = fileStat.size
-  const contentType = getContentType(filePath)
-  const baseHeaders = {
-    'Accept-Ranges': 'bytes',
-    'Content-Type': contentType
-  }
+export function createMediaResponse(
+  filePath: string,
+  rangeHeader: string | null,
+  maxBytes?: number
+): Response {
+  const descriptor = openSync(filePath, constants.O_RDONLY | constants.O_NONBLOCK)
+  let streamOwnsDescriptor = false
+  try {
+    const fileStat = fstatSync(descriptor)
+    if (!fileStat.isFile()) {
+      throw new Error('Media path is not a regular file.')
+    }
+    const fileSize = fileStat.size
+    const contentType = getContentType(filePath)
+    const baseHeaders = {
+      'Accept-Ranges': 'bytes',
+      'Content-Type': contentType,
+      'X-Content-Type-Options': 'nosniff'
+    }
 
-  if (rangeHeader) {
-    const range = parseRange(rangeHeader, fileSize)
-    if (!range) {
-      return new Response(null, {
-        status: 416,
+    if (maxBytes !== undefined && fileSize > maxBytes) {
+      return new Response('Media file is too large', { status: 413, headers: baseHeaders })
+    }
+
+    if (rangeHeader) {
+      const range = parseRange(rangeHeader, fileSize)
+      if (!range) {
+        return new Response(null, {
+          status: 416,
+          headers: {
+            ...baseHeaders,
+            'Content-Range': `bytes */${fileSize}`
+          }
+        })
+      }
+
+      const { start, end } = range
+      const chunkSize = end - start + 1
+      const stream = createReadStream(filePath, { fd: descriptor, autoClose: true, start, end })
+      streamOwnsDescriptor = true
+      return new Response(nodeStreamToBody(stream), {
+        status: 206,
         headers: {
           ...baseHeaders,
-          'Content-Range': `bytes */${fileSize}`
+          'Content-Length': String(chunkSize),
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`
         }
       })
     }
 
-    const { start, end } = range
-    const chunkSize = end - start + 1
-    return new Response(nodeStreamToBody(createReadStream(filePath, { start, end })), {
-      status: 206,
+    const stream = createReadStream(filePath, { fd: descriptor, autoClose: true })
+    streamOwnsDescriptor = true
+    return new Response(nodeStreamToBody(stream), {
+      status: 200,
       headers: {
         ...baseHeaders,
-        'Content-Length': String(chunkSize),
-        'Content-Range': `bytes ${start}-${end}/${fileSize}`
+        'Content-Length': String(fileSize)
       }
     })
-  }
-
-  return new Response(nodeStreamToBody(createReadStream(filePath)), {
-    status: 200,
-    headers: {
-      ...baseHeaders,
-      'Content-Length': String(fileSize)
+  } finally {
+    if (!streamOwnsDescriptor) {
+      try { closeSync(descriptor) } catch { /* response creation already failed */ }
     }
-  })
+  }
 }
 
 export function parseRange(rangeHeader: string, fileSize: number): ByteRange | null {
@@ -99,7 +123,7 @@ function nodeStreamToBody(stream: Readable): BodyInit {
   return Readable.toWeb(stream) as unknown as BodyInit
 }
 
-function getContentType(filePath: string): string {
+export function getContentType(filePath: string): string {
   switch (extname(filePath).toLowerCase()) {
     case '.mp4':
     case '.m4v':
@@ -111,6 +135,13 @@ function getContentType(filePath: string): string {
     case '.ogv':
     case '.ogg':
       return 'video/ogg'
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg'
+    case '.png':
+      return 'image/png'
+    case '.webp':
+      return 'image/webp'
     default:
       return 'application/octet-stream'
   }

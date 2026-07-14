@@ -50,7 +50,7 @@ describe.runIf(enabled)('local auto-sync corpus shipping gate', () => {
         },
         emitComplete: () => undefined
       })
-      const result = await service.analyze(session.id, analysisSession)
+      const result = await service.analyze(session.id, { intent: 'initial', snapshot: analysisSession })
       const offsetError = result.offsetSeconds === undefined ? null : Math.abs(result.offsetSeconds - session.offsetSeconds)
       const endError = result.offsetSeconds === undefined || result.movieRateCorrection === undefined
         ? null

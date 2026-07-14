@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { isValidPatreonPostUrl, PatreonStorageOffer, SmartReactionInput } from './SmartReactionInput'
 import type { BrowserDetection, PatreonSessionExtractionResult, WatchAlongApi } from '@shared/types'
@@ -92,7 +93,7 @@ describe('SmartReactionInput', () => {
     await waitFor(() => {
       expect(
         screen.getByText(
-          "Your Patreon session is used only to authenticate downloads directly with Patreon. It's never sent to WatchAlong or any third party, and it's stored on your device only if you choose to save it."
+          'Your Patreon session is used only for this Patreon download. It never goes to a WatchAlong server or anyone besides Patreon, and it is saved on this device only if you choose.'
         )
       ).toBeInTheDocument()
     })
@@ -119,6 +120,132 @@ describe('SmartReactionInput', () => {
     )
   })
 
+  it('keeps Patreon authentication active through StrictMode effect replay', async () => {
+    window.watchAlong.openPatreonLoginWindow = vi.fn(async () => ({ ok: true, token: 'strict-token' }))
+
+    render(
+      <StrictMode>
+        <SmartReactionInput movieReady onSelectLocal={vi.fn()} onDownloaded={vi.fn()} />
+      </StrictMode>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /Patreon post/i }))
+    fireEvent.change(screen.getByPlaceholderText('https://www.patreon.com/posts/...'), {
+      target: { value: 'https://www.patreon.com/posts/example-123' }
+    })
+    fireEvent.click(await screen.findByRole('button', { name: /Sign in to Patreon/i }))
+
+    await waitFor(() => expect(window.watchAlong.startReactionDownload).toHaveBeenCalledWith({
+      source: 'patreon',
+      url: 'https://www.patreon.com/posts/example-123',
+      sessionSource: { type: 'token', token: 'strict-token' }
+    }))
+  })
+
+  it('starts only one download and locks source switching while startup is pending', async () => {
+    window.watchAlong.startReactionDownload = vi.fn(
+      () => new Promise<Awaited<ReturnType<WatchAlongApi['startReactionDownload']>>>(() => undefined)
+    )
+    const onSelectLocal = vi.fn()
+    render(<SmartReactionInput movieReady onSelectLocal={onSelectLocal} onDownloaded={vi.fn()} />)
+
+    await waitFor(() => expect(window.watchAlong.detectBrowsers).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByRole('button', { name: /YouTube link/i }))
+    fireEvent.change(screen.getByPlaceholderText('https://www.youtube.com/watch?v=...'), {
+      target: { value: 'https://www.youtube.com/watch?v=abc123' }
+    })
+    const downloadButton = screen.getByRole('button', { name: /Download & Load/i })
+    fireEvent.click(downloadButton)
+    fireEvent.click(downloadButton)
+
+    expect(window.watchAlong.startReactionDownload).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: /Local file/i })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /Local file/i }))
+    expect(onSelectLocal).not.toHaveBeenCalled()
+  })
+
+  it('shows YouTube startup errors outside the Patreon form', async () => {
+    window.watchAlong.startReactionDownload = vi.fn(async () => {
+      throw new Error('start failed')
+    })
+    render(<SmartReactionInput movieReady onSelectLocal={vi.fn()} onDownloaded={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /YouTube link/i }))
+    fireEvent.change(screen.getByPlaceholderText('https://www.youtube.com/watch?v=...'), {
+      target: { value: 'https://www.youtube.com/watch?v=abc123' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Download & Load/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not start that YouTube download/i)
+  })
+
+  it('keeps a completed download actionable when attaching it fails', async () => {
+    let reportProgress: Parameters<WatchAlongApi['onDownloadProgress']>[0] | null = null
+    window.watchAlong.onDownloadProgress = vi.fn((callback) => {
+      reportProgress = callback
+      return () => undefined
+    })
+    const onDownloaded = vi.fn(async () => {
+      throw new Error('library unavailable')
+    })
+    render(<SmartReactionInput movieReady onSelectLocal={vi.fn()} onDownloaded={onDownloaded} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /YouTube link/i }))
+    fireEvent.change(screen.getByPlaceholderText('https://www.youtube.com/watch?v=...'), {
+      target: { value: 'https://www.youtube.com/watch?v=abc123' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Download & Load/i }))
+    await waitFor(() => expect(window.watchAlong.startReactionDownload).toHaveBeenCalled())
+
+    await act(async () => {
+      (reportProgress as Parameters<WatchAlongApi['onDownloadProgress']>[0])({
+        jobId: 'job-1',
+        source: 'youtube',
+        state: 'success',
+        message: 'Reaction video ready.',
+        percent: 100,
+        filePath: 'C:\\Reactions\\ready.mp4'
+      })
+      await Promise.resolve()
+    })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/safely downloaded.*could not attach/i)
+    expect(screen.getByText('Reaction video ready.')).toBeInTheDocument()
+  })
+
+  it('accepts a fast terminal event before React rebinds the progress subscription', async () => {
+    const listeners: Array<Parameters<WatchAlongApi['onDownloadProgress']>[0]> = []
+    window.watchAlong.onDownloadProgress = vi.fn((callback) => {
+      listeners.push(callback)
+      return () => undefined
+    })
+    const onDownloaded = vi.fn()
+    render(<SmartReactionInput movieReady onSelectLocal={vi.fn()} onDownloaded={onDownloaded} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /YouTube link/i }))
+    fireEvent.change(screen.getByPlaceholderText('https://www.youtube.com/watch?v=...'), {
+      target: { value: 'https://www.youtube.com/watch?v=abc123' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Download & Load/i }))
+    await waitFor(() => expect(window.watchAlong.startReactionDownload).toHaveBeenCalled())
+
+    act(() => {
+      // Deliberately invoke the first listener. Its closure predates the job,
+      // matching the main/renderer race this regression protects.
+      listeners[0]({
+        jobId: 'job-1',
+        source: 'youtube',
+        state: 'failed',
+        message: 'Downloader tool unavailable.',
+        percent: null
+      })
+    })
+
+    expect(await screen.findByText('Downloader tool unavailable.')).toBeInTheDocument()
+    expect(onDownloaded).not.toHaveBeenCalled()
+  })
+
   it('shows browser session choices with platform policy labels', async () => {
     render(<SmartReactionInput movieReady onSelectLocal={vi.fn()} onDownloaded={vi.fn()} />)
 
@@ -140,8 +267,19 @@ describe('SmartReactionInput', () => {
       target: { value: 'https://www.patreon.com/posts/example-123' }
     })
 
-    await waitFor(() => expect(screen.getByPlaceholderText('Paste your session_id here')).toBeInTheDocument())
+    const sessionInput = await screen.findByPlaceholderText('Paste your session_id here')
+    expect(sessionInput).toHaveAttribute('type', 'password')
     expect(screen.getByText(/Press F12 to open Developer Tools/i)).toBeInTheDocument()
+
+    fireEvent.change(sessionInput, { target: { value: 'secret-session-id' } })
+    fireEvent.click(screen.getByRole('button', { name: /Use this session & download/i }))
+
+    await waitFor(() => expect(window.watchAlong.startReactionDownload).toHaveBeenCalledWith({
+      source: 'patreon',
+      url: 'https://www.patreon.com/posts/example-123',
+      sessionSource: { type: 'manual', sessionId: 'secret-session-id' }
+    }))
+    await waitFor(() => expect(sessionInput).toHaveValue(''))
   })
 
   it('shows Firefox reading status when extracting', async () => {
@@ -291,6 +429,7 @@ describe('SmartReactionInput', () => {
     expect(isValidPatreonPostUrl('https://patreon.com/posts/example-123')).toBe(true)
     expect(isValidPatreonPostUrl('https://notpatreon.com/posts/example-123')).toBe(false)
     expect(isValidPatreonPostUrl('https://patreon.com.evil.test/posts/example-123')).toBe(false)
+    expect(isValidPatreonPostUrl('http://patreon.com/posts/example-123')).toBe(false)
   })
 })
 
@@ -301,6 +440,9 @@ function createApi(): WatchAlongApi {
     selectReactionFile: vi.fn(),
     createOrSwitchSessionFromPaths: vi.fn(),
     getLibrary: vi.fn(),
+    getLibraryRecoveryStatus: vi.fn(async () => ({ available: false })),
+    revealLibraryRecoveryFile: vi.fn(async () => false),
+    startFreshLibraryAfterRecovery: vi.fn(async () => ({ version: 4 as const, activeSessionId: null, sessions: [] })),
     saveActiveSession: vi.fn(),
     saveSessionPosition: vi.fn(),
     setSessionMedia: vi.fn(),
@@ -312,6 +454,7 @@ function createApi(): WatchAlongApi {
     clearSubtitle: vi.fn(),
     getSubtitleText: vi.fn(),
     getMediaUrl: vi.fn(),
+    saveMovieWindowState: vi.fn(),
     openMovieWindow: vi.fn(async () => ({ opened: false, geometry: { x: 0, y: 0, width: 320, height: 180 }, state: null })),
     closeMovieWindow: vi.fn(async () => ({ geometry: null, overlay: null, state: null })),
     requestMovieWindowPopIn: vi.fn(async () => undefined),
@@ -330,6 +473,7 @@ function createApi(): WatchAlongApi {
     detectBrowsers: vi.fn(async () => browsers),
     extractPatreonSession: vi.fn(async () => ({ ok: false })),
     openPatreonLoginWindow: vi.fn(async () => ({ ok: false })),
+    discardPatreonSessionToken: vi.fn(async () => undefined),
     getSavedPatreonSessionStatus: vi.fn(async () => ({ available: false, canEncrypt: true })),
     saveLastPatreonSession: vi.fn(async () => ({ available: true, canEncrypt: true })),
     discardLastPatreonSession: vi.fn(async () => ({ available: false, canEncrypt: true })),
@@ -346,6 +490,7 @@ function createApi(): WatchAlongApi {
     getImportWizardContext: vi.fn(),
     finishOnboardingWizard: vi.fn(),
     onWizardLifecycle: vi.fn(() => vi.fn()),
+    onWizardCloseRequest: vi.fn(() => vi.fn()),
     confirmMainWindowClose: vi.fn(),
     onMainWindowCloseRequest: vi.fn(() => vi.fn()),
     getPreferences: vi.fn(),

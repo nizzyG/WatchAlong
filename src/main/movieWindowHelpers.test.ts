@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { RemoteMediaCommandResult, RemoteMediaState } from '@shared/types'
+import type { MovieMediaCommandRequest, RemoteMediaCommandResult, RemoteMediaState } from '@shared/types'
 import {
+  bindTrustedMovieSource,
   ensureVisibleWindowBounds,
   MOVIE_MEDIA_COMMAND_TIMEOUT_ERROR,
-  PendingMovieCommandTracker
+  PendingMovieCommandTracker,
+  SerialTaskQueue
 } from './movieWindowHelpers'
 
 const primaryDisplay = {
@@ -120,6 +122,55 @@ describe('PendingMovieCommandTracker', () => {
     })
     expect(onTimeout).not.toHaveBeenCalled()
     expect(tracker.size).toBe(0)
+  })
+})
+
+describe('movie window operation boundary', () => {
+  it('serializes window tasks and continues after a failed task', async () => {
+    let releaseFirst!: () => void
+    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve })
+    const starts: string[] = []
+    const queue = new SerialTaskQueue()
+
+    const first = queue.run(async () => {
+      starts.push('first')
+      await firstGate
+      throw new Error('first failed')
+    })
+    const second = queue.run(async () => {
+      starts.push('second')
+      return 'opened'
+    })
+
+    await Promise.resolve()
+    expect(starts).toEqual(['first'])
+    releaseFirst()
+    await expect(first).rejects.toThrow('first failed')
+    await expect(second).resolves.toBe('opened')
+    expect(starts).toEqual(['first', 'second'])
+  })
+
+  it('overwrites any injected source fields with the stored session source', () => {
+    const untrusted = {
+      id: 'source-1',
+      type: 'setSource',
+      currentTime: 12,
+      playbackRate: 1,
+      volume: 0.8,
+      muted: false,
+      subtitleText: null,
+      mediaUrl: 'file:///C:/Users/user/private.txt',
+      title: 'Injected title'
+    } as unknown as MovieMediaCommandRequest
+
+    expect(bindTrustedMovieSource(untrusted, {
+      mediaUrl: 'watchalong://media/session-1/movie?updated=trusted',
+      title: 'Stored session'
+    })).toEqual({
+      ...untrusted,
+      mediaUrl: 'watchalong://media/session-1/movie?updated=trusted',
+      title: 'Stored session'
+    })
   })
 })
 

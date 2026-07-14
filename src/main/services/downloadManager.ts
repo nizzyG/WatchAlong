@@ -1,32 +1,87 @@
-import { app } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
-import { extname, join } from 'node:path'
-import type { DownloadProgressEvent, PatreonSessionSource, ReactionDownloadRequest, SavedPatreonSessionStatus, StartDownloadResult } from '@shared/types'
+import type {
+  DownloadedReactionMetadata,
+  DownloadProgressEvent,
+  ReactionDownloadRequest,
+  SavedPatreonSessionStatus,
+  StartDownloadResult
+} from '@shared/types'
+import {
+  createDownloadDir,
+  findNewestMediaFile,
+  normalizeCompletedPath
+} from './downloadFiles'
+import {
+  BufferedLineReader,
+  MAX_DIAGNOSTIC_OUTPUT_LENGTH,
+  sanitizeOutput,
+  stripAnsi,
+  type SpawnDownloadProcess
+} from './downloadProcess'
+import {
+  buildPatreonDownloadArgs,
+  createPatreonCookieConfig,
+  derivePatreonDownloadMetadata,
+  humanizePatreonLine,
+  isAllowedPatreonDownloadUrl,
+  parsePatreonLogMetadata,
+  PatreonSessionRetention
+} from './patreonDownload'
 import { PatreonSessionVault } from './patreonSessionVault'
 import { ToolResolver } from './toolResolution'
+import {
+  buildYouTubeDownloadArgs,
+  deriveYouTubeDownloadMetadata,
+  formatYtDlpProgressMessage,
+  isAllowedYouTubeDownloadUrl,
+  parseYtDlpCompletedPath,
+  parseYtDlpMetadataLine,
+  parseYtDlpProgressLine,
+  retrieveYouTubeCreatorAvatar,
+  type YouTubeOutputMetadata
+} from './youtubeDownload'
+
+export { getDefaultReactionDownloadDirectory } from './downloadFiles'
+export { BufferedLineReader } from './downloadProcess'
+export {
+  derivePatreonDownloadMetadata,
+  humanizePatreonLine,
+  isAllowedPatreonDownloadUrl,
+  parsePatreonLogMetadata
+} from './patreonDownload'
+export {
+  extractPercent,
+  isAllowedYouTubeAvatarUrl,
+  isAllowedYouTubeDownloadUrl,
+  parseYtDlpCompletedPath,
+  parseYtDlpMetadataLine,
+  parseYtDlpProgressLine,
+  retrieveYouTubeCreatorAvatar,
+  selectYouTubeAvatarThumbnail
+} from './youtubeDownload'
+export type { ParsedYtDlpProgress, YouTubeThumbnail } from './youtubeDownload'
 
 type ProgressSink = (event: DownloadProgressEvent) => void
-type SpawnDownloadProcess = (
-  command: string,
-  args: string[],
-  options: { windowsHide: boolean }
-) => ChildProcessWithoutNullStreams
+type DownloadSource = 'youtube' | 'patreon'
 
 interface RunningDownload {
   child: ChildProcessWithoutNullStreams
-  source: 'youtube' | 'patreon'
+  source: DownloadSource
   cleanup?: () => void
 }
 
-const VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov', '.webm', '.mkv', '.avi'])
+interface PendingDownload {
+  timer: ReturnType<typeof setTimeout>
+  source: DownloadSource
+}
 
 export class DownloadManager {
   private readonly running = new Map<string, RunningDownload>()
-  private readonly completedCookies = new Map<string, string>()
+  private readonly pending = new Map<string, PendingDownload>()
   private readonly cancelledJobs = new Set<string>()
+  private readonly patreonSessions = new PatreonSessionRetention()
+  private disposed = false
 
   constructor(
     private readonly tools: ToolResolver,
@@ -38,87 +93,160 @@ export class DownloadManager {
 
   start(request: ReactionDownloadRequest): StartDownloadResult {
     const jobId = randomUUID()
-    setTimeout(() => void this.run(jobId, request), 25)
+    if (this.disposed) {
+      return { jobId }
+    }
+
+    const authorizationEpoch = request.source === 'patreon' ? this.vault.authEpoch : undefined
+    const timer = setTimeout(() => {
+      this.pending.delete(jobId)
+      if (this.disposed) {
+        return
+      }
+
+      void this.run(jobId, request, authorizationEpoch).catch((error: unknown) => {
+        this.running.delete(jobId)
+        this.cancelledJobs.delete(jobId)
+        const details =
+          error instanceof Error ? error.message : 'The download could not be prepared.'
+        this.emit(
+          jobId,
+          request.source,
+          'failed',
+          'WatchAlong could not prepare the download. Check the download location and try again.',
+          null,
+          undefined,
+          sanitizeOutput(details)
+        )
+      })
+    }, 25)
+    this.pending.set(jobId, { timer, source: request.source })
     return { jobId }
   }
 
   cancel(jobId: string): void {
+    const pending = this.pending.get(jobId)
+    if (pending) {
+      clearTimeout(pending.timer)
+      this.pending.delete(jobId)
+      this.emit(jobId, pending.source, 'cancelled', 'Download cancelled.', null)
+      return
+    }
+
     const running = this.running.get(jobId)
     if (!running) {
       return
     }
 
-    this.cancelledJobs.add(jobId)
-    running.child.kill()
-    running.cleanup?.()
-    this.completedCookies.delete(jobId)
-    this.emit(jobId, running.source, 'cancelled', 'Download cancelled.', null)
-    this.running.delete(jobId)
+    this.stopRunningDownload(jobId, running, true)
+  }
+
+  cancelAll(): void {
+    this.cancelAllInternal(true)
+  }
+
+  dispose(): void {
+    if (this.disposed) {
+      return
+    }
+
+    this.disposed = true
+    this.cancelAllInternal(false)
+    this.patreonSessions.dispose()
   }
 
   saveLastPatreonSession(jobId: string): SavedPatreonSessionStatus {
-    const cookie = this.completedCookies.get(jobId)
-    if (cookie) {
-      try {
-        return this.vault.save(cookie)
-      } finally {
-        this.completedCookies.delete(jobId)
-      }
-    }
-
-    return this.vault.status()
+    return this.patreonSessions.save(jobId, this.vault)
   }
 
   discardLastPatreonSession(jobId: string): SavedPatreonSessionStatus {
-    this.completedCookies.delete(jobId)
-    return this.vault.status()
+    return this.patreonSessions.discard(jobId, this.vault)
   }
 
-  private async run(jobId: string, request: ReactionDownloadRequest): Promise<void> {
+  forgetPatreonSession(): SavedPatreonSessionStatus {
+    return this.patreonSessions.forget(this.vault)
+  }
+
+  private async run(
+    jobId: string,
+    request: ReactionDownloadRequest,
+    authorizationEpoch?: number
+  ): Promise<void> {
     this.emit(jobId, request.source, 'checking', 'Checking downloader tools...', null)
     if (request.source === 'youtube') {
+      if (!isAllowedYouTubeDownloadUrl(request.url)) {
+        this.emit(
+          jobId,
+          'youtube',
+          'failed',
+          'Paste a valid YouTube video link and try again.',
+          null
+        )
+        return
+      }
       await this.runYouTube(jobId, request.url)
-    } else {
-      await this.runPatreon(jobId, request.url, request.sessionSource)
+      return
     }
+
+    // Consume renderer-visible login/browser tokens exactly once regardless
+    // of which validation or setup branch follows.
+    const cookie = this.vault.resolve(request.sessionSource, authorizationEpoch)
+    if (!isAllowedPatreonDownloadUrl(request.url)) {
+      this.emit(
+        jobId,
+        'patreon',
+        'failed',
+        'Paste a valid Patreon post link and try again.',
+        null
+      )
+      return
+    }
+    await this.runPatreon(jobId, request.url, cookie, this.patreonSessions.generation)
   }
 
   private async runYouTube(jobId: string, url: string): Promise<void> {
     const ytDlpPath = this.tools.getYtDlpPath()
     if (!ytDlpPath) {
-      this.emit(jobId, 'youtube', 'failed', 'yt-dlp was not found.', null, undefined, 'yt-dlp was not found.')
+      this.emit(
+        jobId,
+        'youtube',
+        'failed',
+        'yt-dlp was not found.',
+        null,
+        undefined,
+        'yt-dlp was not found.'
+      )
       return
     }
 
     const downloadDir = createDownloadDir('youtube', this.getDownloadDirectory())
-    const args = [
-      '--no-playlist',
-      '--newline',
-      '--progress',
-      '--progress-template',
-      'download:%(progress._percent_str)s',
-      '--print',
-      'after_move:filepath',
-      '-P',
+    const args = buildYouTubeDownloadArgs(
+      url,
       downloadDir,
-      '-o',
-      '%(title).180B [%(id)s].%(ext)s',
-      '-f',
-      'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best',
-      '--merge-output-format',
-      'mp4'
-    ]
-
-    const ffmpegPath = this.tools.getFfmpegPath()
-    if (ffmpegPath) {
-      args.push('--ffmpeg-location', ffmpegPath)
-    }
-
-    args.push(url)
+      this.tools.getFfmpegPath()
+    )
     await this.spawnDownload(jobId, 'youtube', ytDlpPath, args, downloadDir, null)
   }
 
-  private async runPatreon(jobId: string, url: string, source: PatreonSessionSource): Promise<void> {
+  private async runPatreon(
+    jobId: string,
+    url: string,
+    cookie: string | null,
+    retentionGeneration: number
+  ): Promise<void> {
+    if (!cookie) {
+      this.emit(
+        jobId,
+        'patreon',
+        'failed',
+        'A Patreon session is required.',
+        null,
+        undefined,
+        'A Patreon session is required.'
+      )
+      return
+    }
+
     const cliPath = this.tools.getPatreonCliPath()
     const nodePath = this.tools.getNodePath()
     if (!cliPath || !nodePath || !this.tools.getPatreonDistPath()) {
@@ -134,105 +262,242 @@ export class DownloadManager {
       return
     }
 
-    const cookie = this.vault.resolve(source)
-    if (!cookie) {
-      this.emit(jobId, 'patreon', 'failed', 'A Patreon session is required.', null, undefined, 'A Patreon session is required.')
-      return
-    }
-
     const downloadDir = createDownloadDir('patreon', this.getDownloadDirectory())
     const cookieConfig = createPatreonCookieConfig(cookie)
-    const args = [cliPath, '--no-prompt', '--log-level', 'info', '--out-dir', downloadDir, '--config-file', cookieConfig.path]
-    const ffmpegPath = this.tools.getFfmpegPath()
-    if (ffmpegPath) {
-      args.push('--ffmpeg', ffmpegPath)
+    try {
+      const args = buildPatreonDownloadArgs(
+        cliPath,
+        url,
+        downloadDir,
+        cookieConfig.path,
+        this.tools.getFfmpegPath()
+      )
+      await this.spawnDownload(
+        jobId,
+        'patreon',
+        nodePath,
+        args,
+        downloadDir,
+        cookie,
+        cookieConfig.cleanup,
+        retentionGeneration
+      )
+    } catch (error) {
+      cookieConfig.cleanup()
+      throw error
     }
-    args.push(url)
-
-    await this.spawnDownload(jobId, 'patreon', nodePath, args, downloadDir, cookie, cookieConfig.cleanup)
   }
 
   private async spawnDownload(
     jobId: string,
-    source: 'youtube' | 'patreon',
+    source: DownloadSource,
     command: string,
     args: string[],
     downloadDir: string,
     cookie: string | null,
-    cleanup?: () => void
+    cleanup?: () => void,
+    patreonRetentionGeneration?: number
   ): Promise<void> {
-    this.emit(jobId, source, 'downloading', source === 'youtube' ? 'Downloading reaction video...' : 'Downloading Patreon post...', null)
+    this.emit(
+      jobId,
+      source,
+      'downloading',
+      source === 'youtube' ? 'Starting the reaction download...' : 'Opening the Patreon post...',
+      null
+    )
 
-    const child = this.spawnProcess(command, args, { windowsHide: true })
-    this.running.set(jobId, { child, source, cleanup })
-
-    let lastPath: string | null = null
-    let output = ''
-
-    const onText = (chunk: Buffer): void => {
-      const text = chunk.toString()
-      output += text
-      for (const line of text.split(/\r?\n/)) {
-        const trimmed = line.trim()
-        if (!trimmed) {
-          continue
-        }
-
-        const percent = extractPercent(trimmed)
-        if (percent !== null) {
-          this.emit(jobId, source, 'downloading', `Downloading... ${Math.round(percent)}%`, percent)
-          continue
-        }
-
-        if (looksLikeVideoPath(trimmed)) {
-          lastPath = trimmed
-        } else if (source === 'patreon' && !trimmed.toLowerCase().includes('cookie')) {
-          this.emit(jobId, source, 'downloading', humanizePatreonLine(trimmed), null)
-        }
+    let cleanupFinished = false
+    const cleanupOnce = (): void => {
+      if (cleanupFinished) {
+        return
+      }
+      cleanupFinished = true
+      try {
+        cleanup?.()
+      } catch {
+        // Cleanup is retried on next startup if the OS still holds a file.
       }
     }
 
-    child.stdout.on('data', onText)
-    child.stderr.on('data', onText)
+    let child: ChildProcessWithoutNullStreams
+    try {
+      child = this.spawnProcess(command, args, { windowsHide: true })
+    } catch (error) {
+      cleanupOnce()
+      const message =
+        error instanceof Error ? error.message : 'The downloader could not be started.'
+      this.emit(jobId, source, 'failed', message, null, undefined, message)
+      return
+    }
+
+    this.running.set(jobId, { child, source, cleanup: cleanupOnce })
+
+    let lastPath: string | null = null
+    let output = ''
+    let youtubeMetadata: YouTubeOutputMetadata = {}
+    let patreonTitle: string | undefined
+    let lastPatreonMessage = source === 'patreon' ? 'Opening the Patreon post...' : undefined
+    const stdoutLines = new BufferedLineReader()
+    const stderrLines = new BufferedLineReader()
+
+    const consumeLine = (line: string): void => {
+      const trimmed = stripAnsi(line).trim()
+      if (!trimmed) {
+        return
+      }
+
+      if (source === 'youtube') {
+        const progress = parseYtDlpProgressLine(trimmed)
+        if (progress) {
+          this.emit(
+            jobId,
+            source,
+            'downloading',
+            formatYtDlpProgressMessage(progress),
+            progress.percent,
+            undefined,
+            undefined,
+            progress
+          )
+          return
+        }
+
+        const metadata = parseYtDlpMetadataLine(trimmed)
+        if (metadata) {
+          youtubeMetadata = { ...youtubeMetadata, ...metadata }
+          return
+        }
+
+        const completedPath = parseYtDlpCompletedPath(trimmed)
+        if (completedPath) {
+          lastPath = completedPath
+        }
+        return
+      }
+
+      const logMetadata = parsePatreonLogMetadata(trimmed)
+      if (logMetadata.reactionTitle) {
+        patreonTitle = logMetadata.reactionTitle
+      }
+      const message = humanizePatreonLine(trimmed)
+      if (message === 'Working through the Patreon post...' && lastPatreonMessage) {
+        return
+      }
+      if (message !== lastPatreonMessage) {
+        lastPatreonMessage = message
+        this.emit(jobId, source, 'downloading', message, null)
+      }
+    }
+
+    const onText = (reader: BufferedLineReader, chunk: Buffer | string): void => {
+      const text = chunk.toString()
+      output = `${output}${text}`.slice(-MAX_DIAGNOSTIC_OUTPUT_LENGTH)
+      for (const line of reader.push(text)) {
+        consumeLine(line)
+      }
+    }
+
+    child.stdout.on('data', (chunk: Buffer | string) => onText(stdoutLines, chunk))
+    child.stderr.on('data', (chunk: Buffer | string) => onText(stderrLines, chunk))
 
     await new Promise<void>((resolvePromise) => {
       let settled = false
-      const finish = (callback: () => void): void => {
+      const flushLines = (): void => {
+        for (const line of [...stdoutLines.flush(), ...stderrLines.flush()]) {
+          consumeLine(line)
+        }
+      }
+      const finish = (callback: () => void | Promise<void>): void => {
         if (settled) {
           return
         }
 
         settled = true
-        cleanup?.()
-        callback()
-        resolvePromise()
+        flushLines()
+        cleanupOnce()
+        void Promise.resolve()
+          .then(callback)
+          .catch((error: unknown) => {
+            const wasCancelled = this.cancelledJobs.delete(jobId)
+            this.running.delete(jobId)
+            if (!wasCancelled) {
+              const message =
+                error instanceof Error ? error.message : 'The download could not be finished.'
+              this.emit(jobId, source, 'failed', message, null, undefined, message)
+            }
+          })
+          .finally(resolvePromise)
       }
 
       child.on('close', (code) => {
-        finish(() => {
+        finish(async () => {
           const wasCancelled = this.cancelledJobs.delete(jobId)
-          this.running.delete(jobId)
           if (wasCancelled) {
+            this.running.delete(jobId)
             return
           }
 
           if (code === 0) {
-            const filePath = normalizeCompletedPath(lastPath) ?? findNewestMediaFile(downloadDir)
-            if (filePath) {
-              if (source === 'patreon' && cookie) {
-                this.completedCookies.set(jobId, cookie)
-              }
-              this.emit(jobId, source, 'success', 'Reaction video ready.', 100, filePath)
-            } else {
-              this.emit(jobId, source, 'failed', 'No playable video file was found in the download.', null, undefined, sanitizeOutput(output))
+            const filePath = normalizeCompletedPath(lastPath, downloadDir) ?? findNewestMediaFile(downloadDir)
+            if (!filePath) {
+              this.running.delete(jobId)
+              this.emit(
+                jobId,
+                source,
+                'failed',
+                'No playable video file was found in the download.',
+                null,
+                undefined,
+                sanitizeOutput(output)
+              )
+              return
             }
-          } else if (code !== null) {
-            const message =
-              source === 'youtube'
-                ? 'This video could not be downloaded. It may be private or restricted.'
-                : 'The Patreon post could not be downloaded. Check the subscription or session and try again.'
-            this.emit(jobId, source, 'failed', message, null, undefined, sanitizeOutput(output))
+
+            let metadata: DownloadedReactionMetadata
+            if (source === 'youtube') {
+              metadata = deriveYouTubeDownloadMetadata(filePath, youtubeMetadata)
+            } else {
+              metadata = derivePatreonDownloadMetadata(filePath, patreonTitle)
+            }
+
+            if (this.cancelledJobs.delete(jobId)) {
+              this.running.delete(jobId)
+              return
+            }
+            this.running.delete(jobId)
+            if (source === 'patreon' && cookie && patreonRetentionGeneration !== undefined) {
+              this.patreonSessions.hold(jobId, cookie, patreonRetentionGeneration)
+            }
+
+            this.emit(
+              jobId,
+              source,
+              'success',
+              'Reaction video ready.',
+              source === 'youtube' ? 100 : null,
+              filePath,
+              undefined,
+              { metadata }
+            )
+            if (source === 'youtube' && youtubeMetadata.channelUrl) {
+              // Creator art is decorative and best-effort. Never hold up the
+              // saved-session/autosync handoff for an extra network request.
+              void retrieveYouTubeCreatorAvatar(
+                youtubeMetadata.channelUrl,
+                filePath,
+                command,
+                this.spawnProcess
+              )
+            }
+            return
           }
+
+          const message =
+            source === 'youtube'
+              ? 'This video could not be downloaded. It may be private or restricted.'
+              : 'The Patreon post could not be downloaded. Check the subscription or session and try again.'
+          this.running.delete(jobId)
+          this.emit(jobId, source, 'failed', message, null, undefined, sanitizeOutput(output))
         })
       })
 
@@ -250,100 +515,57 @@ export class DownloadManager {
 
   private emit(
     jobId: string,
-    source: 'youtube' | 'patreon',
+    source: DownloadSource,
     state: DownloadProgressEvent['state'],
     message: string,
     percent: number | null,
     filePath?: string,
-    error?: string
+    error?: string,
+    details: Partial<
+      Pick<
+        DownloadProgressEvent,
+        'speed' | 'eta' | 'fragmentIndex' | 'fragmentCount' | 'metadata'
+      >
+    > = {}
   ): void {
-    this.emitProgress({ jobId, source, state, message, percent, filePath, error })
-  }
-}
-
-export function extractPercent(line: string): number | null {
-  const match = /(\d+(?:\.\d+)?)%/.exec(line)
-  if (!match) {
-    return null
+    this.emitProgress({ jobId, source, state, message, percent, filePath, error, ...details })
   }
 
-  const percent = Number.parseFloat(match[1])
-  return Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : null
-}
-
-export function getDefaultReactionDownloadDirectory(): string {
-  return join(app.getPath('videos') || homedir(), 'WatchAlong', 'Reactions')
-}
-
-function createDownloadDir(source: 'youtube' | 'patreon', preferredRoot: string | null): string {
-  const dir = join(preferredRoot ?? getDefaultReactionDownloadDirectory(), source, randomUUID())
-  mkdirSync(dir, { recursive: true })
-  return dir
-}
-
-function createPatreonCookieConfig(cookie: string): { path: string; cleanup: () => void } {
-  const tempDir = mkdtempSync(join(tmpdir(), 'watchalong-patreon-dl-'))
-  const configPath = join(tempDir, 'patreon-dl.conf')
-  const singleLineCookie = cookie.replace(/[\r\n]/g, '')
-
-  try {
-    writeFileSync(configPath, `[downloader]\ncookie = "${singleLineCookie}"\n`, { encoding: 'utf8', mode: 0o600 })
-    chmodSync(configPath, 0o600)
-  } catch (error) {
-    rmSync(tempDir, { recursive: true, force: true })
-    throw error
-  }
-
-  return {
-    path: configPath,
-    cleanup: () => rmSync(tempDir, { recursive: true, force: true })
-  }
-}
-
-function findNewestMediaFile(root: string): string | null {
-  if (!existsSync(root)) {
-    return null
-  }
-
-  const files: Array<{ path: string; mtime: number; size: number }> = []
-  const visit = (dir: string): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const entryPath = join(dir, entry.name)
-      if (entry.isDirectory()) {
-        visit(entryPath)
-      } else if (VIDEO_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
-        const stats = statSync(entryPath)
-        files.push({ path: entryPath, mtime: stats.mtimeMs, size: stats.size })
+  private cancelAllInternal(emitCancelled: boolean): void {
+    for (const [jobId, pending] of this.pending) {
+      clearTimeout(pending.timer)
+      if (emitCancelled) {
+        this.emit(jobId, pending.source, 'cancelled', 'Download cancelled.', null)
       }
+    }
+    this.pending.clear()
+
+    for (const [jobId, running] of [...this.running]) {
+      this.stopRunningDownload(jobId, running, emitCancelled)
     }
   }
 
-  visit(root)
-  return files.sort((a, b) => b.size - a.size || b.mtime - a.mtime)[0]?.path ?? null
-}
+  private stopRunningDownload(
+    jobId: string,
+    running: RunningDownload,
+    emitCancelled: boolean
+  ): void {
+    this.cancelledJobs.add(jobId)
+    try {
+      running.child.kill()
+    } catch {
+      // The process may already have exited between the map read and kill().
+    }
 
-function looksLikeVideoPath(line: string): boolean {
-  return VIDEO_EXTENSIONS.has(extname(line).toLowerCase()) && (line.includes('\\') || line.includes('/'))
-}
-
-function normalizeCompletedPath(filePath: string | null): string | null {
-  if (!filePath) {
-    return null
+    try {
+      running.cleanup?.()
+    } catch {
+      // Cleanup is best effort here and is also covered by stale-temp cleanup.
+    }
+    this.patreonSessions.clear(jobId)
+    if (emitCancelled) {
+      this.emit(jobId, running.source, 'cancelled', 'Download cancelled.', null)
+    }
+    this.running.delete(jobId)
   }
-
-  const trimmed = filePath.trim()
-  return existsSync(trimmed) ? trimmed : null
-}
-
-function humanizePatreonLine(line: string): string {
-  const withoutAnsi = line.replace(/\x1b\[[0-9;]*m/g, '')
-  if (withoutAnsi.length <= 96) {
-    return withoutAnsi
-  }
-
-  return `${withoutAnsi.slice(0, 93)}...`
-}
-
-function sanitizeOutput(output: string): string {
-  return output.replace(/session_id=[^;\s]+/g, 'session_id=[redacted]')
 }

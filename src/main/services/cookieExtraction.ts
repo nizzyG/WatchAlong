@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BrowserDetection, BrowserExtractionMode, BrowserName } from '@shared/types'
@@ -145,7 +145,8 @@ export async function extractPatreonSession(
   browserName: BrowserName,
   tools: ToolResolver,
   vault: PatreonSessionVault,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  runCommand: typeof runToolCommand = runToolCommand
 ): Promise<{ ok: boolean; token?: string; message?: string }> {
   if (getBrowserExtractionMode(browserName, platform) === 'manual-only') {
     const browserLabel = browserLabelFromName(browserName)
@@ -155,6 +156,7 @@ export async function extractPatreonSession(
     }
   }
 
+  const authorizationEpoch = vault.authEpoch
   const ytDlpPath = tools.getYtDlpPath()
   if (!ytDlpPath) {
     return { ok: false, message: 'yt-dlp is required to read browser cookies.' }
@@ -163,7 +165,7 @@ export async function extractPatreonSession(
   const tempDir = mkdtempSync(join(tmpdir(), 'watchalong-patreon-cookies-'))
   const cookiePath = join(tempDir, 'cookies.txt')
   try {
-    const result = await runToolCommand(ytDlpPath, [
+    const result = await runCommand(ytDlpPath, [
       '--cookies-from-browser',
       browserName,
       '--cookies',
@@ -173,6 +175,12 @@ export async function extractPatreonSession(
       'https://www.patreon.com/posts/0'
     ], 30000)
 
+    try {
+      chmodSync(cookiePath, 0o600)
+    } catch {
+      // The private temp directory is still the primary boundary on systems
+      // that do not support POSIX modes.
+    }
     const cookie = parsePatreonSessionCookie(cookiePath)
     if (!cookie) {
       return {
@@ -181,7 +189,13 @@ export async function extractPatreonSession(
       }
     }
 
-    return { ok: true, token: vault.createToken(cookie) }
+    const token = vault.createToken(cookie, authorizationEpoch)
+    return token
+      ? { ok: true, token }
+      : {
+          ok: false,
+          message: 'Patreon sign-in was cancelled before browser access finished.'
+        }
   } catch (error) {
     return {
       ok: false,
@@ -191,7 +205,18 @@ export async function extractPatreonSession(
       )
     }
   } finally {
-    rmSync(tempDir, { recursive: true, force: true })
+    if (existsSync(cookiePath)) {
+      try {
+        writeFileSync(cookiePath, '', { encoding: 'utf8', mode: 0o600 })
+      } catch {
+        // A crash-leftover sweep runs before the next app window opens.
+      }
+    }
+    try {
+      rmSync(tempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 25 })
+    } catch {
+      // Startup cleanup retries the private temp directory.
+    }
   }
 }
 
@@ -209,7 +234,8 @@ export function parsePatreonSessionCookie(cookiePath: string): string | null {
     const cleanLine = line.startsWith('#HttpOnly_') ? line.substring(10) : line
     const parts = cleanLine.split('\t')
     const [domain, , , , , name, value] = parts
-    if (domain?.includes('patreon.com') && name === 'session_id' && value) {
+    const normalizedDomain = domain?.toLowerCase().replace(/^\./, '') ?? ''
+    if ((normalizedDomain === 'patreon.com' || normalizedDomain.endsWith('.patreon.com')) && name === 'session_id' && value) {
       return `session_id=${value}`
     }
   }

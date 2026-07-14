@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog } from 'electron'
 import { basename } from 'node:path'
 import type { LibrarySession, MediaFile, MediaRole } from '@shared/types'
+import { isSupportedSubtitleFile } from '../services/subtitleFiles'
 
 export function getSenderWindow(
   event: Electron.IpcMainInvokeEvent,
@@ -29,13 +30,12 @@ export async function selectSubtitle(parentWindow: BrowserWindow): Promise<Media
     title: 'Select movie subtitle file',
     properties: ['openFile'],
     filters: [
-      { name: 'Subtitle files', extensions: ['srt', 'vtt'] },
-      { name: 'All files', extensions: ['*'] }
+      { name: 'Subtitle files', extensions: ['srt', 'vtt'] }
     ]
   })
   if (result.canceled || result.filePaths.length === 0) return null
   const filePath = result.filePaths[0]
-  return { path: filePath, name: basename(filePath) }
+  return isSupportedSubtitleFile(filePath) ? { path: filePath, name: basename(filePath) } : null
 }
 
 export function getMediaPath(session: LibrarySession | null, role: MediaRole): string | null {

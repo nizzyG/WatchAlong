@@ -3,16 +3,25 @@ import { useState } from 'react'
 import type { LibrarySession } from '@shared/types'
 import { ReactionSourceIcon, reactionSourceLabel } from './ReactionSource'
 import { fileName, formatRelativeTime } from './appFormat'
+import { ReactorAvatar } from './ReactorAvatar'
 
 export function LibrarySessionCard({
   session,
   compact,
+  primaryLabel,
+  secondaryLabel,
+  artwork = 'movie',
+  reactorLabel = 'Reactor not identified',
   onOpen,
   onRename,
   onDelete
 }: {
   session: LibrarySession
   compact?: boolean
+  primaryLabel?: string
+  secondaryLabel?: string
+  artwork?: 'movie' | 'reactor'
+  reactorLabel?: string
   onOpen(): void
   onRename?(): void
   onDelete?(): void
@@ -21,18 +30,23 @@ export function LibrarySessionCard({
   const duration = session.reactionDurationSeconds ?? 0
   const progress = duration > 0 ? Math.min(100, Math.max(0, (session.lastReactionTimeSeconds / duration) * 100)) : 0
   const showActions = Boolean(onRename || onDelete)
+  const displayTitle = primaryLabel || session.title || fileName(session.moviePath ?? session.reactionPath ?? 'Untitled watchalong')
+  const roundedProgress = Math.round(progress)
 
   return (
     <article className={`library-card ${compact ? 'library-card-compact' : ''}`}>
-      <button className="library-card-main" type="button" onClick={onOpen}>
+      <button className="library-card-main" type="button" aria-label={`Open ${displayTitle}`} onClick={onOpen}>
         <span className="library-card-thumbnail" aria-hidden>
-          <Film size={compact ? 24 : 38} />
+          {artwork === 'reactor'
+            ? <ReactorAvatar session={session} label={reactorLabel} />
+            : <Film size={compact ? 24 : 38} />}
         </span>
         <span className="library-card-copy">
-          <strong>{session.title || fileName(session.moviePath ?? session.reactionPath ?? 'Untitled watchalong')}</strong>
+          <strong>{displayTitle}</strong>
+          {secondaryLabel && <span className="library-card-context">{secondaryLabel}</span>}
           <small>
             <ReactionSourceIcon source={session.reactionSource} />
-            {reactionSourceLabel(session.reactionSource)} / {formatRelativeTime(session.updatedAt)}
+            {reactionSourceLabel(session.reactionSource)} · {formatRelativeTime(session.updatedAt)}
           </small>
         </span>
       </button>
@@ -41,8 +55,8 @@ export function LibrarySessionCard({
           <button
             className="icon-button library-card-menu-button"
             type="button"
-            aria-label="More actions"
-            title="More actions"
+            aria-label={`More actions for ${displayTitle}`}
+            title={`More actions for ${displayTitle}`}
             aria-expanded={actionsOpen}
             onClick={() => setActionsOpen((current) => !current)}
             onBlur={(event) => {
@@ -90,7 +104,14 @@ export function LibrarySessionCard({
           )}
         </div>
       )}
-      <span className="library-card-progress" aria-hidden>
+      <span
+        className="library-card-progress"
+        aria-label={duration > 0 ? `${roundedProgress}% watched` : undefined}
+        aria-valuemin={duration > 0 ? 0 : undefined}
+        aria-valuemax={duration > 0 ? 100 : undefined}
+        aria-valuenow={duration > 0 ? roundedProgress : undefined}
+        role={duration > 0 ? 'progressbar' : undefined}
+      >
         <span style={{ width: `${progress}%` }} />
       </span>
     </article>

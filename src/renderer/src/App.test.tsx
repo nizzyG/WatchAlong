@@ -1,12 +1,15 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
+import { SyncController } from './sync/SyncController'
 import type {
   AppPreferences,
   AutoSyncCompleteCallback,
   AutoSyncProgressCallback,
+  DownloadProgressCallback,
   LibrarySession,
   MovieWindowClosedEvent,
+  MovieWindowGeometryCallback,
   MovieWindowLifecycleCallback,
   RemoteMediaEventCallback,
   SessionLibrary,
@@ -38,19 +41,23 @@ function createApi(
 ): WatchAlongApi & {
   emitWizardLifecycle(event: Parameters<WizardLifecycleCallback>[0]): void
   emitMovieWindowPopInRequest(): void
+  emitMovieWindowGeometry(event: Parameters<MovieWindowGeometryCallback>[0]): void
   emitMovieWindowClosed(event?: MovieWindowClosedEvent): void
   emitMainWindowCloseRequest(): void
   emitAutoSyncProgress(event: Parameters<AutoSyncProgressCallback>[0]): void
   emitAutoSyncComplete(event: Parameters<AutoSyncCompleteCallback>[0]): void
+  emitDownloadProgress(event: Parameters<DownloadProgressCallback>[0]): void
 } {
   let currentLibrary = library
   let currentPreferences = preferences
   let wizardLifecycleCallback: WizardLifecycleCallback | null = null
   let movieWindowPopInCallback: MovieWindowLifecycleCallback | null = null
+  let movieWindowGeometryCallback: MovieWindowGeometryCallback | null = null
   let movieWindowClosedCallback: MovieWindowLifecycleCallback | null = null
   let mainWindowCloseCallback: (() => void) | null = null
   let autoSyncProgressCallback: AutoSyncProgressCallback | null = null
   let autoSyncCompleteCallback: AutoSyncCompleteCallback | null = null
+  const downloadProgressCallbacks = new Set<DownloadProgressCallback>()
 
   const api = {
     openVideos: vi.fn(),
@@ -63,12 +70,18 @@ function createApi(
       return currentLibrary
     }),
     getLibrary: vi.fn(async () => currentLibrary),
+    getLibraryRecoveryStatus: vi.fn(async () => ({ available: false })),
+    revealLibraryRecoveryFile: vi.fn(async () => false),
+    startFreshLibraryAfterRecovery: vi.fn(async () => createLibrary(null, [])),
     getPreferences: vi.fn(async () => currentPreferences),
     setPreference: vi.fn(async (key: keyof AppPreferences, value: AppPreferences[keyof AppPreferences]) => {
       currentPreferences = { ...currentPreferences, [key]: value }
       return currentPreferences
     }),
-    selectDownloadDirectory: vi.fn(async () => 'C:\\Downloads\\WatchAlong'),
+    selectDownloadDirectory: vi.fn(async () => ({
+      ...currentPreferences,
+      reactionDownloadDirectory: 'C:\\Downloads\\WatchAlong'
+    })),
     completeOnboarding: vi.fn(async () => {
       currentPreferences = { ...currentPreferences, hasCompletedOnboarding: true }
       return currentPreferences
@@ -82,6 +95,15 @@ function createApi(
       }
       return currentLibrary
     }),
+    saveMovieWindowState: vi.fn(async (sessionId, patch) => {
+      currentLibrary = {
+        ...currentLibrary,
+        sessions: currentLibrary.sessions.map((session) =>
+          session.id === sessionId ? { ...session, ...patch } : session
+        )
+      }
+      return currentLibrary
+    }),
     saveSessionPosition: vi.fn(async (sessionId: string, lastReactionTimeSeconds: number) => {
       currentLibrary = {
         ...currentLibrary,
@@ -91,7 +113,7 @@ function createApi(
       }
       return currentLibrary
     }),
-    replaceSessionMedia: vi.fn(async (sessionId, role, path, reactionSource) => {
+    replaceSessionMedia: vi.fn(async (sessionId, role, path, reactionSource, suggestedTitle) => {
       currentLibrary = {
         ...currentLibrary,
         activeSessionId: sessionId,
@@ -99,21 +121,25 @@ function createApi(
           session.id === sessionId
             ? {
                 ...session,
-                ...(role === 'movie' ? { moviePath: path } : { reactionPath: path, reactionSource: reactionSource ?? session.reactionSource })
+                ...(role === 'movie' ? { moviePath: path } : { reactionPath: path, reactionSource: reactionSource ?? session.reactionSource }),
+                ...(suggestedTitle ? { title: suggestedTitle } : {})
               }
             : session
         )
       }
-      return currentLibrary
+      return { status: 'replaced' as const, library: currentLibrary }
     }),
-    setSessionMedia: vi.fn(async (role, path, reactionSource) => {
+    setSessionMedia: vi.fn(async (role, path, reactionSource, suggestedTitle) => {
       currentLibrary = {
         ...currentLibrary,
         sessions: currentLibrary.sessions.map((session) =>
           session.id === currentLibrary.activeSessionId
             ? {
                 ...session,
-                ...(role === 'movie' ? { moviePath: path } : { reactionPath: path, reactionSource: reactionSource ?? session.reactionSource })
+                ...(role === 'movie'
+                  ? { moviePath: path }
+                  : { reactionPath: path, reactionSource: reactionSource ?? session.reactionSource }),
+                ...(suggestedTitle ? { title: suggestedTitle } : {})
               }
             : session
         )
@@ -158,7 +184,10 @@ function createApi(
     reportMovieMediaEvent: vi.fn(async () => undefined),
     onMovieMediaCommand: vi.fn(() => vi.fn()),
     onMovieMediaEvent: vi.fn(() => vi.fn()),
-    onMovieWindowGeometry: vi.fn(() => vi.fn()),
+    onMovieWindowGeometry: vi.fn((callback: MovieWindowGeometryCallback) => {
+      movieWindowGeometryCallback = callback
+      return vi.fn()
+    }),
     onMovieWindowPopInRequest: vi.fn((callback: MovieWindowLifecycleCallback) => {
       movieWindowPopInCallback = callback
       return vi.fn()
@@ -172,13 +201,17 @@ function createApi(
     detectBrowsers: vi.fn(async () => []),
     extractPatreonSession: vi.fn(async () => ({ ok: false })),
     openPatreonLoginWindow: vi.fn(async () => ({ ok: false })),
+    discardPatreonSessionToken: vi.fn(async () => undefined),
     getSavedPatreonSessionStatus: vi.fn(async () => ({ available: false, canEncrypt: true })),
     saveLastPatreonSession: vi.fn(async () => ({ available: true, canEncrypt: true })),
     discardLastPatreonSession: vi.fn(async () => ({ available: false, canEncrypt: true })),
     forgetPatreonSession: vi.fn(async () => ({ available: false, canEncrypt: true })),
     startReactionDownload: vi.fn(async () => ({ jobId: 'job-1' })),
     cancelDownload: vi.fn(async () => undefined),
-    onDownloadProgress: vi.fn(() => vi.fn()),
+    onDownloadProgress: vi.fn((callback: DownloadProgressCallback) => {
+      downloadProgressCallbacks.add(callback)
+      return () => downloadProgressCallbacks.delete(callback)
+    }),
     startSessionAutoSync: vi.fn(async () => ({ started: true })),
     cancelSessionAutoSync: vi.fn(async () => undefined),
     onAutoSyncProgress: vi.fn((callback: AutoSyncProgressCallback) => {
@@ -197,6 +230,7 @@ function createApi(
       wizardLifecycleCallback = callback
       return vi.fn()
     }),
+    onWizardCloseRequest: vi.fn(() => vi.fn()),
     confirmMainWindowClose: vi.fn(async () => undefined),
     onMainWindowCloseRequest: vi.fn((callback: () => void) => {
       mainWindowCloseCallback = callback
@@ -211,6 +245,9 @@ function createApi(
     emitMovieWindowPopInRequest() {
       movieWindowPopInCallback?.()
     },
+    emitMovieWindowGeometry(event: Parameters<MovieWindowGeometryCallback>[0]) {
+      movieWindowGeometryCallback?.(event)
+    },
     emitMovieWindowClosed(event?: MovieWindowClosedEvent) {
       movieWindowClosedCallback?.(event)
     },
@@ -222,14 +259,19 @@ function createApi(
     },
     emitAutoSyncComplete(event: Parameters<AutoSyncCompleteCallback>[0]) {
       autoSyncCompleteCallback?.(event)
+    },
+    emitDownloadProgress(event: Parameters<DownloadProgressCallback>[0]) {
+      for (const callback of downloadProgressCallbacks) callback(event)
     }
   }) as unknown as WatchAlongApi & {
     emitWizardLifecycle(event: Parameters<WizardLifecycleCallback>[0]): void
     emitMovieWindowPopInRequest(): void
+    emitMovieWindowGeometry(event: Parameters<MovieWindowGeometryCallback>[0]): void
     emitMovieWindowClosed(event?: MovieWindowClosedEvent): void
     emitMainWindowCloseRequest(): void
     emitAutoSyncProgress(event: Parameters<AutoSyncProgressCallback>[0]): void
     emitAutoSyncComplete(event: Parameters<AutoSyncCompleteCallback>[0]): void
+    emitDownloadProgress(event: Parameters<DownloadProgressCallback>[0]): void
   }
 }
 
@@ -280,7 +322,7 @@ describe('App', () => {
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
     expect(api.getMediaUrl).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: /First/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Open First/ }))
 
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
     expect(api.getMediaUrl).toHaveBeenCalledWith('movie', 's1')
@@ -311,13 +353,42 @@ describe('App', () => {
     await waitFor(() => expect(reaction.currentTime).toBe(37.5))
   })
 
+  it('restores a previously saved reaction position when opening a session from the library', async () => {
+    const session = createSession('s1', 'First', 37.5)
+    const api = createApi(createLibrary('s1', [session]))
+    window.watchAlong = api
+    const loadSession = vi.spyOn(SyncController.prototype, 'loadSession')
+
+    const { container } = render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /Open First/ }))
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    expect(api.saveSessionPosition).not.toHaveBeenCalled()
+    const reaction = container.querySelector('video.reaction-video') as HTMLVideoElement
+    const movie = container.querySelector('video.pip-video') as HTMLVideoElement
+
+    await waitFor(() => {
+      expect(reaction).toHaveAttribute('src', 'watchalong://media/s1/reaction')
+      expect(movie).toHaveAttribute('src', 'watchalong://media/s1/movie')
+    })
+
+    fireEvent.loadedMetadata(reaction)
+    fireEvent.loadedMetadata(movie)
+
+    await waitFor(() => expect(loadSession).toHaveBeenCalledWith(37.5))
+    await waitFor(() => {
+      expect(reaction.currentTime).toBe(37.5)
+      expect(movie.currentTime).toBe(37.5)
+    })
+    loadSession.mockRestore()
+  })
+
   it('falls back to the empty library when resume on launch is enabled but no sessions exist', async () => {
     const api = createApi(createLibrary(null, []), { ...defaultPreferences, openLibraryOnLaunch: false })
     window.watchAlong = api
 
     render(<App />)
 
-    expect(await screen.findByText('Your watchalong collection is empty')).toBeInTheDocument()
+    expect(await screen.findByText('Pair a film with a creator you support')).toBeInTheDocument()
     expect(api.getMediaUrl).not.toHaveBeenCalled()
   })
 
@@ -331,10 +402,32 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByLabelText('Startup error')).toBeInTheDocument()
-    expect(screen.getByText('Something went wrong while loading your library.')).toBeInTheDocument()
+    expect(screen.getByText('WatchAlong could not safely open your library. No files were changed.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Open Library/i })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Retry/i }))
 
+    expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
+    expect(api.getLibrary).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a damaged library recoverable while offering an explicit fresh start', async () => {
+    const api = createApi()
+    api.getLibrary = vi.fn()
+      .mockRejectedValueOnce(new Error('WatchAlong moved a damaged library to a recovery file.'))
+      .mockResolvedValueOnce(createLibrary(null, []))
+    api.getLibraryRecoveryStatus = vi.fn(async () => ({ available: true }))
+    api.revealLibraryRecoveryFile = vi.fn(async () => true)
+    window.watchAlong = api
+
+    render(<App />)
+
+    expect(await screen.findByText(/moved a damaged library to a recovery file/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Show Recovery File/i }))
+    await waitFor(() => expect(api.revealLibraryRecoveryFile).toHaveBeenCalledOnce())
+
+    fireEvent.click(screen.getByRole('button', { name: /Start New Library/i }))
+    await waitFor(() => expect(api.startFreshLibraryAfterRecovery).toHaveBeenCalledOnce())
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
     expect(api.getLibrary).toHaveBeenCalledTimes(2)
   })
@@ -371,6 +464,32 @@ describe('App', () => {
     )
   })
 
+  it('opens an existing pairing without deleting either session when replacement conflicts', async () => {
+    const existing = createSession('s2', 'Already saved', 97, {
+      reactionPath: firstSession.reactionPath,
+      moviePath: 'C:\\Movies\\Located movie.mp4'
+    })
+    const library = createLibrary('s1', [firstSession, existing])
+    const api = createApi(library, { ...defaultPreferences, openLibraryOnLaunch: false })
+    api.getMediaUrl = vi.fn(async (role, sessionId) =>
+      sessionId === 's1' && role === 'movie' ? null : `watchalong://media/${sessionId}/${role}`)
+    api.replaceSessionMedia = vi.fn(async () => ({
+      status: 'conflict' as const,
+      library,
+      existingSessionId: 's2'
+    }))
+    window.watchAlong = api
+
+    render(<App />)
+    expect(await screen.findByLabelText('Missing media recovery')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Locate movie/i }))
+
+    await waitFor(() => expect(api.setActiveSession).toHaveBeenCalledWith('s2'))
+    expect(await screen.findByText(/exact pairing is already in your library/i)).toBeInTheDocument()
+    expect(api.deleteSession).not.toHaveBeenCalled()
+  })
+
   it('removes a missing-media session and returns to the library', async () => {
     const api = createApi(createLibrary('s1', [firstSession]), { ...defaultPreferences, openLibraryOnLaunch: false })
     api.getMediaUrl = vi.fn(async (role, sessionId) => role === 'movie' ? null : `watchalong://media/${sessionId}/${role}`)
@@ -383,7 +502,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Delete$/i }))
 
     await waitFor(() => expect(api.deleteSession).toHaveBeenCalledWith('s1'))
-    expect(await screen.findByText('Your watchalong collection is empty')).toBeInTheDocument()
+    expect(await screen.findByText('Pair a film with a creator you support')).toBeInTheDocument()
   })
 
   it('attaches sync playback after media elements render', async () => {
@@ -426,7 +545,7 @@ describe('App', () => {
 
     fireEvent.click(screen.getByLabelText('Command Panel'))
     fireEvent.click(await screen.findByRole('button', { name: /Library/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Second/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Open Second/ }))
 
     await waitFor(() => expect(api.setActiveSession).toHaveBeenCalledWith('s2'))
     const saveIndex = vi.mocked(api.saveSessionPosition).mock.calls.findIndex(
@@ -499,16 +618,81 @@ describe('App', () => {
     await waitFor(() => expect(document.querySelector('video.pip-video')).not.toBeInTheDocument())
     expect(screen.getByLabelText('Movie picture in picture')).toHaveClass('pip-popped-out')
     expect(screen.getByRole('button', { name: 'Pop movie back in' })).toHaveTextContent('Movie is popped out.')
-    expect(api.saveActiveSession).toHaveBeenCalledWith(expect.objectContaining({ isMoviePoppedOut: true }))
+    expect(api.saveMovieWindowState).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({ isMoviePoppedOut: true })
+    )
 
     fireEvent.click(screen.getByRole('button', { name: 'Pop movie back in' }))
 
     await waitFor(() =>
-      expect(api.saveActiveSession).toHaveBeenCalledWith(expect.objectContaining({
+      expect(api.saveMovieWindowState).toHaveBeenCalledWith('s1', expect.objectContaining({
         isMoviePoppedOut: false,
         overlay: { x: 12, y: 18, width: 360, height: 210 }
       }))
     )
+  })
+
+  it('coalesces duplicate pop-out clicks and discards an open that finishes after a session switch', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    let finishOpen!: (result: Awaited<ReturnType<WatchAlongApi['openMovieWindow']>>) => void
+    api.openMovieWindow = vi.fn(() => new Promise<Awaited<ReturnType<WatchAlongApi['openMovieWindow']>>>((resolve) => {
+      finishOpen = resolve
+    }))
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+
+    const popOut = screen.getByLabelText('Pop out movie to separate window')
+    fireEvent.click(popOut)
+    fireEvent.click(popOut)
+    await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    fireEvent.click(await screen.findByRole('button', { name: /Library/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Open Second/ }))
+    await waitFor(() => expect(api.setActiveSession).toHaveBeenCalledWith('s2'))
+
+    finishOpen({
+      opened: true,
+      geometry: { x: 40, y: 50, width: 360, height: 210 },
+      state: remoteState()
+    })
+
+    await waitFor(() => expect(api.closeMovieWindow).toHaveBeenCalledWith({ notifyMainWindow: false }))
+    expect(api.saveMovieWindowState).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ isMoviePoppedOut: true })
+    )
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('movie', 's2'))
+  })
+
+  it('persists delayed detached-window geometry against its initiating session id', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+    fireEvent.click(screen.getByLabelText('Pop out movie to separate window'))
+    await waitFor(() => expect(api.saveMovieWindowState).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({ isMoviePoppedOut: true })
+    ))
+
+    const geometry = { x: 75, y: 85, width: 480, height: 270 }
+    act(() => api.emitMovieWindowGeometry({ sessionId: 's1', geometry, overlay: null }))
+
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    fireEvent.click(await screen.findByRole('button', { name: /Library/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Open Second/ }))
+    await waitFor(() => expect(api.setActiveSession).toHaveBeenCalledWith('s2'))
+    expect(api.saveMovieWindowState).toHaveBeenCalledWith('s1', { movieWindowGeometry: geometry })
+    expect(api.saveMovieWindowState).not.toHaveBeenCalledWith('s2', { movieWindowGeometry: geometry })
   })
 
   it('double-clicking the reaction fullscreens the whole player so PiP remains visible', async () => {
@@ -531,7 +715,7 @@ describe('App', () => {
 
     render(<App />)
 
-    await waitFor(() => expect(api.detectMovieFrameRate).toHaveBeenCalledWith(session.moviePath))
+    await waitFor(() => expect(api.detectMovieFrameRate).toHaveBeenCalledWith(session.id))
     await waitFor(() =>
       expect(api.saveActiveSession).toHaveBeenCalledWith({
         detectedMovieFps: 25,
@@ -578,7 +762,7 @@ describe('App', () => {
 
     render(<App />)
 
-    await waitFor(() => expect(api.detectMovieFrameRate).toHaveBeenCalledWith(session.moviePath))
+    await waitFor(() => expect(api.detectMovieFrameRate).toHaveBeenCalledWith(session.id))
     fireEvent.click(screen.getByText('Timing'))
     expect(screen.getByRole('group', { name: 'Manual movie rate' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Stream 24 -> Blu-ray 23.976' })).toBeInTheDocument()
@@ -604,7 +788,7 @@ describe('App', () => {
     expect(screen.getAllByText(/94% confidence/)).toHaveLength(2)
 
     fireEvent.click(screen.getByRole('button', { name: /Find Sync Again/i }))
-    await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1'))
+    await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1', 'recheck'))
     act(() => api.emitAutoSyncProgress({ sessionId: 's1', phase: 'scanning', percent: 45, message: 'Checking moments…' }))
     expect(screen.getByRole('button', { name: /Checking moments/i })).toBeDisabled()
     act(() => api.emitAutoSyncComplete({
@@ -622,7 +806,7 @@ describe('App', () => {
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
     fireEvent.click(screen.getByText('Timing'))
     fireEvent.click(screen.getByRole('button', { name: /Find Sync Again/i }))
-    await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1'))
+    await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1', 'recheck'))
 
     await api.setActiveSession('s2')
     act(() => api.emitAutoSyncComplete({
@@ -632,6 +816,67 @@ describe('App', () => {
 
     await waitFor(() => expect(api.getLibrary).toHaveBeenCalledTimes(2))
     expect(screen.queryByText('Sync setup')).not.toBeInTheDocument()
+  })
+
+  it('rolls an in-player reaction download directly into automatic sync', async () => {
+    const session = createSession('s1', 'Aladdin', 0, { reactionPath: null })
+    const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
+    api.getMediaUrl = vi.fn(async (role, sessionId) =>
+      role === 'reaction' ? null : `watchalong://media/${sessionId}/${role}`
+    )
+    window.watchAlong = api
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /YouTube link/i }))
+    fireEvent.change(screen.getByPlaceholderText('https://www.youtube.com/watch?v=...'), {
+      target: { value: 'https://www.youtube.com/watch?v=abc123' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Download & Load/i }))
+    await waitFor(() => expect(api.startReactionDownload).toHaveBeenCalled())
+
+    act(() => api.emitDownloadProgress({
+      jobId: 'job-1',
+      source: 'youtube',
+      state: 'success',
+      message: 'Reaction video ready.',
+      percent: 100,
+      filePath: 'C:\\Reactions\\Aladdin reaction.mp4',
+      metadata: { reactorName: 'Addie Counts' }
+    }))
+
+    await waitFor(() => expect(api.replaceSessionMedia).toHaveBeenCalledWith(
+      's1',
+      'reaction',
+      'C:\\Reactions\\Aladdin reaction.mp4',
+      'youtube',
+      's1-movie — Addie Counts'
+    ))
+    expect(api.setSessionMedia).not.toHaveBeenCalled()
+    await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1', 'initial'))
+    expect(await screen.findByRole('dialog', { name: 'Finding automatic sync' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Line Up Manually Instead/i })).toHaveFocus()
+    act(() => api.emitAutoSyncComplete({ sessionId: 's1', outcome: 'confident', message: 'Ready.' }))
+    await waitFor(() => expect(api.getLibrary).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Finding automatic sync' })).not.toBeInTheDocument())
+    expect(screen.queryByText('Sync setup')).not.toBeInTheDocument()
+  })
+
+  it('offers to save a Patreon session after a wizard download finishes', async () => {
+    const api = createApi()
+    window.watchAlong = api
+    render(<App />)
+    await screen.findByLabelText('WatchAlong Library')
+
+    act(() => api.emitDownloadProgress({
+      jobId: 'patreon-job',
+      source: 'patreon',
+      state: 'success',
+      message: 'Reaction video ready.',
+      percent: null,
+      filePath: 'C:\\Reactions\\Patreon reaction.mp4'
+    }))
+
+    expect(await screen.findByText(/Want to skip this step next time/i)).toBeInTheDocument()
   })
 
   it('opens a popped-out movie with the selected playback multiplier', async () => {
@@ -658,7 +903,7 @@ describe('App', () => {
 
     render(<App />)
 
-    expect(await screen.findByText('Your watchalong collection is empty')).toBeInTheDocument()
+    expect(await screen.findByText('Pair a film with a creator you support')).toBeInTheDocument()
     expect(screen.getByLabelText('Welcome to WatchAlong')).toBeInTheDocument()
     expect(api.openOnboardingWizard).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /Get Started/i }))
@@ -870,14 +1115,14 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
-    fireEvent.click(screen.getAllByRole('button', { name: 'More actions' })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: /More actions for/ })[0])
     fireEvent.click(screen.getByRole('button', { name: /Rename/i }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Renamed session' } })
     fireEvent.click(screen.getByRole('button', { name: /^Save$/i }))
 
     await waitFor(() => expect(api.renameSession).toHaveBeenCalledWith('s1', 'Renamed session'))
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'More actions' })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: /More actions for/ })[0])
     fireEvent.click(screen.getByRole('button', { name: /Delete/i }))
     fireEvent.click(screen.getByRole('button', { name: /^Delete$/i }))
 
@@ -891,7 +1136,7 @@ describe('App', () => {
 
     render(<App />)
 
-    expect(await screen.findByText(/Local file \/ Unknown/i)).toBeInTheDocument()
+    expect(await screen.findByText(/Local file · Unknown/i)).toBeInTheDocument()
   })
 
   it('shows an unsupported subtitle format error for non-empty files with no cues', async () => {
@@ -927,6 +1172,7 @@ function createSession(
   const base: LibrarySession = {
     id,
     title,
+    titleOrigin: 'custom',
     reactionPath: `C:\\Videos\\${id}-reaction.mp4`,
     reactionSource: 'local',
     reactionDurationSeconds: 120,

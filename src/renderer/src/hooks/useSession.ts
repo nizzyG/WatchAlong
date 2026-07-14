@@ -25,6 +25,7 @@ export function useSession() {
   const [preferences, setPreferences] = useState<AppPreferences>(defaultPreferences)
   const [appView, setAppView] = useState<AppView>('loading')
   const [startupError, setStartupError] = useState<string | null>(null)
+  const [startupRecoveryAvailable, setStartupRecoveryAvailable] = useState(false)
   const [showWelcome, setShowWelcome] = useState(false)
   const [wizardDimmed, setWizardDimmed] = useState(false)
   const [commandPanelOpen, setCommandPanelOpen] = useState(false)
@@ -37,7 +38,8 @@ export function useSession() {
   return {
     appShellRef, sessionRef, activeSessionIdRef, commandPanelButtonRef, commandPanelReturnFocusRef,
     resumeAfterRepairRef, emptySession, library, setLibrary, preferences, setPreferences, appView,
-    setAppView, startupError, setStartupError, showWelcome, setShowWelcome, wizardDimmed,
+    setAppView, startupError, setStartupError, startupRecoveryAvailable, setStartupRecoveryAvailable,
+    showWelcome, setShowWelcome, wizardDimmed,
     setWizardDimmed, commandPanelOpen, setCommandPanelOpen, expandedPanelSection,
     setExpandedPanelSection, patreonStatus, setPatreonStatus, renameTargetId, setRenameTargetId,
     renameDraft, setRenameDraft, deleteTarget, setDeleteTarget

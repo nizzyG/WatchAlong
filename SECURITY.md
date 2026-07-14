@@ -11,9 +11,9 @@ The `session_id` cookie from Patreon is a bearer token — anyone who has it can
 ### Extraction (automatic browser)
 
 If you use the automatic browser extraction:
-1. `yt-dlp` reads your browser's cookie store and writes matching Patreon cookies to a temporary `cookies.txt` file in your OS temp directory
-2. WatchAlong reads only the `session_id` value from that file
-3. The temp file is deleted immediately
+1. `yt-dlp` reads your browser's cookie store and writes a short-lived cookie jar in a private OS temp directory; that jar can include cookies beyond Patreon
+2. WatchAlong reads only Patreon's `session_id` value from that file
+3. WatchAlong removes the temporary directory after the attempt; if a crash or file lock interrupts cleanup, the next app launch retries it before opening a window
 
 ### Login window
 
@@ -32,7 +32,7 @@ If you paste the session ID yourself, it goes directly into memory. No temp file
 1. A temporary config file containing the session cookie is written to an OS temp directory
 2. File permissions are set to `0600` (owner read/write only where supported). This reduces accidental exposure but is not a defense against malware, administrator/root access, or other processes running as your user.
 3. `patreon-dl` uses this config to authenticate with Patreon
-4. The temp directory and all files in it are deleted when the download finishes (or fails)
+4. WatchAlong clears the credential file and removes the temp directory when the run ends; if the OS keeps a file locked, startup cleanup retries it
 5. After a successful download, the session is held briefly in memory so you can choose to save it
 
 ### Saving (optional)
@@ -64,11 +64,11 @@ This invalidates all existing `session_id` tokens, including any saved in WatchA
 
 - **Content Security Policy:** `default-src 'self'` with tight media, script, and image restrictions
 - **Patreon login window:** `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`
-- **App windows:** `contextIsolation: true`, `nodeIntegration: false`
+- **App windows:** `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`
 
 ### Known limitations
 
-- The movie window has `sandbox: false` (needed for video rendering). The preload exposes a broad IPC API (`window.watchAlong`). This is an area I plan to tighten in future releases — shrinking the preload surface and validating IPC arguments more aggressively.
+- Renderer IPC is restricted by window role, trusted origin, and validated argument shapes. Local media access is capability-bound to picker selections, completed downloads, and paths already stored in the library.
 - On Linux, Electron's `safeStorage` behavior depends on the desktop environment's secret service. Some setups use weaker fallback encryption. Check Electron's [safeStorage docs](https://www.electronjs.org/docs/latest/api/safe-storage) for your distribution.
 
 ### Logging

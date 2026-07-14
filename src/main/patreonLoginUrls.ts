@@ -1,3 +1,14 @@
+const PATREON_LOGIN_HOSTS = new Set([
+  'patreon.com',
+  'www.patreon.com',
+  'facebook.com',
+  'www.facebook.com',
+  'm.facebook.com',
+  'web.facebook.com',
+  'accounts.google.com',
+  'appleid.apple.com'
+])
+
 export function isAllowedPatreonLoginUrl(rawUrl: string): boolean {
   try {
     const url = new URL(rawUrl)
@@ -5,15 +16,11 @@ export function isAllowedPatreonLoginUrl(rawUrl: string): boolean {
       return false
     }
 
-    const host = url.hostname
-    return (
-      host === 'patreon.com' ||
-      host === 'www.patreon.com' ||
-      host === 'facebook.com' ||
-      host.endsWith('.facebook.com') ||
-      host.endsWith('.google.com') ||
-      host.endsWith('.apple.com')
-    )
+    if (url.username || url.password || url.port) {
+      return false
+    }
+
+    return PATREON_LOGIN_HOSTS.has(url.hostname.toLowerCase())
   } catch {
     return false
   }

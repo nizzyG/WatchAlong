@@ -21,15 +21,25 @@ const api: WatchAlongApi = {
   openVideos: () => ipcRenderer.invoke(`${IPC_PREFIX}:open-videos`),
   selectMovieFile: () => ipcRenderer.invoke(`${IPC_PREFIX}:select-movie-file`),
   selectReactionFile: () => ipcRenderer.invoke(`${IPC_PREFIX}:select-reaction-file`),
-  createOrSwitchSessionFromPaths: (reactionPath, moviePath, reactionSource) =>
-    ipcRenderer.invoke(`${IPC_PREFIX}:create-or-switch-session-from-paths`, reactionPath, moviePath, reactionSource),
+  createOrSwitchSessionFromPaths: (reactionPath, moviePath, reactionSource, suggestedTitle) =>
+    ipcRenderer.invoke(
+      `${IPC_PREFIX}:create-or-switch-session-from-paths`,
+      reactionPath,
+      moviePath,
+      reactionSource,
+      suggestedTitle
+    ),
   getLibrary: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-library`),
+  getLibraryRecoveryStatus: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-library-recovery-status`),
+  revealLibraryRecoveryFile: () => ipcRenderer.invoke(`${IPC_PREFIX}:reveal-library-recovery-file`),
+  startFreshLibraryAfterRecovery: () => ipcRenderer.invoke(`${IPC_PREFIX}:start-fresh-library-after-recovery`),
   saveActiveSession: (patch: Partial<LibrarySession>) => ipcRenderer.invoke(`${IPC_PREFIX}:save-active-session`, patch),
   saveSessionPosition: (sessionId: string, lastReactionTimeSeconds: number) =>
     ipcRenderer.invoke(`${IPC_PREFIX}:save-session-position`, sessionId, lastReactionTimeSeconds),
-  setSessionMedia: (role, path, reactionSource) => ipcRenderer.invoke(`${IPC_PREFIX}:set-session-media`, role, path, reactionSource),
-  replaceSessionMedia: (sessionId, role, path, reactionSource) =>
-    ipcRenderer.invoke(`${IPC_PREFIX}:replace-session-media`, sessionId, role, path, reactionSource),
+  setSessionMedia: (role, path, reactionSource, suggestedTitle) =>
+    ipcRenderer.invoke(`${IPC_PREFIX}:set-session-media`, role, path, reactionSource, suggestedTitle),
+  replaceSessionMedia: (sessionId, role, path, reactionSource, suggestedTitle) =>
+    ipcRenderer.invoke(`${IPC_PREFIX}:replace-session-media`, sessionId, role, path, reactionSource, suggestedTitle),
   setActiveSession: (sessionId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:set-active-session`, sessionId),
   deleteSession: (sessionId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:delete-session`, sessionId),
   renameSession: (sessionId: string, title: string) => ipcRenderer.invoke(`${IPC_PREFIX}:rename-session`, sessionId, title),
@@ -37,6 +47,8 @@ const api: WatchAlongApi = {
   clearSubtitle: () => ipcRenderer.invoke(`${IPC_PREFIX}:clear-subtitle`),
   getSubtitleText: (sessionId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:get-subtitle-text`, sessionId),
   getMediaUrl: (role: MediaRole, sessionId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:get-media-url`, role, sessionId),
+  saveMovieWindowState: (sessionId, patch) =>
+    ipcRenderer.invoke(`${IPC_PREFIX}:save-movie-window-state`, sessionId, patch),
   openMovieWindow: (request) => ipcRenderer.invoke(`${IPC_PREFIX}:open-movie-window`, request),
   closeMovieWindow: (options) => ipcRenderer.invoke(`${IPC_PREFIX}:close-movie-window`, options),
   requestMovieWindowPopIn: () => ipcRenderer.invoke(`${IPC_PREFIX}:request-movie-window-pop-in`),
@@ -67,8 +79,8 @@ const api: WatchAlongApi = {
     return () => ipcRenderer.removeListener(`${IPC_PREFIX}:movie-window-geometry`, listener)
   },
   onMovieWindowPopInRequest: (callback: MovieWindowLifecycleCallback) => {
-    const listener = (): void => {
-      callback()
+    const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<MovieWindowLifecycleCallback>[0]): void => {
+      callback(payload)
     }
     ipcRenderer.on(`${IPC_PREFIX}:movie-window-pop-in-requested`, listener)
     return () => ipcRenderer.removeListener(`${IPC_PREFIX}:movie-window-pop-in-requested`, listener)
@@ -81,10 +93,11 @@ const api: WatchAlongApi = {
     return () => ipcRenderer.removeListener(`${IPC_PREFIX}:movie-window-closed`, listener)
   },
   checkTools: () => ipcRenderer.invoke(`${IPC_PREFIX}:check-tools`),
-  detectMovieFrameRate: (moviePath: string) => ipcRenderer.invoke(`${IPC_PREFIX}:detect-movie-frame-rate`, moviePath),
+  detectMovieFrameRate: (sessionId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:detect-movie-frame-rate`, sessionId),
   detectBrowsers: () => ipcRenderer.invoke(`${IPC_PREFIX}:detect-browsers`),
   extractPatreonSession: (browserName: BrowserName) => ipcRenderer.invoke(`${IPC_PREFIX}:extract-patreon-session`, browserName),
   openPatreonLoginWindow: () => ipcRenderer.invoke(`${IPC_PREFIX}:open-patreon-login-window`),
+  discardPatreonSessionToken: (token: string) => ipcRenderer.invoke(`${IPC_PREFIX}:discard-patreon-session-token`, token),
   getSavedPatreonSessionStatus: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-saved-patreon-session-status`),
   saveLastPatreonSession: (jobId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:save-last-patreon-session`, jobId),
   discardLastPatreonSession: (jobId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:discard-last-patreon-session`, jobId),
@@ -98,7 +111,7 @@ const api: WatchAlongApi = {
     ipcRenderer.on(`${IPC_PREFIX}:download-progress`, listener)
     return () => ipcRenderer.removeListener(`${IPC_PREFIX}:download-progress`, listener)
   },
-  startSessionAutoSync: (sessionId) => ipcRenderer.invoke(`${IPC_PREFIX}:start-session-auto-sync`, sessionId),
+  startSessionAutoSync: (sessionId, intent) => ipcRenderer.invoke(`${IPC_PREFIX}:start-session-auto-sync`, sessionId, intent),
   cancelSessionAutoSync: (sessionId) => ipcRenderer.invoke(`${IPC_PREFIX}:cancel-session-auto-sync`, sessionId),
   onAutoSyncProgress: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof callback>[0]): void => callback(payload)
@@ -120,6 +133,11 @@ const api: WatchAlongApi = {
     }
     ipcRenderer.on(`${IPC_PREFIX}:wizard-lifecycle`, listener)
     return () => ipcRenderer.removeListener(`${IPC_PREFIX}:wizard-lifecycle`, listener)
+  },
+  onWizardCloseRequest: (callback) => {
+    const listener = (): void => callback()
+    ipcRenderer.on(`${IPC_PREFIX}:wizard-close-request`, listener)
+    return () => ipcRenderer.removeListener(`${IPC_PREFIX}:wizard-close-request`, listener)
   },
   confirmMainWindowClose: () => ipcRenderer.invoke(`${IPC_PREFIX}:confirm-main-window-close`),
   onMainWindowCloseRequest: (callback: MainWindowCloseCallback) => {

@@ -1,20 +1,34 @@
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DownloadProgressEvent } from '@shared/types'
+import { cleanupStalePatreonTempDirectories } from './services/patreonDownload'
 import {
   canExtractNatively,
+  BufferedLineReader,
   detectBrowsers,
+  derivePatreonDownloadMetadata,
   DownloadManager,
   extractPatreonSession,
   findPatreonSessionCookieValue,
   getBrowserExtractionMode,
   getPlatformToolFilename,
+  humanizePatreonLine,
   humanizeCookieExtractionError,
+  isAllowedPatreonDownloadUrl,
+  isAllowedYouTubeAvatarUrl,
+  isAllowedYouTubeDownloadUrl,
+  parsePatreonLogMetadata,
   parseFfprobeFrameRate,
   parsePatreonSessionCookie,
+  parseYtDlpCompletedPath,
+  parseYtDlpMetadataLine,
+  parseYtDlpProgressLine,
+  PatreonSessionVault,
+  retrieveYouTubeCreatorAvatar,
+  selectYouTubeAvatarThumbnail,
   ToolResolver
 } from './mediaServices'
 
@@ -31,6 +45,67 @@ vi.mock('electron', () => ({
 }))
 
 describe('media services', () => {
+  describe('PatreonSessionVault', () => {
+    it('uses extracted session tokens once and clears unused tokens when forgotten', () => {
+      const root = mkdtempSync(join(tmpdir(), 'watchalong-vault-test-'))
+      try {
+        const vault = new PatreonSessionVault(join(root, 'patreon-session.bin'))
+        const firstToken = vault.createToken('session_id=one-time')
+
+        expect(vault.resolve({ type: 'token', token: firstToken })).toBe('session_id=one-time')
+        expect(vault.resolve({ type: 'token', token: firstToken })).toBeNull()
+
+        const forgottenToken = vault.createToken('session_id=forget-me')
+        const staleEpoch = vault.authEpoch
+        vault.forget()
+        expect(vault.resolve({ type: 'browser', browser: 'firefox', token: forgottenToken })).toBeNull()
+        expect(vault.createToken('session_id=finished-too-late', staleEpoch)).toBeNull()
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it('expires unused renderer-visible authentication tokens', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-07-13T00:00:00.000Z'))
+      const root = mkdtempSync(join(tmpdir(), 'watchalong-vault-expiry-test-'))
+      try {
+        const vault = new PatreonSessionVault(join(root, 'patreon-session.bin'))
+        const token = vault.createToken('session_id=short-lived')
+
+        vi.advanceTimersByTime(10 * 60 * 1000 + 1)
+
+        expect((vault as unknown as { tokens: Map<string, unknown> }).tokens.size).toBe(0)
+        expect(vault.resolve({ type: 'token', token })).toBeNull()
+      } finally {
+        vi.useRealTimers()
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  })
+
+  describe('download URL boundaries', () => {
+    it('accepts only secure first-party video and post links', () => {
+      expect(isAllowedYouTubeDownloadUrl('https://www.youtube.com/watch?v=abc')).toBe(true)
+      expect(isAllowedYouTubeDownloadUrl('https://youtu.be/abc')).toBe(true)
+      expect(isAllowedYouTubeDownloadUrl('https://youtube.com.evil.test/watch?v=abc')).toBe(false)
+      expect(isAllowedYouTubeDownloadUrl('http://www.youtube.com/watch?v=abc')).toBe(false)
+      expect(isAllowedYouTubeDownloadUrl('https://user@www.youtube.com/watch?v=abc')).toBe(false)
+
+      expect(isAllowedPatreonDownloadUrl('https://www.patreon.com/posts/example-123')).toBe(true)
+      expect(isAllowedPatreonDownloadUrl('https://creator.patreon.com/posts/example-123')).toBe(true)
+      expect(isAllowedPatreonDownloadUrl('https://www.patreon.com/home')).toBe(false)
+      expect(isAllowedPatreonDownloadUrl('https://patreon.com.evil.test/posts/example-123')).toBe(false)
+    })
+
+    it('allows creator images only from secure YouTube image hosts', () => {
+      expect(isAllowedYouTubeAvatarUrl('https://yt3.googleusercontent.com/avatar.jpg')).toBe(true)
+      expect(isAllowedYouTubeAvatarUrl('https://yt3.ggpht.com/avatar.jpg')).toBe(true)
+      expect(isAllowedYouTubeAvatarUrl('https://example.com/avatar.jpg')).toBe(false)
+      expect(isAllowedYouTubeAvatarUrl('http://yt3.googleusercontent.com/avatar.jpg')).toBe(false)
+    })
+  })
+
   describe('getPlatformToolFilename', () => {
     it('uses Windows bundled executable names', () => {
       expect(getPlatformToolFilename('yt-dlp', 'win32')).toBe('yt-dlp.exe')
@@ -159,6 +234,57 @@ describe('media services', () => {
       expect(result.message).toContain('Safari')
       expect(result.message).toContain('manual')
     })
+
+    it('does not mint a token when Forget is pressed during browser extraction', async () => {
+      const root = mkdtempSync(join(tmpdir(), 'watchalong-extraction-epoch-test-'))
+      try {
+        const vault = new PatreonSessionVault(join(root, 'patreon-session.bin'))
+        const result = await extractPatreonSession(
+          'firefox',
+          { getYtDlpPath: () => 'yt-dlp' } as ToolResolver,
+          vault,
+          'win32',
+          async (_command, args) => {
+            const cookiePath = valueAfter(args, '--cookies')
+            writeFileSync(
+              cookiePath,
+              '.patreon.com\tTRUE\t/\tTRUE\t1234567890\tsession_id\tlate-session\n'
+            )
+            vault.forget()
+            return { ok: true, output: '' }
+          }
+        )
+
+        expect(result).toEqual({
+          ok: false,
+          message: 'Patreon sign-in was cancelled before browser access finished.'
+        })
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  })
+
+  describe('Patreon temporary files', () => {
+    it('removes old crash leftovers without touching unrelated temp folders', () => {
+      const root = mkdtempSync(join(tmpdir(), 'watchalong-stale-temp-test-'))
+      try {
+        const configLeftover = join(root, 'watchalong-patreon-dl-old')
+        const extractionLeftover = join(root, 'watchalong-patreon-cookies-old')
+        const unrelated = join(root, 'another-app-temp')
+        mkdirSync(configLeftover)
+        mkdirSync(extractionLeftover)
+        mkdirSync(unrelated)
+
+        cleanupStalePatreonTempDirectories(root, Date.now() + 1_000, 0)
+
+        expect(existsSync(configLeftover)).toBe(false)
+        expect(existsSync(extractionLeftover)).toBe(false)
+        expect(existsSync(unrelated)).toBe(true)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
   })
 
   describe('humanizeCookieExtractionError', () => {
@@ -238,6 +364,143 @@ describe('media services', () => {
       fs.writeFileSync(mockCookieFile, '# Netscape HTTP Cookie File\n# https://curl.haxx.se/rfc/cookie_spec.html\n.patreon.com\tTRUE\t/\tFALSE\t1234567890\tsession_id\tnormal-session-123\n')
       expect(parsePatreonSessionCookie(mockCookieFile)).toBe('session_id=normal-session-123')
     })
+
+    it('rejects lookalike Patreon cookie domains', () => {
+      const mockCookieFile = path.join(tempDir, 'cookies4.txt')
+      fs.writeFileSync(mockCookieFile, '.patreon.com.attacker.example\tTRUE\t/\tFALSE\t1234567890\tsession_id\tstolen-session\n')
+      expect(parsePatreonSessionCookie(mockCookieFile)).toBeNull()
+    })
+  })
+
+  describe('download output parsing', () => {
+    it('buffers partial stdout and stderr chunks without inventing lines', () => {
+      const reader = new BufferedLineReader()
+
+      expect(reader.push('WA_PROGRESS\t 4')).toEqual([])
+      expect(reader.push('2.5%\t3.2MiB/s\r')).toEqual(['WA_PROGRESS\t 42.5%\t3.2MiB/s'])
+      expect(reader.push('\nWA_FILE\t"C:\\\\reaction')).toEqual([])
+      expect(reader.push('.mp4"')).toEqual([])
+      expect(reader.flush()).toEqual(['WA_FILE\t"C:\\\\reaction.mp4"'])
+      expect(reader.flush()).toEqual([])
+    })
+
+    it('parses only tagged yt-dlp progress with real speed, ETA, and fragment context', () => {
+      expect(parseYtDlpProgressLine('[download] 99.8% of 1GiB')).toBeNull()
+      expect(parseYtDlpProgressLine('WA_PROGRESS\t 42.5%\t3.2MiB/s\t00:18\t3\t12')).toEqual({
+        percent: 42.5,
+        speed: '3.2MiB/s',
+        eta: '00:18',
+        fragmentIndex: 3,
+        fragmentCount: 12
+      })
+      expect(parseYtDlpProgressLine('WA_PROGRESS\tNA\tNA\tUnknown\tNA\tNA')).toEqual({ percent: null })
+    })
+
+    it('parses JSON-escaped yt-dlp metadata and completed paths', () => {
+      expect(
+        parseYtDlpMetadataLine(
+          'WA_METADATA\t"X-Men\\tReaction"\t"Cinema Crew"\t"Uploader fallback"\t"https://youtube.com/@cinema"\tnull'
+        )
+      ).toEqual({
+        reactionTitle: 'X-Men Reaction',
+        reactorName: 'Cinema Crew',
+        channelUrl: 'https://youtube.com/@cinema'
+      })
+      expect(parseYtDlpCompletedPath('WA_FILE\t"C:\\\\Videos\\\\reaction.mp4"')).toBe('C:\\Videos\\reaction.mp4')
+    })
+
+    it('keeps Patreon phases honest and extracts only descriptive metadata', () => {
+      const line = 'Download progress (#1.2): 90 / 100 MBs / 90% (400 kB/s)'
+      expect(humanizePatreonLine(line)).toBe('Downloading reaction media...')
+      expect(parsePatreonLogMetadata('Download post #123 (X-Men: The Reaction)')).toEqual({
+        reactionTitle: 'X-Men: The Reaction'
+      })
+    })
+
+    it('derives Patreon title, creator, and existing avatar from its downloaded layout', () => {
+      const root = mkdtempSync(join(tmpdir(), 'watchalong-patreon-metadata-'))
+      try {
+        const campaignRoot = join(root, 'camillas-corner - Camilla Corner')
+        const infoDir = join(campaignRoot, 'campaign_info')
+        const videoDir = join(campaignRoot, 'posts', '123 - X-Men Reaction', 'video')
+        mkdirSync(infoDir, { recursive: true })
+        mkdirSync(videoDir, { recursive: true })
+        writeFileSync(
+          join(infoDir, 'creator-api.json'),
+          JSON.stringify({ data: { attributes: { full_name: 'Camilla' } } })
+        )
+        writeFileSync(join(infoDir, 'avatar.jpg'), 'avatar')
+        const filePath = join(videoDir, 'reaction.mp4')
+        writeFileSync(filePath, 'video')
+
+        expect(derivePatreonDownloadMetadata(filePath)).toEqual({
+          reactionTitle: 'X-Men Reaction',
+          reactorName: 'Camilla',
+          avatarPath: join(infoDir, 'avatar.jpg')
+        })
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it('chooses a square YouTube channel avatar over banner artwork', () => {
+      expect(
+        selectYouTubeAvatarThumbnail([
+          { id: 'banner', url: 'https://example.com/banner.jpg', width: 2560, height: 424 },
+          { id: 'avatar_uncropped', url: 'https://example.com/avatar.jpg', width: 900, height: 900 },
+          { id: 'square', url: 'https://example.com/square.jpg', width: 1200, height: 1200 }
+        ])
+      ).toMatchObject({ id: 'avatar_uncropped', url: 'https://example.com/avatar.jpg' })
+    })
+
+    it('saves a best-effort YouTube creator avatar beside the reaction', async () => {
+      const root = mkdtempSync(join(tmpdir(), 'watchalong-youtube-avatar-'))
+      try {
+        const child = createFakeChildProcess()
+        const spawnProcess = vi.fn(() => child as never)
+        const fetchAvatar = vi.fn(async () => ({
+          ok: true,
+          headers: { get: (name: string) => (name === 'content-type' ? 'image/jpeg' : null) },
+          arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer as ArrayBuffer
+        }))
+        const reactionPath = join(root, 'reaction.mp4')
+        const avatarPromise = retrieveYouTubeCreatorAvatar(
+          'https://youtube.com/@cinema',
+          reactionPath,
+          'yt-dlp',
+          spawnProcess as never,
+          fetchAvatar
+        )
+
+        child.stdout.emit(
+          'data',
+          Buffer.from(
+            JSON.stringify({
+              thumbnails: [
+                { id: 'banner', url: 'https://example.com/banner.jpg', width: 2000, height: 400 },
+                { id: 'avatar_uncropped', url: 'https://yt3.googleusercontent.com/avatar.jpg', width: 800, height: 800 }
+              ]
+            })
+          )
+        )
+        child.emit('close', 0)
+
+        const avatarPath = await avatarPromise
+        expect(spawnProcess).toHaveBeenCalledWith(
+          'yt-dlp',
+          expect.arrayContaining(['--dump-single-json', 'https://youtube.com/@cinema']),
+          { windowsHide: true }
+        )
+        expect(fetchAvatar).toHaveBeenCalledWith(
+          'https://yt3.googleusercontent.com/avatar.jpg',
+          expect.objectContaining({ signal: expect.anything(), redirect: 'error' })
+        )
+        expect(avatarPath).toBe(join(root, 'reactor-avatar.jpg'))
+        expect(readFileSync(avatarPath!, 'hex')).toBe('010203')
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
   })
 
   describe('DownloadManager cancellation', () => {
@@ -267,7 +530,7 @@ describe('media services', () => {
         () => child as never
       )
 
-      const { jobId } = manager.start({ source: 'youtube', url: 'https://example.com/video' })
+      const { jobId } = manager.start({ source: 'youtube', url: 'https://www.youtube.com/watch?v=cancel' })
       await vi.advanceTimersByTimeAsync(25)
       manager.cancel(jobId)
       child.emit('close', 1)
@@ -278,6 +541,135 @@ describe('media services', () => {
       expect(states.filter((state) => state === 'cancelled')).toHaveLength(1)
       expect(states).not.toContain('failed')
       expect(states).not.toContain('success')
+    })
+
+    it('ends honestly when the configured download directory cannot be prepared', async () => {
+      const blockedDownloadRoot = join(tempDir, 'not-a-directory')
+      writeFileSync(blockedDownloadRoot, 'file')
+      const events: DownloadProgressEvent[] = []
+      const manager = new DownloadManager(
+        {
+          getYtDlpPath: () => 'yt-dlp',
+          getFfmpegPath: () => null
+        } as ToolResolver,
+        {} as never,
+        (event) => events.push(event),
+        () => blockedDownloadRoot
+      )
+
+      manager.start({ source: 'youtube', url: 'https://www.youtube.com/watch?v=blocked' })
+      await vi.advanceTimersByTimeAsync(25)
+
+      expect(events.at(-1)).toMatchObject({
+        source: 'youtube',
+        state: 'failed',
+        message: 'WatchAlong could not prepare the download. Check the download location and try again.'
+      })
+    })
+
+    it('emits structured YouTube telemetry and metadata when process lines arrive in partial chunks', async () => {
+      const child = createFakeChildProcess()
+      const events: DownloadProgressEvent[] = []
+      const spawnProcess = vi.fn((_command: string, _args: string[], _options: { windowsHide: boolean }) => child as never)
+      const manager = new DownloadManager(
+        {
+          getYtDlpPath: () => 'yt-dlp',
+          getFfmpegPath: () => null
+        } as ToolResolver,
+        {} as never,
+        (event) => events.push(event),
+        () => tempDir,
+        spawnProcess as never
+      )
+
+      manager.start({ source: 'youtube', url: 'https://www.youtube.com/watch?v=telemetry' })
+      await vi.advanceTimersByTimeAsync(25)
+
+      const args = spawnProcess.mock.calls[0][1]
+      expect(valueAfter(args, '--progress-template')).toContain('WA_PROGRESS')
+      expect(args.filter((value: string) => value === '--print')).toHaveLength(2)
+      const outDir = valueAfter(args, '-P')
+      const filePath = join(outDir, 'X-Men Reaction.mp4')
+      writeFileSync(filePath, 'video')
+
+      child.stdout.emit(
+        'data',
+        Buffer.from('WA_METADATA\t"X-Men Reaction"\t"Cinema Crew"\tnull\tnull\tnull\nWA_PROGRESS\t 4')
+      )
+      child.stdout.emit(
+        'data',
+        Buffer.from(`2.5%\t3.2MiB/s\t00:18\t3\t12\nWA_FILE\t${JSON.stringify(filePath)}`)
+      )
+      child.emit('close', 0)
+      await flushPromises()
+
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          source: 'youtube',
+          state: 'downloading',
+          percent: 42.5,
+          speed: '3.2MiB/s',
+          eta: '00:18',
+          fragmentIndex: 3,
+          fragmentCount: 12
+        })
+      )
+      expect(events.at(-1)).toMatchObject({
+        source: 'youtube',
+        state: 'success',
+        percent: 100,
+        filePath,
+        metadata: { reactionTitle: 'X-Men Reaction', reactorName: 'Cinema Crew' }
+      })
+    })
+
+    it('keeps every Patreon event indeterminate while preserving title, creator, and avatar metadata', async () => {
+      const child = createFakeChildProcess()
+      const events: DownloadProgressEvent[] = []
+      const cookie = 'session_id=phase-cookie'
+      const { manager, spawnProcess } = createPatreonDownloadManager(child, tempDir, cookie, events)
+
+      manager.start({
+        source: 'patreon',
+        url: 'https://www.patreon.com/posts/example-123',
+        sessionSource: { type: 'manual', sessionId: cookie }
+      })
+      await vi.advanceTimersByTimeAsync(25)
+
+      const outDir = valueAfter(spawnProcess.mock.calls[0][1], '--out-dir')
+      const campaignRoot = join(outDir, 'camillas-corner - Camilla Corner')
+      const infoDir = join(campaignRoot, 'campaign_info')
+      const videoDir = join(campaignRoot, 'posts', '123 - Filename fallback', 'video')
+      mkdirSync(infoDir, { recursive: true })
+      mkdirSync(videoDir, { recursive: true })
+      writeFileSync(join(infoDir, 'creator-api.json'), JSON.stringify({ data: { attributes: { full_name: 'Camilla' } } }))
+      writeFileSync(join(infoDir, 'avatar.jpg'), 'avatar')
+      const filePath = join(videoDir, 'reaction.mp4')
+      writeFileSync(filePath, 'video')
+
+      child.stderr.emit('data', Buffer.from('Download post #123 (X-Men Reaction)\nDownload progress (#1.2): 90 / '))
+      child.stderr.emit('data', Buffer.from('100 MBs / 90% (400 kB/s)\n'))
+      child.emit('close', 0)
+      await flushPromises()
+
+      expect(events.filter((event) => event.source === 'patreon').every((event) => event.percent === null)).toBe(true)
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          state: 'downloading',
+          message: 'Downloading reaction media...',
+          percent: null
+        })
+      )
+      expect(events.at(-1)).toMatchObject({
+        state: 'success',
+        percent: null,
+        filePath,
+        metadata: {
+          reactionTitle: 'X-Men Reaction',
+          reactorName: 'Camilla',
+          avatarPath: join(infoDir, 'avatar.jpg')
+        }
+      })
     })
 
     it('passes Patreon cookies through a temporary config file and clears them after save', async () => {
@@ -323,6 +715,77 @@ describe('media services', () => {
       expect(vault.save).not.toHaveBeenCalled()
     })
 
+    it('forgets both saved and not-yet-accepted Patreon sessions', async () => {
+      const child = createFakeChildProcess()
+      const cookie = 'session_id=forget-everywhere'
+      const { manager, vault, spawnProcess } = createPatreonDownloadManager(child, tempDir, cookie)
+
+      const { jobId } = manager.start({
+        source: 'patreon',
+        url: 'https://www.patreon.com/posts/example-123',
+        sessionSource: { type: 'manual', sessionId: cookie }
+      })
+      await vi.advanceTimersByTimeAsync(25)
+      const outDir = valueAfter(spawnProcess.mock.calls[0][1], '--out-dir')
+      writeFileSync(join(outDir, 'reaction.mp4'), 'video')
+      child.emit('close', 0)
+      await flushPromises()
+
+      expect(manager.forgetPatreonSession()).toEqual({ available: false, canEncrypt: true })
+      expect(vault.forget).toHaveBeenCalled()
+      manager.saveLastPatreonSession(jobId)
+      expect(vault.save).not.toHaveBeenCalled()
+    })
+
+    it('does not make a running Patreon session saveable after Forget is pressed', async () => {
+      const child = createFakeChildProcess()
+      const cookie = 'session_id=forget-while-running'
+      const { manager, vault, spawnProcess } = createPatreonDownloadManager(child, tempDir, cookie)
+
+      const { jobId } = manager.start({
+        source: 'patreon',
+        url: 'https://www.patreon.com/posts/example-123',
+        sessionSource: { type: 'manual', sessionId: cookie }
+      })
+      await vi.advanceTimersByTimeAsync(25)
+      const outDir = valueAfter(spawnProcess.mock.calls[0][1], '--out-dir')
+
+      manager.forgetPatreonSession()
+      writeFileSync(join(outDir, 'reaction.mp4'), 'video')
+      child.emit('close', 0)
+      await flushPromises()
+
+      manager.saveLastPatreonSession(jobId)
+      expect(vault.save).not.toHaveBeenCalled()
+    })
+
+    it('invalidates a Patreon download that was still pending when Forget was pressed', async () => {
+      const child = createFakeChildProcess()
+      const cookie = 'session_id=forget-before-start'
+      const events: DownloadProgressEvent[] = []
+      const { manager, spawnProcess } = createPatreonDownloadManager(
+        child,
+        tempDir,
+        cookie,
+        events
+      )
+
+      manager.start({
+        source: 'patreon',
+        url: 'https://www.patreon.com/posts/example-123',
+        sessionSource: { type: 'manual', sessionId: cookie }
+      })
+      manager.forgetPatreonSession()
+      await vi.advanceTimersByTimeAsync(25)
+
+      expect(spawnProcess).not.toHaveBeenCalled()
+      expect(events.at(-1)).toMatchObject({
+        source: 'patreon',
+        state: 'failed',
+        message: 'A Patreon session is required.'
+      })
+    })
+
     it('deletes the Patreon temp config and retained cookie when cancelled or discarded', async () => {
       const child = createFakeChildProcess()
       const cookie = 'session_id=discard-cookie'
@@ -342,14 +805,82 @@ describe('media services', () => {
       manager.saveLastPatreonSession(jobId)
       expect(vault.save).not.toHaveBeenCalled()
     })
+
+    it('kills running children and synchronously removes Patreon credentials on dispose', async () => {
+      const child = createFakeChildProcess()
+      const cookie = 'session_id=shutdown-cookie'
+      const events: DownloadProgressEvent[] = []
+      const { manager, spawnProcess } = createPatreonDownloadManager(
+        child,
+        tempDir,
+        cookie,
+        events
+      )
+
+      manager.start({
+        source: 'patreon',
+        url: 'https://www.patreon.com/posts/example-123',
+        sessionSource: { type: 'manual', sessionId: cookie }
+      })
+      await vi.advanceTimersByTimeAsync(25)
+      const configPath = valueAfter(spawnProcess.mock.calls[0][1], '--config-file')
+      expect(existsSync(configPath)).toBe(true)
+
+      manager.dispose()
+
+      expect(child.kill).toHaveBeenCalledOnce()
+      expect(existsSync(configPath)).toBe(false)
+      child.emit('close', 1)
+      await flushPromises()
+      expect(events.map((event) => event.state)).not.toContain('success')
+      expect(events.map((event) => event.state)).not.toContain('failed')
+    })
+
+    it('prevents pending downloads from spawning after dispose', async () => {
+      const spawnProcess = vi.fn()
+      const manager = new DownloadManager(
+        {
+          getYtDlpPath: () => 'yt-dlp',
+          getFfmpegPath: () => null
+        } as ToolResolver,
+        {} as never,
+        vi.fn(),
+        () => tempDir,
+        spawnProcess as never
+      )
+
+      manager.start({
+        source: 'youtube',
+        url: 'https://www.youtube.com/watch?v=shutdown-pending'
+      })
+      manager.dispose()
+      await vi.advanceTimersByTimeAsync(25)
+
+      expect(spawnProcess).not.toHaveBeenCalled()
+    })
   })
 })
 
-function createPatreonDownloadManager(child: ReturnType<typeof createFakeChildProcess>, tempDir: string, cookie: string) {
+function createPatreonDownloadManager(
+  child: ReturnType<typeof createFakeChildProcess>,
+  tempDir: string,
+  cookie: string,
+  events?: DownloadProgressEvent[]
+) {
+  let authEpoch = 0
   const vault = {
-    resolve: vi.fn(() => cookie),
+    get authEpoch() {
+      return authEpoch
+    },
+    resolve: vi.fn((_source: unknown, expectedEpoch = authEpoch) =>
+      expectedEpoch === authEpoch ? cookie : null
+    ),
     save: vi.fn(() => ({ available: true, canEncrypt: true })),
-    status: vi.fn(() => ({ available: false, canEncrypt: true }))
+    status: vi.fn(() => ({ available: false, canEncrypt: true })),
+    forget: vi.fn(() => {
+      authEpoch += 1
+      return { available: false, canEncrypt: true }
+    })
   }
   const spawnProcess = vi.fn((_command: string, _args: string[]) => child as never)
   const manager = new DownloadManager(
@@ -360,7 +891,7 @@ function createPatreonDownloadManager(child: ReturnType<typeof createFakeChildPr
       getFfmpegPath: () => null
     } as ToolResolver,
     vault as never,
-    () => undefined,
+    (event) => events?.push(event),
     () => tempDir,
     spawnProcess as never
   )
