@@ -27,7 +27,7 @@ describe('LibraryHome', () => {
     expect(reactors).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('heading', { name: 'VKunia' })).toBeInTheDocument()
     expect(screen.getByText('2 pairings')).toBeInTheDocument()
-    expect(container.querySelectorAll('.movie-poster-card')).toHaveLength(2)
+    expect(container.querySelectorAll('.reactor-library .movie-poster-card')).toHaveLength(2)
     expect(screen.getByRole('button', { name: 'More actions for Alien with VKunia' })).toBeInTheDocument()
     expect(screen.getByRole('progressbar', { name: 'Alien with VKunia: 25% watched' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Open Alien with VKunia' }))
@@ -123,18 +123,53 @@ describe('LibraryHome', () => {
     expect(container.querySelectorAll('.reactor-avatar img')).toHaveLength(1)
   })
 
+  it.each([
+    ['pairings', 'Pairings'],
+    ['reactors', 'By Reactor'],
+    ['movies', 'By Movie']
+  ] as const)('keeps the complete card menu and reactor edit action consistent in %s mode', (mode, modeLabel) => {
+    window.localStorage.setItem('watchalong-library-mode', mode)
+    const alien = session('alien', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia')
+    alien.moviePosterPath = 'C:\\Art\\alien.jpg'
+    const library: SessionLibrary = { version: 5, activeSessionId: alien.id, sessions: [alien] }
+    const onRename = vi.fn()
+    const onEditReactor = vi.fn()
+    const onDelete = vi.fn()
+    renderLibrary(vi.fn(), { library, onRename, onEditReactor, onDelete })
+
+    expect(screen.getByRole('button', { name: modeLabel })).toHaveAttribute('aria-pressed', 'true')
+    const trigger = screen.getByRole('button', { name: /More actions for .*Alien|More actions for VKunia for Alien/ })
+    fireEvent.click(trigger)
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      'Rename pairing',
+      'Edit reactor',
+      'Choose poster…',
+      'Use automatic poster',
+      'Delete pairing'
+    ])
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit reactor' }))
+    expect(onEditReactor).toHaveBeenCalledWith('alien', trigger)
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename pairing' }))
+    expect(onRename).toHaveBeenCalledWith('alien', trigger)
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete pairing' }))
+    expect(onDelete).toHaveBeenCalledWith('alien', trigger)
+  })
+
   it('dismisses a card action menu with Escape and restores focus to its trigger', async () => {
     renderLibrary(vi.fn())
     const trigger = screen.getByRole('button', { name: 'More actions for Alien — VKunia' })
     fireEvent.click(trigger)
 
     expect(screen.getByRole('menu', { name: 'Actions for Alien — VKunia' })).toBeInTheDocument()
-    const firstAction = screen.getByRole('menuitem', { name: 'Choose poster…' })
+    const firstAction = screen.getByRole('menuitem', { name: 'Rename pairing' })
     expect(firstAction).toHaveFocus()
     fireEvent.keyDown(firstAction, { key: 'ArrowDown' })
-    const renameAction = screen.getByRole('menuitem', { name: 'Rename' })
-    expect(renameAction).toHaveFocus()
-    fireEvent.keyDown(renameAction, { key: 'Escape' })
+    const reactorAction = screen.getByRole('menuitem', { name: 'Edit reactor' })
+    expect(reactorAction).toHaveFocus()
+    fireEvent.keyDown(reactorAction, { key: 'Escape' })
 
     expect(screen.queryByRole('menu', { name: 'Actions for Alien — VKunia' })).not.toBeInTheDocument()
     await waitFor(() => expect(trigger).toHaveFocus())
@@ -159,6 +194,95 @@ describe('LibraryHome', () => {
 
     renderLibrary(vi.fn())
     expect(screen.getByRole('button', { name: 'By Movie' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('sorts each view independently, defaults to newest date added, and remembers the choices', () => {
+    const alpha = session('alpha', 'Alpha — First Reactor', 'Alpha.mkv', 'first - First Reactor')
+    const bravo = session('bravo', 'Bravo — Second Reactor', 'Bravo.mkv', 'second - Second Reactor')
+    const zulu = session('zulu', 'Zulu — Third Reactor', 'Zulu.mkv', 'third - Third Reactor')
+    alpha.createdAt = '2026-07-12T12:00:00.000Z'
+    bravo.createdAt = '2026-07-13T12:00:00.000Z'
+    zulu.createdAt = '2026-07-14T12:00:00.000Z'
+    const library: SessionLibrary = { version: 5, activeSessionId: zulu.id, sessions: [alpha, zulu, bravo] }
+
+    const first = renderLibrary(vi.fn(), { library })
+    const pairingTitles = (): string[] => [...first.container.querySelectorAll('.pairing-library-grid .library-card-copy strong')]
+      .map((element) => element.textContent ?? '')
+
+    expect(screen.getByRole('button', { name: 'Date Added' })).toHaveAttribute('aria-pressed', 'true')
+    expect(pairingTitles()).toEqual(['Zulu — Third Reactor', 'Bravo — Second Reactor', 'Alpha — First Reactor'])
+    fireEvent.click(screen.getByRole('button', { name: 'Alphabetical' }))
+    expect(pairingTitles()).toEqual(['Alpha — First Reactor', 'Bravo — Second Reactor', 'Zulu — Third Reactor'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'By Movie' }))
+    expect(screen.getByRole('button', { name: 'Date Added' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Pairings' }))
+    expect(screen.getByRole('button', { name: 'Alphabetical' })).toHaveAttribute('aria-pressed', 'true')
+    first.unmount()
+
+    renderLibrary(vi.fn(), { library })
+    expect(screen.getByRole('button', { name: 'Pairings' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Alphabetical' })).toHaveAttribute('aria-pressed', 'true')
+    expect(JSON.parse(window.localStorage.getItem('watchalong-library-sorts') ?? '{}')).toEqual({
+      pairings: 'alphabetical',
+      reactors: 'date-added',
+      movies: 'date-added'
+    })
+  })
+
+  it('surfaces unfinished playback in Continue Watching and resumes it with one click', () => {
+    const resumable = session('alien', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia')
+    resumable.lastReactionTimeSeconds = 45
+    resumable.reactionDurationSeconds = 120
+    resumable.updatedAt = '2026-07-14T15:00:00.000Z'
+    const completed = session('done', 'Anchorman — VKnights', 'Anchorman.mkv', 'vknights - VKnights')
+    completed.lastReactionTimeSeconds = 119
+    completed.reactionDurationSeconds = 120
+    const untouched = session('new', 'Aliens — VKunia', 'Aliens.mkv', 'vkunia - VKunia')
+    untouched.lastReactionTimeSeconds = 0
+    const library: SessionLibrary = {
+      version: 5,
+      activeSessionId: resumable.id,
+      sessions: [untouched, completed, resumable]
+    }
+    const onOpenSession = vi.fn()
+
+    renderLibrary(onOpenSession, { library })
+
+    expect(screen.getByRole('heading', { name: 'Continue Watching' })).toBeInTheDocument()
+    expect(screen.getByText('0:45 of 2:00')).toBeInTheDocument()
+    expect(screen.getByRole('progressbar', { name: 'Alien: 38% watched' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Continue Anchorman/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Continue Aliens/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue Alien with VKunia' }))
+    expect(onOpenSession).toHaveBeenCalledWith('alien')
+  })
+
+  it('provides a welcoming empty state for every organization view', () => {
+    const onNew = vi.fn()
+    const library: SessionLibrary = { version: 5, activeSessionId: null, sessions: [] }
+    renderLibrary(vi.fn(), { library, onNew })
+
+    expect(screen.getByRole('heading', { name: 'No WatchAlong pairings yet' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Date Added' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'By Reactor' }))
+    expect(screen.getByRole('heading', { name: 'No reactors to browse yet' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'By Movie' }))
+    expect(screen.getByRole('heading', { name: 'No movies to browse yet' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Create a WatchAlong' }))
+    expect(onNew).toHaveBeenCalledOnce()
+  })
+
+  it('uses a balanced shelf treatment for a single reactor pairing', () => {
+    window.localStorage.setItem('watchalong-library-mode', 'reactors')
+    const onlySession = session('alien', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia')
+    const library: SessionLibrary = { version: 5, activeSessionId: onlySession.id, sessions: [onlySession] }
+
+    const { container } = renderLibrary(vi.fn(), { library })
+
+    expect(container.querySelector('.reactor-library')).toHaveClass('reactor-library-single')
+    expect(container.querySelector('.reactor-shelf-movies')).toHaveClass('reactor-shelf-movies-single')
+    expect(screen.getByRole('button', { name: 'Open Alien with VKunia' })).toBeInTheDocument()
   })
 
   it.each([
@@ -202,8 +326,12 @@ function renderLibrary(
     library?: SessionLibrary
     view?: LibraryViewPreference
     onViewChange?: (view: LibraryViewPreference) => void
+    onNew?: () => void
     onChoosePoster?: (sessionId: string) => Promise<MoviePosterActionResult>
     onClearPoster?: (sessionId: string) => Promise<MoviePosterActionResult>
+    onRename?: (sessionId: string) => void
+    onEditReactor?: (sessionId: string) => void
+    onDelete?: (sessionId: string) => void
   } = {}
 ) {
   const library: SessionLibrary = options.library ?? {
@@ -220,12 +348,14 @@ function renderLibrary(
       library={library}
       view={options.view ?? 'grid'}
       onViewChange={options.onViewChange ?? vi.fn()}
-      onNew={vi.fn()}
+      onOpenCommandPanel={vi.fn()}
+      onNew={options.onNew ?? vi.fn()}
       onOpenSession={onOpenSession}
       onChoosePoster={options.onChoosePoster ?? vi.fn(async () => ({ status: 'cancelled' as const }))}
       onClearPoster={options.onClearPoster ?? vi.fn(async () => ({ status: 'cancelled' as const }))}
-      onRename={vi.fn()}
-      onDelete={vi.fn()}
+      onRename={options.onRename ?? vi.fn()}
+      onEditReactor={options.onEditReactor ?? vi.fn()}
+      onDelete={options.onDelete ?? vi.fn()}
     />
   )
 }

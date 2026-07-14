@@ -5,7 +5,9 @@ import {
   Eye,
   Loader2,
   Maximize,
+  Minimize,
   Pause,
+  PictureInPicture2,
   Play,
   RefreshCw,
   RotateCcw,
@@ -14,6 +16,7 @@ import {
   SlidersHorizontal,
   X
 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import type {
   AppPreferences,
   DownloadProgressEvent,
@@ -29,7 +32,8 @@ import { CommandPanel } from './CommandPanel'
 import { LibraryHome } from './LibraryHome'
 import { DownloadIndicator, SetupScrubber, StreamVolume } from './PlayerControls'
 import { PipOverlay } from './PipOverlay'
-import { DeleteSessionDialog, RenameSessionDialog } from './SessionDialogs'
+import { DeleteSessionDialog, existingReactorNames, RenameSessionDialog } from './SessionDialogs'
+import type { RenameSessionFocus } from './SessionDialogs'
 import { PatreonStorageOffer, SmartReactionInput } from './SmartReactionInput'
 import type { DownloadedReactionMetadata } from './SmartReactionInput'
 import { MissingMediaRecovery, StartupErrorState, WelcomeOverlay } from './StartupViews'
@@ -53,8 +57,8 @@ export interface WatchAlongViewActions {
   switchSession: (sessionId: string) => Promise<void>
   chooseMoviePoster: (sessionId: string) => Promise<MoviePosterActionResult>
   clearMoviePoster: (sessionId: string) => Promise<MoviePosterActionResult>
-  requestRenameSession: (sessionId: string) => void
-  requestDeleteSession: (sessionId: string, returnToLibrary?: boolean) => void
+  requestRenameSession: (sessionId: string, initialFocus?: RenameSessionFocus, returnFocusTarget?: HTMLElement | null) => void
+  requestDeleteSession: (sessionId: string, returnToLibrary?: boolean, returnFocusTarget?: HTMLElement | null) => void
   openLocalReaction: () => Promise<void>
   handleDownloadedReaction: (filePath: string, metadata: DownloadedReactionMetadata) => Promise<void>
   navigateToLibrary: () => Promise<void>
@@ -64,6 +68,7 @@ export interface WatchAlongViewActions {
   persist: (patch: Partial<LibrarySession>) => Promise<LibrarySession | null>
   popOutMovie: (geometryMode?: 'overlay' | 'screen') => Promise<void>
   popInMovie: () => Promise<void>
+  togglePipVisibility: () => void
   handleMetadata: (role: MediaRole) => void
   handleTimeUpdate: (role: MediaRole) => void
   handleVideoError: (role: MediaRole, video: HTMLVideoElement) => void
@@ -184,6 +189,7 @@ export function WatchAlongView({
     setExpandedPanelSection,
     patreonStatus,
     renameTargetId,
+    renameInitialFocus,
     renameDraft,
     setRenameDraft,
     renameReactorDraft,
@@ -196,6 +202,46 @@ export function WatchAlongView({
     downloadIndicator,
     downloadEvents
   } = downloads
+  const [fullscreenActive, setFullscreenActive] = useState(Boolean(document.fullscreenElement))
+  const [playbackSettingsOpen, setPlaybackSettingsOpen] = useState(false)
+  const playbackSettingsRef = useRef<HTMLDetailsElement>(null)
+  const pipControlLabel = movieWindowActive
+    ? 'Return movie to player'
+    : session.isPipHidden ? 'Show movie' : 'Hide movie'
+
+  const closePlaybackSettings = (restoreFocus = false): void => {
+    setPlaybackSettingsOpen(false)
+    if (restoreFocus) {
+      window.requestAnimationFrame(() => {
+        playbackSettingsRef.current?.querySelector<HTMLElement>('summary')?.focus()
+      })
+    }
+  }
+
+  useEffect(() => {
+    const updateFullscreenState = (): void => setFullscreenActive(Boolean(document.fullscreenElement))
+    document.addEventListener('fullscreenchange', updateFullscreenState)
+    return () => document.removeEventListener('fullscreenchange', updateFullscreenState)
+  }, [])
+
+  useEffect(() => {
+    if (!playbackSettingsOpen) return
+
+    const closeOnOutsidePointer = (event: PointerEvent): void => {
+      if (event.target instanceof Node && !playbackSettingsRef.current?.contains(event.target)) {
+        closePlaybackSettings()
+      }
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsidePointer)
+    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer)
+  }, [playbackSettingsOpen])
+
+  useEffect(() => {
+    if (playbackSettingsOpen && (appView !== 'player' || commandPanelOpen)) {
+      setPlaybackSettingsOpen(false)
+    }
+  }, [appView, commandPanelOpen, playbackSettingsOpen])
 
   return (
     <main
@@ -236,12 +282,14 @@ export function WatchAlongView({
           library={library}
           view={preferences.libraryView}
           onViewChange={(view) => void actions.updatePreference('libraryView', view)}
+          onOpenCommandPanel={() => actions.toggleCommandPanel()}
           onNew={() => void actions.openImportWizard({ mode: 'new' })}
           onOpenSession={(sessionId) => void actions.switchSession(sessionId)}
           onChoosePoster={actions.chooseMoviePoster}
           onClearPoster={actions.clearMoviePoster}
-          onRename={actions.requestRenameSession}
-          onDelete={(sessionId) => actions.requestDeleteSession(sessionId)}
+          onRename={(sessionId, returnFocusTarget) => actions.requestRenameSession(sessionId, 'title', returnFocusTarget)}
+          onEditReactor={(sessionId, returnFocusTarget) => actions.requestRenameSession(sessionId, 'reactor', returnFocusTarget)}
+          onDelete={(sessionId, returnFocusTarget) => actions.requestDeleteSession(sessionId, false, returnFocusTarget)}
         />
       )}
 
@@ -296,7 +344,7 @@ export function WatchAlongView({
       )}
 
       {appView === 'player' && (
-        <section className={`control-bar ${controlsIdle ? 'control-bar-hidden' : ''}`} aria-label="Playback controls">
+        <section className={`control-bar ${controlsIdle && !playbackSettingsOpen ? 'control-bar-hidden' : ''}`} aria-label="Playback controls">
           {hasMedia && setupMode && (
             <div className="setup-panel" aria-label="Sync setup">
               <div className="setup-header">
@@ -370,32 +418,196 @@ export function WatchAlongView({
               aria-label="Reaction timeline"
               onChange={(event) => actions.seekTo(Number(event.currentTarget.value))}
             />
-            <button className="secondary-button" type="button" disabled={!canPlay} onClick={actions.syncNow}>
-              {setupMode ? <RefreshCw size={16} aria-hidden /> : <SlidersHorizontal size={16} aria-hidden />}
-              Sync Setup
+            <span className={`status-pill status-${syncState}`} aria-label={`Playback status: ${syncState}`}>
+              {syncState}
+            </span>
+            <button
+              className="icon-button"
+              type="button"
+              title={pipControlLabel}
+              aria-label={pipControlLabel}
+              disabled={!hasMedia}
+              onClick={() => {
+                if (movieWindowActive) void actions.popInMovie()
+                else actions.togglePipVisibility()
+              }}
+            >
+              <PictureInPicture2 size={18} aria-hidden />
             </button>
-            <button className="secondary-button" type="button" disabled={!activeSession} onClick={() => void actions.openSubtitle()}>
-              <Captions size={16} aria-hidden />
-              Subtitles
+            <button
+              className="icon-button"
+              type="button"
+              title={fullscreenActive ? 'Exit fullscreen' : 'Fullscreen'}
+              aria-label={fullscreenActive ? 'Exit fullscreen' : 'Fullscreen'}
+              aria-pressed={fullscreenActive}
+              onClick={actions.toggleFullscreen}
+            >
+              {fullscreenActive ? <Minimize size={18} aria-hidden /> : <Maximize size={18} aria-hidden />}
             </button>
-            <button className="icon-button" type="button" title="Fullscreen" aria-label="Fullscreen" onClick={actions.toggleFullscreen}>
-              <Maximize size={18} aria-hidden />
-            </button>
+            <details
+              ref={playbackSettingsRef}
+              className="playback-settings"
+              open={playbackSettingsOpen}
+              onToggle={(event) => setPlaybackSettingsOpen(event.currentTarget.open)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Escape') return
+                event.preventDefault()
+                event.stopPropagation()
+                closePlaybackSettings(true)
+              }}
+            >
+              <summary
+                className="icon-button playback-settings-summary"
+                title="Playback settings"
+                aria-label="Playback settings"
+                aria-expanded={playbackSettingsOpen}
+              >
+                <SlidersHorizontal size={18} aria-hidden />
+              </summary>
+              <div className="playback-settings-body">
+                <header className="playback-settings-header">
+                  <strong>Playback settings</strong>
+                  <span>Auto-sync handles timing for most sessions.</span>
+                </header>
+                <div className="playback-settings-actions">
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={!canPlay}
+                    onClick={() => {
+                      closePlaybackSettings()
+                      actions.syncNow()
+                    }}
+                  >
+                    {setupMode ? <RefreshCw size={16} aria-hidden /> : <SlidersHorizontal size={16} aria-hidden />}
+                    Sync Setup
+                  </button>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={!activeSession}
+                    onClick={() => {
+                      closePlaybackSettings()
+                      void actions.openSubtitle()
+                    }}
+                  >
+                    <Captions size={16} aria-hidden />
+                    Subtitles
+                  </button>
+                  {session.subtitlePath && (
+                    <button className="mini-button subtitle-clear" type="button" onClick={() => void actions.clearSubtitle()}>
+                      <X size={14} aria-hidden />
+                      {fileName(session.subtitlePath)}
+                    </button>
+                  )}
+                </div>
+
+                <div className="playback-options">
+                  <div className="speed-control" role="group" aria-label="Playback speed">
+                    {playbackRates.map((rate) => (
+                      <button
+                        key={rate}
+                        className={rate === session.playbackRate ? 'speed-active' : ''}
+                        type="button"
+                        disabled={!activeSession || autoSyncBusy}
+                        onClick={() => actions.setPlaybackRate(rate)}
+                      >
+                        {rate}x
+                      </button>
+                    ))}
+                  </div>
+                  <details className="timing-settings">
+                    <summary className="timing-summary">
+                      <span className="timing-summary-label">Timing</span>
+                      <span className="timing-summary-value">
+                        {session.timingOrigin === 'automatic' ? 'Automatically measured' : reactorSourceSummary}
+                      </span>
+                      <span className="timing-summary-detail">
+                        {session.timingOrigin === 'automatic'
+                          ? `${Math.round((session.autoSyncConfidence ?? 0) * 100)}% confidence / ${formatRatePercent(session.movieRateCorrection)}`
+                          : detectedMovieRateCorrection !== null
+                            ? `Detected movie ${formatFps(session.detectedMovieFps)} fps / ${formatRatePercent(detectedMovieRateCorrection)}`
+                            : 'Manual movie rate'}
+                      </span>
+                    </summary>
+                    <div className="timing-settings-body">
+                      <div className="timing-session-details" aria-label="Session timing details">
+                        {session.timingOrigin === 'automatic' && (
+                          <span className="automatic-timing-detail">
+                            Automatically measured locally · {Math.round((session.autoSyncConfidence ?? 0) * 100)}% confidence
+                          </span>
+                        )}
+                        <span>{session.reactionPath ? fileName(session.reactionPath) : 'No reaction file'}</span>
+                        <span>{session.moviePath ? fileName(session.moviePath) : 'No movie file'}</span>
+                        <span>
+                          Offset {displayOffset} / effective {signedSeconds(effectiveOffset)} / movie at {formatTime(movieStartsAtReaction)}
+                        </span>
+                      </div>
+                      <button
+                        className="secondary-button detect-sync-button"
+                        type="button"
+                        disabled={!activeSession?.moviePath || !activeSession.reactionPath || Boolean(autoSync.runningSessionId)}
+                        onClick={() => void actions.detectSyncAgain()}
+                      >
+                        {autoSync.runningSessionId ? <Loader2 size={14} aria-hidden className="spin" /> : <RefreshCw size={14} aria-hidden />}
+                        {autoSync.runningSessionId ? autoSync.progress.message : 'Find Sync Again'}
+                      </button>
+                      <div className="source-rate-control" role="group" aria-label="Reactor source">
+                        <span>Reactor source</span>
+                        {reactorSourceOptions.map((option) => (
+                          <button
+                            key={option.source}
+                            className={option.source === session.reactorSource ? 'speed-active' : ''}
+                            type="button"
+                            disabled={!activeSession || autoSyncBusy}
+                            onClick={() => void actions.setReactorSource(option.source)}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                      {detectedMovieRateCorrection !== null ? (
+                        <span className="source-rate-detail">
+                          Detected movie {formatFps(session.detectedMovieFps)} fps / correction{' '}
+                          {formatRatePercent(detectedMovieRateCorrection)} / {formatRateDriftPerHour(detectedMovieRateCorrection)}
+                        </span>
+                      ) : (
+                        <div className="source-rate-control manual-rate-control" role="group" aria-label="Manual movie rate">
+                          <span>Manual movie rate</span>
+                          {manualMovieSourceRates.map((option) => (
+                            <button
+                              key={option.rate}
+                              className={Math.abs(option.rate - session.movieRateCorrection) < 0.000001 ? 'speed-active' : ''}
+                              type="button"
+                              disabled={!activeSession || autoSyncBusy}
+                              onClick={() => void actions.setMovieRateCorrection(option.rate)}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                </div>
+              </div>
+            </details>
             <button
               className="icon-button command-panel-gear"
               ref={commandPanelButtonRef}
               type="button"
               title="Command Panel"
               aria-label="Command Panel"
-              onClick={() => actions.toggleCommandPanel(commandPanelButtonRef.current)}
+              onClick={() => {
+                closePlaybackSettings()
+                actions.toggleCommandPanel(commandPanelButtonRef.current)
+              }}
             >
               <Settings size={18} aria-hidden />
             </button>
           </div>
 
-          <div className="control-meta">
-            <span className={`status-pill status-${syncState}`}>{syncState}</span>
-
+          <div className="control-meta" aria-label="Volume controls">
             <div className="volume-bank">
               <StreamVolume
                 label="Reaction"
@@ -414,101 +626,6 @@ export function WatchAlongView({
                 onMute={actions.toggleMovieMute}
               />
             </div>
-
-            <div className="playback-options">
-              <div className="speed-control" role="group" aria-label="Playback speed">
-                {playbackRates.map((rate) => (
-                  <button
-                    key={rate}
-                    className={rate === session.playbackRate ? 'speed-active' : ''}
-                    type="button"
-                    disabled={!activeSession || autoSyncBusy}
-                    onClick={() => actions.setPlaybackRate(rate)}
-                  >
-                    {rate}x
-                  </button>
-                ))}
-              </div>
-              <details className="timing-settings">
-                <summary className="timing-summary">
-                  <span className="timing-summary-label">Timing</span>
-                  <span className="timing-summary-value">
-                    {session.timingOrigin === 'automatic' ? 'Automatically measured' : reactorSourceSummary}
-                  </span>
-                  <span className="timing-summary-detail">
-                    {session.timingOrigin === 'automatic'
-                      ? `${Math.round((session.autoSyncConfidence ?? 0) * 100)}% confidence / ${formatRatePercent(session.movieRateCorrection)}`
-                      : detectedMovieRateCorrection !== null
-                        ? `Detected movie ${formatFps(session.detectedMovieFps)} fps / ${formatRatePercent(detectedMovieRateCorrection)}`
-                        : 'Manual movie rate'}
-                  </span>
-                </summary>
-                <div className="timing-settings-body">
-                  <div className="timing-session-details" aria-label="Session timing details">
-                    {session.timingOrigin === 'automatic' && (
-                      <span className="automatic-timing-detail">
-                        Automatically measured locally · {Math.round((session.autoSyncConfidence ?? 0) * 100)}% confidence
-                      </span>
-                    )}
-                    <span>{session.reactionPath ? fileName(session.reactionPath) : 'No reaction file'}</span>
-                    <span>{session.moviePath ? fileName(session.moviePath) : 'No movie file'}</span>
-                    <span>
-                      Offset {displayOffset} / effective {signedSeconds(effectiveOffset)} / movie at {formatTime(movieStartsAtReaction)}
-                    </span>
-                  </div>
-                  <button
-                    className="secondary-button detect-sync-button"
-                    type="button"
-                    disabled={!activeSession?.moviePath || !activeSession.reactionPath || Boolean(autoSync.runningSessionId)}
-                    onClick={() => void actions.detectSyncAgain()}
-                  >
-                    {autoSync.runningSessionId ? <Loader2 size={14} aria-hidden className="spin" /> : <RefreshCw size={14} aria-hidden />}
-                    {autoSync.runningSessionId ? autoSync.progress.message : 'Find Sync Again'}
-                  </button>
-                  <div className="source-rate-control" role="group" aria-label="Reactor source">
-                    <span>Reactor source</span>
-                    {reactorSourceOptions.map((option) => (
-                      <button
-                        key={option.source}
-                        className={option.source === session.reactorSource ? 'speed-active' : ''}
-                        type="button"
-                        disabled={!activeSession || autoSyncBusy}
-                        onClick={() => void actions.setReactorSource(option.source)}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                  {detectedMovieRateCorrection !== null ? (
-                    <span className="source-rate-detail">
-                      Detected movie {formatFps(session.detectedMovieFps)} fps / correction{' '}
-                      {formatRatePercent(detectedMovieRateCorrection)} / {formatRateDriftPerHour(detectedMovieRateCorrection)}
-                    </span>
-                  ) : (
-                    <div className="source-rate-control manual-rate-control" role="group" aria-label="Manual movie rate">
-                      <span>Manual movie rate</span>
-                      {manualMovieSourceRates.map((option) => (
-                        <button
-                          key={option.rate}
-                          className={Math.abs(option.rate - session.movieRateCorrection) < 0.000001 ? 'speed-active' : ''}
-                          type="button"
-                          disabled={!activeSession || autoSyncBusy}
-                          onClick={() => void actions.setMovieRateCorrection(option.rate)}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </details>
-              {session.subtitlePath && (
-                <button className="mini-button subtitle-clear" type="button" onClick={() => void actions.clearSubtitle()}>
-                  <X size={14} aria-hidden />
-                  {fileName(session.subtitlePath)}
-                </button>
-              )}
-            </div>
           </div>
           {error && (
             <div className="error-banner">
@@ -519,9 +636,9 @@ export function WatchAlongView({
         </section>
       )}
 
-      {appView === 'player' && commandPanelOpen && (
+      {(appView === 'library' || appView === 'player') && commandPanelOpen && (
         <CommandPanel
-          activeSession={activeSession}
+          activeSession={appView === 'player' ? activeSession : null}
           library={library}
           position={position}
           reactionDuration={reactionDuration}
@@ -552,6 +669,8 @@ export function WatchAlongView({
           onTitleChange={setRenameDraft}
           reactorName={renameReactorDraft}
           onReactorNameChange={setRenameReactorDraft}
+          reactorOptions={existingReactorNames(library.sessions)}
+          initialFocus={renameInitialFocus}
           onCancel={actions.cancelRenameSession}
           onConfirm={() => void actions.confirmRenameSession()}
         />

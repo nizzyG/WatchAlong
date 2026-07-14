@@ -4,19 +4,22 @@ import {
   Film,
   Grid2X2,
   LayoutGrid,
-  Library as LibraryIcon,
   Plus,
   Rows3,
+  Settings,
   TriangleAlert,
   UsersRound
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { LibraryViewPreference, SessionLibrary } from '@shared/types'
 import type { MoviePosterActionResult } from '../moviePosterActions'
+import { ContinueWatchingShelf } from './ContinueWatchingShelf'
+import { LibraryEmptyState } from './LibraryEmptyState'
+import { LibrarySortControl } from './LibrarySortControl'
 import { MovieLibraryView } from './MovieLibraryView'
 import { PairingLibraryView } from './PairingLibraryView'
 import { ReactorLibraryView } from './ReactorLibraryView'
-import { groupSessionsByMovie, type LibraryMode } from './libraryPresentation'
+import { groupSessionsByMovie, type LibraryMode, type LibrarySort } from './libraryPresentation'
 
 export { LibrarySessionCard } from './LibrarySessionCard'
 
@@ -24,29 +27,35 @@ interface LibraryHomeProps {
   library: SessionLibrary
   view: LibraryViewPreference
   onViewChange(view: LibraryViewPreference): void
+  onOpenCommandPanel(): void
   onNew(): void
   onOpenSession(sessionId: string): void
   onChoosePoster(sessionId: string): Promise<MoviePosterActionResult>
   onClearPoster(sessionId: string): Promise<MoviePosterActionResult>
-  onRename(sessionId: string): void
-  onDelete(sessionId: string): void
+  onRename(sessionId: string, returnFocusTarget: HTMLButtonElement | null): void
+  onEditReactor(sessionId: string, returnFocusTarget: HTMLButtonElement | null): void
+  onDelete(sessionId: string, returnFocusTarget: HTMLButtonElement | null): void
 }
 
 export function LibraryHome({
   library,
   view,
   onViewChange,
+  onOpenCommandPanel,
   onNew,
   onOpenSession,
   onChoosePoster,
   onClearPoster,
   onRename,
+  onEditReactor,
   onDelete
 }: LibraryHomeProps): JSX.Element {
   const hasSessions = library.sessions.length > 0
   const [mode, setMode] = useState<LibraryMode>(readSavedLibraryMode)
+  const [sortPreferences, setSortPreferences] = useState<LibrarySortPreferences>(readSavedSortPreferences)
   const [posterNotice, setPosterNotice] = useState<PosterNotice | null>(null)
   const movieCount = useMemo(() => groupSessionsByMovie(library.sessions).length, [library.sessions])
+  const sort = sortPreferences[mode]
 
   const runPosterAction = async (
     action: () => Promise<MoviePosterActionResult>
@@ -83,6 +92,20 @@ export function LibraryHome({
     }
   }, [mode])
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('watchalong-library-sorts', JSON.stringify(sortPreferences))
+    } catch {
+      // Sorting remains available for this run when storage is unavailable.
+    }
+  }, [sortPreferences])
+
+  const changeSort = (nextSort: LibrarySort): void => {
+    setSortPreferences((current) => current[mode] === nextSort
+      ? current
+      : { ...current, [mode]: nextSort })
+  }
+
   return (
     <section
       className={`library-home library-home-${view} library-mode-${mode}`}
@@ -98,23 +121,30 @@ export function LibraryHome({
             {hasSessions && <p>{librarySummary(movieCount, library.sessions.length)}</p>}
           </div>
         </div>
-        {hasSessions && (
-          <div className="library-header-actions">
-            <div className="library-mode-switch" role="group" aria-label="Organize library">
-              <LibraryModeButton active={mode === 'pairings'} icon={<LayoutGrid size={16} />} label="Pairings" onClick={() => setMode('pairings')} />
-              <LibraryModeButton active={mode === 'reactors'} icon={<UsersRound size={16} />} label="By Reactor" onClick={() => setMode('reactors')} />
-              <LibraryModeButton active={mode === 'movies'} icon={<Clapperboard size={16} />} label="By Movie" onClick={() => setMode('movies')} />
-            </div>
-            <div className="library-layout-switch" role="group" aria-label="Library layout">
-              <LibraryModeButton active={view === 'grid'} icon={<Grid2X2 size={16} />} label="Posters" onClick={() => onViewChange('grid')} />
-              <LibraryModeButton active={view === 'list'} icon={<Rows3 size={17} />} label="List" onClick={() => onViewChange('list')} />
-            </div>
-            <button className="primary-button" type="button" onClick={onNew}>
-              <Plus size={18} aria-hidden />
-              New WatchAlong
-            </button>
+        <div className="library-header-actions">
+          <div className="library-mode-switch" role="group" aria-label="Organize library">
+            <LibraryModeButton active={mode === 'pairings'} icon={<LayoutGrid size={16} />} label="Pairings" onClick={() => setMode('pairings')} />
+            <LibraryModeButton active={mode === 'reactors'} icon={<UsersRound size={16} />} label="By Reactor" onClick={() => setMode('reactors')} />
+            <LibraryModeButton active={mode === 'movies'} icon={<Clapperboard size={16} />} label="By Movie" onClick={() => setMode('movies')} />
           </div>
-        )}
+          <div className="library-layout-switch" role="group" aria-label="Library layout">
+            <LibraryModeButton active={view === 'grid'} icon={<Grid2X2 size={16} />} label="Posters" onClick={() => onViewChange('grid')} />
+            <LibraryModeButton active={view === 'list'} icon={<Rows3 size={17} />} label="List" onClick={() => onViewChange('list')} />
+          </div>
+          <button className="primary-button" type="button" onClick={onNew}>
+            <Plus size={18} aria-hidden />
+            New WatchAlong
+          </button>
+          <button
+            className="icon-button library-command-panel-button"
+            type="button"
+            title="Command Panel"
+            aria-label="Command Panel"
+            onClick={onOpenCommandPanel}
+          >
+            <Settings size={18} aria-hidden />
+          </button>
+        </div>
       </header>
 
       {posterNotice && (
@@ -130,28 +160,22 @@ export function LibraryHome({
       )}
 
       <div className="library-browser">
-        {!hasSessions && (
-          <div className="library-empty-state">
-            <div className="library-empty-icon">
-              <LibraryIcon size={42} aria-hidden />
-            </div>
-            <h2>Pair a film with a creator you support</h2>
-            <p>Choose your movie and reaction. WatchAlong keeps both files and every setting on this computer.</p>
-            <button className="primary-button" type="button" onClick={onNew}>
-              <Plus size={18} aria-hidden />
-              Make Your First Pairing
-            </button>
-          </div>
-        )}
+        {hasSessions && <ContinueWatchingShelf sessions={library.sessions} onOpenSession={onOpenSession} />}
+
+        <LibrarySortControl mode={mode} sort={sort} onSortChange={changeSort} />
+
+        {!hasSessions && <LibraryEmptyState mode={mode} onNew={onNew} />}
 
         {hasSessions && mode === 'pairings' && (
           <PairingLibraryView
             sessions={library.sessions}
+            sort={sort}
             compact={view === 'list'}
             onOpenSession={onOpenSession}
             onChoosePoster={choosePoster}
             onClearPoster={clearPoster}
             onRename={onRename}
+            onEditReactor={onEditReactor}
             onDelete={onDelete}
           />
         )}
@@ -159,11 +183,13 @@ export function LibraryHome({
         {hasSessions && mode === 'reactors' && (
           <ReactorLibraryView
             sessions={library.sessions}
+            sort={sort}
             compact={view === 'list'}
             onOpenSession={onOpenSession}
             onChoosePoster={choosePoster}
             onClearPoster={clearPoster}
             onRename={onRename}
+            onEditReactor={onEditReactor}
             onDelete={onDelete}
           />
         )}
@@ -171,11 +197,13 @@ export function LibraryHome({
         {hasSessions && mode === 'movies' && (
           <MovieLibraryView
             sessions={library.sessions}
+            sort={sort}
             compact={view === 'list'}
             onOpenSession={onOpenSession}
             onChoosePoster={choosePoster}
             onClearPoster={clearPoster}
             onRename={onRename}
+            onEditReactor={onEditReactor}
             onDelete={onDelete}
           />
         )}
@@ -238,5 +266,30 @@ function readSavedLibraryMode(): LibraryMode {
   }
 
   return 'pairings'
+}
+
+type LibrarySortPreferences = Record<LibraryMode, LibrarySort>
+
+const defaultSortPreferences: LibrarySortPreferences = {
+  pairings: 'date-added',
+  reactors: 'date-added',
+  movies: 'date-added'
+}
+
+function readSavedSortPreferences(): LibrarySortPreferences {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem('watchalong-library-sorts') ?? '{}') as Partial<Record<LibraryMode, unknown>>
+    return {
+      pairings: normalizeLibrarySort(saved.pairings),
+      reactors: normalizeLibrarySort(saved.reactors),
+      movies: normalizeLibrarySort(saved.movies)
+    }
+  } catch {
+    return { ...defaultSortPreferences }
+  }
+}
+
+function normalizeLibrarySort(value: unknown): LibrarySort {
+  return value === 'alphabetical' || value === 'date-added' ? value : 'date-added'
 }
 

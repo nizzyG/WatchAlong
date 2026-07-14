@@ -10,9 +10,19 @@ interface StreamVolumeProps {
 }
 
 export function StreamVolume({ label, volume, muted, disabled, onVolume, onMute }: StreamVolumeProps): JSX.Element {
+  const muteAction = muted ? `Unmute ${label}` : `Mute ${label}`
+
   return (
     <label className="volume-control">
-      <button className="icon-button volume-mute" type="button" title={`Mute ${label}`} aria-label={`Mute ${label}`} disabled={disabled} onClick={onMute}>
+      <button
+        className="icon-button volume-mute"
+        type="button"
+        title={muteAction}
+        aria-label={muteAction}
+        aria-pressed={muted}
+        disabled={disabled}
+        onClick={onMute}
+      >
         {muted ? <VolumeX size={16} aria-hidden /> : <Volume2 size={16} aria-hidden />}
       </button>
       <span>{label}</span>

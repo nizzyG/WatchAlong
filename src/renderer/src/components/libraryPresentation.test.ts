@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { createDefaultSession } from '@shared/session'
 import type { LibrarySession } from '@shared/types'
 import {
+  continueWatchingSessions,
   deriveMovieIdentity,
   deriveReactorIdentity,
   groupSessionsByMovie,
   groupSessionsByReactor,
   humanizeMediaName,
   pairingDisplayTitle,
+  sessionProgressPercent,
   sortPairings,
   splitPairingTitle
 } from './libraryPresentation'
@@ -150,6 +152,62 @@ describe('library presentation', () => {
     expect(sortPairings(sessions).map((session) => session.id)).toEqual(['a', 'z'])
   })
 
+  it('sorts each presentation by immutable date added or its visible alphabetical label', () => {
+    const newest = makeSession('newest', {
+      title: 'Zulu — Beta Reactor',
+      reactorName: 'Beta Reactor',
+      reactorNameOrigin: 'custom',
+      createdAt: '2026-07-14T12:00:00.000Z'
+    })
+    const middle = makeSession('middle', {
+      title: 'Bravo — Zeta Reactor',
+      reactorName: 'Zeta Reactor',
+      reactorNameOrigin: 'custom',
+      createdAt: '2026-07-13T12:00:00.000Z'
+    })
+    const oldest = makeSession('oldest', {
+      title: 'Alpha — Alpha Reactor',
+      reactorName: 'Alpha Reactor',
+      reactorNameOrigin: 'custom',
+      createdAt: '2026-07-12T12:00:00.000Z'
+    })
+
+    expect(sortPairings([oldest, newest, middle], 'date-added').map((session) => session.id))
+      .toEqual(['newest', 'middle', 'oldest'])
+    expect(sortPairings([oldest, newest, middle], 'alphabetical').map((session) => session.id))
+      .toEqual(['oldest', 'middle', 'newest'])
+    expect(groupSessionsByMovie([oldest, newest, middle], 'date-added').map((group) => group.sessions[0].id))
+      .toEqual(['newest', 'middle', 'oldest'])
+    expect(groupSessionsByReactor([oldest, newest, middle], 'alphabetical').map((group) => group.label))
+      .toEqual(['Alpha Reactor', 'Beta Reactor', 'Zeta Reactor'])
+  })
+
+  it('surfaces only playable unfinished sessions for Continue Watching by latest activity', () => {
+    const mostRecent = makeSession('recent', {
+      lastReactionTimeSeconds: 2700,
+      reactionDurationSeconds: 7200,
+      updatedAt: '2026-07-14T14:00:00.000Z'
+    })
+    const earlier = makeSession('earlier', {
+      lastReactionTimeSeconds: 600,
+      reactionDurationSeconds: null,
+      updatedAt: '2026-07-14T13:00:00.000Z'
+    })
+    const justStarted = makeSession('just-started', {
+      lastReactionTimeSeconds: 1,
+      reactionDurationSeconds: 7200,
+      updatedAt: '2026-07-14T12:00:00.000Z'
+    })
+    const untouched = makeSession('untouched', { lastReactionTimeSeconds: 0, reactionDurationSeconds: 7200 })
+    const completed = makeSession('completed', { lastReactionTimeSeconds: 6900, reactionDurationSeconds: 7200 })
+    const incomplete = makeSession('incomplete', { lastReactionTimeSeconds: 1200, reactionPath: null })
+
+    expect(continueWatchingSessions([untouched, justStarted, earlier, completed, incomplete, mostRecent]).map((session) => session.id))
+      .toEqual(['recent', 'earlier', 'just-started'])
+    expect(sessionProgressPercent(mostRecent)).toBe(37.5)
+    expect(sessionProgressPercent(earlier)).toBeNull()
+  })
+
   it('turns media filenames into readable labels without guessing at release metadata', () => {
     expect(humanizeMediaName('C:\\Movies\\A.Goofy_Movie.mkv')).toBe('A Goofy Movie')
     expect(humanizeMediaName('Reaction Title [AbC-123xyz].mp4')).toBe('Reaction Title')
@@ -213,11 +271,16 @@ describe('library presentation', () => {
 })
 
 function makeSession(id: string, patch: Partial<LibrarySession> = {}): LibrarySession {
-  return createDefaultSession(new Date('2026-07-13T12:00:00.000Z'), {
+  const created = createDefaultSession(new Date('2026-07-13T12:00:00.000Z'), {
     id,
     title: `${id} title`,
     moviePath: `C:\\Movies\\${id}.mp4`,
     reactionPath: `C:\\Reactions\\${id}.mp4`,
     ...patch
   })
+  return {
+    ...created,
+    createdAt: patch.createdAt ?? created.createdAt,
+    updatedAt: patch.updatedAt ?? created.updatedAt
+  }
 }

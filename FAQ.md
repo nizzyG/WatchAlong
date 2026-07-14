@@ -53,11 +53,12 @@ MKV is a container — the video and audio streams inside might use codecs Chrom
 | `R` | Toggle reaction mute |
 | `M` | Toggle movie mute |
 | `P` | Toggle PiP visibility |
+| `F` | Enter / exit fullscreen |
 | `[` / `]` | Nudge sync offset by −0.1s / +0.1s |
-| `Ctrl+Shift+P` | Open / close the Command Panel |
-| `↑` / `↓` / `Enter` / `Esc` | Navigate inside the Command Panel |
+| `Ctrl+Shift+P` | Open / close the Command Panel from the library or player |
+| `↑` / `↓` / `Tab` / `Shift+Tab` / `Enter` / `Esc` | Navigate inside the Command Panel without leaving it |
 
-Shortcuts are ignored when you're typing in a text field.
+Playback shortcuts work in the player and are ignored while you're typing or using a control. Fullscreen is player-only and exits automatically when you return to the library.
 
 ## Patreon & YouTube Downloading
 
@@ -151,7 +152,7 @@ Click the pop-out icon in the PiP toolbar. The movie lifts out into its own wind
 
 ### 26. What's the Command Panel?
 
-Press `Ctrl+Shift+P` (or click the gear icon) during playback. A solid, focused panel slides in with: Now Playing, compact Library, active Downloads, Preferences, and Help. Navigate with arrow keys or click.
+Press `Ctrl+Shift+P` (or click the gear icon) from the library or during playback. A solid, focused panel slides in with: Now Playing when applicable, compact Library, active Downloads, Preferences, and Help. Navigate with arrow keys, Tab, or a click.
 
 ### 27. I opened a session and got "file can't be found."
 

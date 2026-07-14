@@ -266,12 +266,241 @@
 .library-browser {
   position: relative;
   z-index: 1;
+  display: grid;
+  align-content: start;
+  gap: clamp(24px, 3vw, 38px);
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   padding: clamp(22px, 3vw, 46px) clamp(24px, 3vw, 52px) 72px;
   overflow: auto;
   scroll-behavior: smooth;
+}
+
+.library-view-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 48px;
+}
+
+.library-sort-control {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px;
+  border: 1px solid rgba(199, 197, 189, 0.2);
+  border-radius: 13px;
+  background: rgba(12, 11, 9, 0.52);
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.library-sort-label {
+  padding: 0 9px 0 11px;
+  color: var(--wa-muted);
+  font-size: 12px;
+  font-weight: 720;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.library-sort-control button {
+  min-height: 44px;
+  padding: 0 13px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--wa-paper-dim);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 680;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.library-sort-control button:hover {
+  border-color: rgba(199, 197, 189, 0.28);
+  color: var(--wa-paper);
+  background: rgba(199, 197, 189, 0.09);
+}
+
+.library-sort-control button:focus-visible {
+  outline: 3px solid var(--wa-green);
+  outline-offset: 2px;
+}
+
+.library-sort-control button[aria-pressed='true'] {
+  border-color: rgba(142, 226, 177, 0.64);
+  color: var(--wa-active-ink, #102018);
+  background: var(--wa-green);
+  box-shadow: 0 7px 16px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* The first thing a returning viewer needs: recent, unfinished sessions. */
+
+.continue-watching {
+  display: grid;
+  gap: 17px;
+  min-width: 0;
+  padding: clamp(20px, 2.4vw, 30px);
+  overflow: hidden;
+  border: 1px solid rgba(244, 234, 214, 0.17);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(239, 198, 108, 0.13), transparent 33%),
+    linear-gradient(145deg, rgba(48, 43, 34, 0.72), rgba(22, 20, 16, 0.68));
+  box-shadow: 0 24px 58px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(18px) saturate(1.04);
+}
+
+.continue-watching-header h2,
+.continue-watching-header p {
+  margin: 0;
+}
+
+.continue-watching-header h2 {
+  color: var(--wa-paper);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(25px, 2.2vw, 32px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.continue-watching-header p {
+  margin-top: 4px;
+  color: var(--wa-muted);
+  font-size: 14px;
+}
+
+.continue-watching-track {
+  display: grid;
+  grid-auto-columns: minmax(300px, 380px);
+  grid-auto-flow: column;
+  gap: 16px;
+  min-width: 0;
+  padding: 3px 3px 10px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: rgba(199, 197, 189, 0.4) transparent;
+  scroll-snap-type: inline proximity;
+}
+
+.continue-watching-card {
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
+.continue-watching-card button {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  width: 100%;
+  min-height: 156px;
+  overflow: hidden;
+  border: 1px solid rgba(199, 197, 189, 0.2);
+  border-radius: 16px;
+  color: var(--wa-paper);
+  text-align: left;
+  background: rgba(12, 11, 9, 0.46);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+  transition: border-color 170ms ease, background 170ms ease, box-shadow 170ms ease, transform 170ms ease;
+}
+
+.continue-watching-card button:hover {
+  border-color: rgba(199, 197, 189, 0.5);
+  background: rgba(48, 43, 34, 0.82);
+  box-shadow: 0 22px 44px rgba(0, 0, 0, 0.38);
+  transform: translateY(-2px);
+}
+
+.continue-watching-card button:focus-visible {
+  outline: 3px solid var(--wa-green);
+  outline-offset: -3px;
+}
+
+.continue-watching-art {
+  width: 104px;
+  height: 156px;
+  overflow: hidden;
+}
+
+.continue-watching-art .movie-poster-card {
+  width: 104px;
+}
+
+.continue-watching-art .movie-poster-frame {
+  border: 0;
+  border-right: 1px solid rgba(244, 234, 214, 0.16);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.continue-watching-copy {
+  display: grid;
+  grid-template-rows: auto minmax(0, auto) auto auto 1fr;
+  align-content: center;
+  min-width: 0;
+  padding: 17px 18px 15px;
+}
+
+.continue-watching-reactor {
+  overflow: hidden;
+  color: var(--wa-amber);
+  font-size: 12px;
+  font-weight: 720;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.continue-watching-copy strong {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 5px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.continue-watching-time {
+  margin-top: 7px;
+  color: var(--wa-muted);
+  font-size: 12px;
+}
+
+.continue-watching-progress {
+  display: block;
+  height: 5px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(199, 197, 189, 0.18);
+}
+
+.continue-watching-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--wa-green);
+}
+
+.continue-watching-action {
+  display: inline-flex;
+  align-items: center;
+  align-self: end;
+  gap: 7px;
+  margin-top: 12px;
+  color: var(--wa-paper-dim);
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.continue-watching-card button:hover .continue-watching-action {
+  color: var(--wa-green);
 }
 
 .library-empty-state {
@@ -289,6 +518,22 @@
   background: rgba(33, 30, 24, 0.6);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.32);
   backdrop-filter: blur(20px);
+}
+
+.library-browser > .library-empty-state {
+  align-self: stretch;
+}
+
+.library-empty-state-reactors {
+  background:
+    radial-gradient(circle at 50% 16%, rgba(199, 197, 189, 0.1), transparent 34%),
+    rgba(33, 30, 24, 0.6);
+}
+
+.library-empty-state-movies {
+  background:
+    radial-gradient(circle at 50% 14%, rgba(239, 198, 108, 0.1), transparent 35%),
+    rgba(33, 30, 24, 0.6);
 }
 
 .library-empty-icon {
@@ -863,6 +1108,11 @@
   padding: 8px 4px 42px;
 }
 
+.reactor-library-single {
+  grid-template-columns: minmax(0, 760px);
+  justify-content: center;
+}
+
 .reactor-shelf {
   position: relative;
   display: grid;
@@ -929,6 +1179,12 @@
   gap: clamp(18px, 2vw, 26px);
   min-width: 0;
   padding: 26px;
+}
+
+.reactor-shelf-movies-single {
+  grid-template-columns: minmax(180px, 232px);
+  align-content: center;
+  justify-content: center;
 }
 
 .reactor-shelf-movies .library-card {
@@ -1258,6 +1514,11 @@
   .reactor-shelf-movies {
     grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
   }
+
+  .reactor-shelf-movies.reactor-shelf-movies-single {
+    grid-template-columns: minmax(180px, 232px);
+    justify-content: center;
+  }
 }
 
 @media (prefers-contrast: more) {
@@ -1270,6 +1531,7 @@
 
   .library-mode-switch button[aria-pressed='true'],
   .library-layout-switch button[aria-pressed='true'],
+  .library-sort-control button[aria-pressed='true'],
   .library-card-main:focus-visible,
   .library-card-menu-button:focus-visible {
     outline: 3px solid var(--wa-green);
@@ -1280,6 +1542,8 @@
 @media (forced-colors: active) {
   .library-home,
   .library-home-header,
+  .continue-watching,
+  .continue-watching-card button,
   .reactor-shelf,
   .library-card,
   .movie-poster-fallback {
@@ -1288,11 +1552,15 @@
 
   .library-mode-switch button[aria-pressed='true'],
   .library-layout-switch button[aria-pressed='true'],
+  .library-sort-control button[aria-pressed='true'],
+  .continue-watching-progress > span,
   .library-card-progress span {
     background: Highlight;
   }
 
   .library-card-main:focus-visible,
+  .continue-watching-card button:focus-visible,
+  .library-sort-control button:focus-visible,
   .library-card-menu-button:focus-visible {
     outline: 3px solid Highlight;
     outline-offset: -3px;

@@ -9,6 +9,8 @@ import type {
   SessionLibrary
 } from '@shared/types'
 import type { DownloadedReactionMetadata } from '../components/SmartReactionInput'
+import type { RenameSessionFocus } from '../components/RenameSessionDialog'
+import { deriveReactorIdentity } from '../components/libraryPresentation'
 import { buildSuggestedPairingTitle } from '../components/pairingTitle'
 import type { MoviePosterActionResult } from '../moviePosterActions'
 import { TimelineMapping } from '../sync/timeline'
@@ -82,6 +84,7 @@ export function useSessionActions({
     activeSessionIdRef,
     commandPanelButtonRef,
     commandPanelReturnFocusRef,
+    sessionDialogReturnFocusRef,
     resumeAfterRepairRef,
     library,
     setPreferences,
@@ -94,6 +97,7 @@ export function useSessionActions({
     setPatreonStatus,
     renameTargetId,
     setRenameTargetId,
+    setRenameInitialFocus,
     renameDraft,
     setRenameDraft,
     renameReactorDraft,
@@ -133,6 +137,9 @@ export function useSessionActions({
       : null
     controllerRef.current?.pause()
     await flushCurrentSessionPosition()
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => undefined)
+    }
     await window.watchAlong.openImportWizard(options)
   }
 
@@ -365,7 +372,7 @@ export function useSessionActions({
 
   const movePanelFocus = (delta: number): void => {
     const focusable = Array.from(document.querySelectorAll<HTMLElement>(
-      '.command-panel button:not(:disabled), .command-panel input:not(:disabled), .command-panel [tabindex="0"]'
+      '.command-panel button:not(:disabled), .command-panel input:not(:disabled), .command-panel select:not(:disabled), .command-panel textarea:not(:disabled), .command-panel a[href], .command-panel [tabindex="0"]'
     ))
     if (focusable.length === 0) return
     const currentIndex = document.activeElement instanceof HTMLElement ? focusable.indexOf(document.activeElement) : -1
@@ -468,34 +475,58 @@ export function useSessionActions({
     }
   }
 
-  const requestRenameSession = (sessionId: string): void => {
+  const requestRenameSession = (
+    sessionId: string,
+    initialFocus: RenameSessionFocus = 'title',
+    returnFocusTarget: HTMLElement | null = null
+  ): void => {
+    rememberSessionDialogReturnFocus(returnFocusTarget)
     const current = library.sessions.find((item) => item.id === sessionId)
+    const currentReactor = current ? deriveReactorIdentity(current) : null
     setRenameTargetId(sessionId)
+    setRenameInitialFocus(initialFocus)
     setRenameDraft(current?.title ?? '')
-    setRenameReactorDraft(current?.reactorName ?? '')
+    setRenameReactorDraft(current?.reactorName ?? (currentReactor?.known ? currentReactor.label : ''))
   }
 
   const cancelRenameSession = (): void => {
     setRenameTargetId(null)
+    setRenameInitialFocus('title')
     setRenameDraft('')
     setRenameReactorDraft('')
+    restoreSessionDialogFocus()
   }
 
   const confirmRenameSession = async (): Promise<void> => {
     if (!renameTargetId || !renameDraft.trim()) return
+    const current = library.sessions.find((item) => item.id === renameTargetId)
+    const currentReactor = current ? deriveReactorIdentity(current) : null
+    const reactorDraft = renameReactorDraft.trim()
+    const reactorUpdate = current?.reactorName == null && currentReactor?.known &&
+      normalizeReactorDraft(reactorDraft) === normalizeReactorDraft(currentReactor.label)
+      ? undefined
+      : reactorDraft
     commitLibrary(await window.watchAlong.renameSession(
       renameTargetId,
       renameDraft.trim(),
-      renameReactorDraft.trim()
+      reactorUpdate
     ))
     cancelRenameSession()
   }
 
-  const requestDeleteSession = (sessionId: string, returnToLibrary = false): void => {
+  const requestDeleteSession = (
+    sessionId: string,
+    returnToLibrary = false,
+    returnFocusTarget: HTMLElement | null = null
+  ): void => {
+    rememberSessionDialogReturnFocus(returnFocusTarget)
     setDeleteTarget({ sessionId, returnToLibrary })
   }
 
-  const cancelDeleteSession = (): void => setDeleteTarget(null)
+  const cancelDeleteSession = (): void => {
+    setDeleteTarget(null)
+    restoreSessionDialogFocus()
+  }
 
   const confirmDeleteSession = async (): Promise<void> => {
     if (!deleteTarget) return
@@ -503,6 +534,7 @@ export function useSessionActions({
     if (movieWindowActive && deleteTarget.sessionId === activeSession?.id) await stopDetachedMovie()
     const nextSession = commitLibrary(await window.watchAlong.deleteSession(deleteTarget.sessionId))
     setDeleteTarget(null)
+    restoreSessionDialogFocus()
     setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
     setMoviePosition(0)
     if (!nextSession || shouldReturnToLibrary) {
@@ -522,6 +554,20 @@ export function useSessionActions({
   const clearSubtitle = async (): Promise<void> => {
     commitLibrary(await window.watchAlong.clearSubtitle())
     setSubtitleCues([])
+  }
+
+  function rememberSessionDialogReturnFocus(explicitTarget: HTMLElement | null): void {
+    const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    sessionDialogReturnFocusRef.current = explicitTarget ?? activeElement
+  }
+
+  function restoreSessionDialogFocus(): void {
+    window.requestAnimationFrame(() => {
+      const target = sessionDialogReturnFocusRef.current
+      sessionDialogReturnFocusRef.current = null
+      if (target?.isConnected) target.focus()
+      else appShellRef.current?.focus()
+    })
   }
 
   return {
@@ -554,4 +600,8 @@ export function useSessionActions({
     openSubtitle,
     clearSubtitle
   }
+}
+
+function normalizeReactorDraft(value: string): string {
+  return value.normalize('NFKC').toLocaleLowerCase()
 }

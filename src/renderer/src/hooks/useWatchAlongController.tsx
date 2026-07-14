@@ -11,6 +11,12 @@ import { signedSeconds } from '../components/appFormat'
 import { SyncController, createHtmlVideoAdapter, type VideoAdapter } from '../sync/SyncController'
 import { TimelineMapping } from '../sync/timeline'
 import { getActiveSubtitleCue, hasSubtitleContentBeyondHeader, parseSubtitleText } from '../subtitles'
+import {
+  hasPlaybackShortcutModifier,
+  isCommandPanelShortcut,
+  isInteractiveShortcutTarget,
+  isRepeatedToggleShortcut
+} from '../keyboardShortcuts'
 import type { PlaybackHook } from './usePlayback'
 import type { SessionHook } from './useSession'
 import type { SubtitlesHook } from './useSubtitles'
@@ -479,6 +485,20 @@ export function useWatchAlongController({
     })
   }, [activeSubtitle?.text, movieWindowActive])
 
+  // Fullscreen belongs to the player, not the application window. Enforce the
+  // boundary both when the view changes and when a delayed fullscreen request
+  // settles after navigation has already started.
+  useEffect(() => {
+    const exitFullscreenOutsidePlayer = (): void => {
+      if (appView === 'player' || !document.fullscreenElement) return
+      void document.exitFullscreen().catch(() => undefined)
+    }
+
+    exitFullscreenOutsidePlayer()
+    document.addEventListener('fullscreenchange', exitFullscreenOutsidePlayer)
+    return () => document.removeEventListener('fullscreenchange', exitFullscreenOutsidePlayer)
+  }, [appView])
+
 
 
 
@@ -501,8 +521,9 @@ export function useWatchAlongController({
         return
       }
 
-      if (event.code === 'KeyP' && event.ctrlKey && event.shiftKey && appView === 'player' && !setupModeRef.current) {
+      if (isCommandPanelShortcut(event) && (appView === 'library' || appView === 'player')) {
         event.preventDefault()
+        if (event.repeat) return
         toggleCommandPanel(target)
         return
       }
@@ -526,16 +547,45 @@ export function useWatchAlongController({
           return
         }
 
+        if (event.code === 'Tab') {
+          event.preventDefault()
+          movePanelFocus(event.shiftKey ? -1 : 1)
+          return
+        }
+
         return
       }
 
-      if (target?.closest('input, textarea, select, button') || appView !== 'player') {
+      if (
+        appView !== 'player'
+        || isInteractiveShortcutTarget(event.target)
+        || hasPlaybackShortcutModifier(event)
+        || isRepeatedToggleShortcut(event)
+      ) {
         return
       }
 
-      if (setupModeRef.current) {
+      if (event.code === 'KeyR') {
+        event.preventDefault()
+        toggleReactionMute()
+        return
+      } else if (event.code === 'KeyM') {
+        event.preventDefault()
+        toggleMovieMute()
+        return
+      } else if (event.code === 'KeyP') {
+        event.preventDefault()
+        togglePipVisibility()
+        return
+      } else if (event.code === 'KeyF') {
+        event.preventDefault()
+        toggleFullscreen()
         return
       }
+
+      // Sync Setup owns Space, seek, and timing-nudge keys because its two
+      // timelines move independently. Window-level controls remain available.
+      if (setupModeRef.current) return
 
       if (event.code === 'Space') {
         event.preventDefault()
@@ -546,15 +596,6 @@ export function useWatchAlongController({
       } else if (event.code === 'ArrowRight') {
         event.preventDefault()
         seekBy(5)
-      } else if (event.code === 'KeyR') {
-        event.preventDefault()
-        toggleReactionMute()
-      } else if (event.code === 'KeyM') {
-        event.preventDefault()
-        toggleMovieMute()
-      } else if (event.code === 'KeyP') {
-        event.preventDefault()
-        togglePipVisibility()
       } else if (event.code === 'BracketLeft') {
         event.preventDefault()
         void nudgeOffset(-0.1)
@@ -707,7 +748,7 @@ export function useWatchAlongController({
     openStartupLibrary, openImportWizard, switchSession, chooseMoviePoster, clearMoviePoster,
     requestRenameSession,
     requestDeleteSession, openLocalReaction, handleDownloadedReaction, navigateToLibrary,
-    locateMissingMedia, updateOverlay, commitOverlay, persist, popOutMovie, popInMovie,
+    locateMissingMedia, updateOverlay, commitOverlay, persist, popOutMovie, popInMovie, togglePipVisibility,
     handleMetadata, handleTimeUpdate, handleVideoError, cancelSyncSetup, saveSyncSetup,
     toggleSetupPreview, setIndependentSetupTime, nudgeSetupTime, togglePlayPause, seekBy, seekTo,
     syncNow, openSubtitle, toggleFullscreen, toggleReactionFullscreen, toggleCommandPanel,

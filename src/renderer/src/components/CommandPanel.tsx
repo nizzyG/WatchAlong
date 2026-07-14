@@ -5,6 +5,7 @@ import { LibrarySessionCard } from './LibraryHome'
 import { ReactionSourceIcon, reactionSourceLabel } from './ReactionSource'
 import { fileName, formatTime } from './appFormat'
 import { DownloadProgress } from './DownloadProgress'
+import { keyboardShortcutHelpGroups } from '../keyboardShortcuts'
 
 export type CommandPanelSection = 'now-playing' | 'library' | 'downloads' | 'preferences' | 'help'
 
@@ -70,7 +71,13 @@ export function CommandPanel({
 
   return (
     <div className="command-panel-scrim" onMouseDown={onClose}>
-      <aside className="command-panel" aria-label="WatchAlong Command Panel" onMouseDown={(event) => event.stopPropagation()}>
+      <aside
+        className="command-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="WatchAlong Command Panel"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         <header className="command-panel-titlebar">
           <strong>WatchAlong</strong>
           <button
@@ -265,6 +272,34 @@ export function CommandPanel({
           onToggle={() => onExpandedSection('help')}
         >
           <div className="panel-about">
+            <section className="panel-shortcuts" aria-labelledby="keyboard-shortcuts-heading">
+              <h3 id="keyboard-shortcuts-heading">Keyboard shortcuts</h3>
+              {keyboardShortcutHelpGroups.map((group) => (
+                <div className="panel-shortcut-group" key={group.id}>
+                  <h4>{group.label}</h4>
+                  <dl>
+                    {group.items.map((shortcut) => (
+                      <div className="panel-shortcut-row" key={`${group.id}-${shortcut.label}`}>
+                        <dt aria-label={shortcut.keys.join(shortcut.separator === 'or' ? ' or ' : ' plus ')}>
+                          {shortcut.keys.map((key, index) => (
+                            <span key={`${key}-${index}`}>
+                              {index > 0 && (
+                                <span className="panel-shortcut-join" aria-hidden>
+                                  {shortcut.separator === 'or' ? '/' : '+'}
+                                </span>
+                              )}
+                              <kbd>{key}</kbd>
+                            </span>
+                          ))}
+                        </dt>
+                        <dd>{shortcut.label}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              ))}
+              <p>Playback shortcuts pause while you’re typing or using a control.</p>
+            </section>
             <p>Watch reactions alongside your own movies, perfectly in sync.</p>
             <p>All data stays local. Patreon cookies are encrypted with OS storage when saved. WatchAlong has no telemetry.</p>
             {ONLINE_HELP_URL && (

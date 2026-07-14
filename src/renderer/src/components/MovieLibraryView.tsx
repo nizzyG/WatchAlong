@@ -1,28 +1,32 @@
 import type { LibrarySession } from '@shared/types'
 import { LibrarySessionCard } from './LibrarySessionCard'
 import { MoviePoster } from './MoviePoster'
-import { deriveReactorIdentity, groupSessionsByMovie } from './libraryPresentation'
+import { deriveReactorIdentity, groupSessionsByMovie, type LibrarySort } from './libraryPresentation'
 
 export function MovieLibraryView({
   sessions,
+  sort,
   compact,
   onOpenSession,
   onChoosePoster,
   onClearPoster,
   onRename,
+  onEditReactor,
   onDelete
 }: {
   sessions: LibrarySession[]
+  sort: LibrarySort
   compact: boolean
   onOpenSession(sessionId: string): void
   onChoosePoster(sessionId: string): void
   onClearPoster(sessionId: string): void
-  onRename(sessionId: string): void
-  onDelete(sessionId: string): void
+  onRename(sessionId: string, returnFocusTarget: HTMLButtonElement | null): void
+  onEditReactor(sessionId: string, returnFocusTarget: HTMLButtonElement | null): void
+  onDelete(sessionId: string, returnFocusTarget: HTMLButtonElement | null): void
 }): JSX.Element {
   return (
     <div className={`movie-library-grid ${compact ? 'movie-library-grid-compact' : ''}`}>
-      {groupSessionsByMovie(sessions).map((group, index) => {
+      {groupSessionsByMovie(sessions, sort).map((group, index) => {
         const headingId = `library-movie-group-${index}`
         const representative = group.sessions[0]
         const posterRepresentative = group.sessions.find((session) => session.moviePosterPath) ?? representative
@@ -50,8 +54,9 @@ export function MovieLibraryView({
                     onOpen={() => onOpenSession(session.id)}
                     onChoosePoster={session.moviePath ? () => onChoosePoster(session.id) : undefined}
                     onClearPoster={session.moviePath ? () => onClearPoster(session.id) : undefined}
-                    onRename={() => onRename(session.id)}
-                    onDelete={() => onDelete(session.id)}
+                    onRename={(returnFocusTarget) => onRename(session.id, returnFocusTarget)}
+                    onEditReactor={(returnFocusTarget) => onEditReactor(session.id, returnFocusTarget)}
+                    onDelete={(returnFocusTarget) => onDelete(session.id, returnFocusTarget)}
                   />
                 )
               })}

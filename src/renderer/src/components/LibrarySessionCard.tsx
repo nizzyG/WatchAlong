@@ -1,4 +1,4 @@
-import { ImagePlus, MoreHorizontal, Pencil, RotateCcw, Trash2 } from 'lucide-react'
+import { ImagePlus, MoreHorizontal, Pencil, RotateCcw, Trash2, UserRoundPen } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { LibrarySession } from '@shared/types'
 import { ReactionSourceIcon, reactionSourceLabel } from './ReactionSource'
@@ -20,6 +20,7 @@ export function LibrarySessionCard({
   onChoosePoster,
   onClearPoster,
   onRename,
+  onEditReactor,
   onDelete
 }: {
   session: LibrarySession
@@ -33,8 +34,9 @@ export function LibrarySessionCard({
   onOpen(): void
   onChoosePoster?(): void
   onClearPoster?(): void
-  onRename?(): void
-  onDelete?(): void
+  onRename?(returnFocusTarget: HTMLButtonElement | null): void
+  onEditReactor?(returnFocusTarget: HTMLButtonElement | null): void
+  onDelete?(returnFocusTarget: HTMLButtonElement | null): void
 }): JSX.Element {
   const [actionsOpen, setActionsOpen] = useState(false)
   const [menuPlacement, setMenuPlacement] = useState<'up' | 'down'>('down')
@@ -42,8 +44,8 @@ export function LibrarySessionCard({
   const actionsMenuRef = useRef<HTMLDivElement>(null)
   const duration = session.reactionDurationSeconds ?? 0
   const progress = duration > 0 ? Math.min(100, Math.max(0, (session.lastReactionTimeSeconds / duration) * 100)) : 0
-  const showActions = Boolean(onChoosePoster || onClearPoster || onRename || onDelete)
-  const actionCount = [onChoosePoster, session.moviePosterPath && onClearPoster, onRename, onDelete].filter(Boolean).length
+  const showActions = Boolean(onChoosePoster || onClearPoster || onRename || onEditReactor || onDelete)
+  const actionCount = [onRename, onEditReactor, onChoosePoster, session.moviePosterPath && onClearPoster, onDelete].filter(Boolean).length
   const displayTitle = primaryLabel || session.title || fileName(session.moviePath ?? session.reactionPath ?? 'Untitled watchalong')
   const controlLabel = accessibleLabel || displayTitle
   const movieTitle = deriveMovieIdentity(session).label
@@ -134,6 +136,32 @@ export function LibrarySessionCard({
                 }
               }}
             >
+              {onRename && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    closeActions()
+                    onRename(actionsButtonRef.current)
+                  }}
+                >
+                  <Pencil size={14} aria-hidden />
+                  Rename pairing
+                </button>
+              )}
+              {onEditReactor && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    closeActions()
+                    onEditReactor(actionsButtonRef.current)
+                  }}
+                >
+                  <UserRoundPen size={14} aria-hidden />
+                  Edit reactor
+                </button>
+              )}
               {onChoosePoster && (
                 <button
                   type="button"
@@ -160,30 +188,17 @@ export function LibrarySessionCard({
                   Use automatic poster
                 </button>
               )}
-              {onRename && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    closeActions()
-                    onRename()
-                  }}
-                >
-                  <Pencil size={14} aria-hidden />
-                  Rename
-                </button>
-              )}
               {onDelete && (
                 <button
                   type="button"
                   role="menuitem"
                   onClick={() => {
                     closeActions()
-                    onDelete()
+                    onDelete(actionsButtonRef.current)
                   }}
                 >
                   <Trash2 size={14} aria-hidden />
-                  Delete
+                  Delete pairing
                 </button>
               )}
             </div>

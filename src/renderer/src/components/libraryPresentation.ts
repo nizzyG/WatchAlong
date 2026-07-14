@@ -2,6 +2,7 @@ import type { LibrarySession } from '@shared/types'
 import { mediaPathIdentity } from '@shared/session'
 
 export type LibraryMode = 'pairings' | 'reactors' | 'movies'
+export type LibrarySort = 'date-added' | 'alphabetical'
 
 export interface LibraryIdentity {
   key: string
@@ -141,23 +142,41 @@ export function pairingDisplayTitle(session: LibrarySession): string {
   return movie.known ? movie.label : humanizeMediaName(session.reactionPath ?? 'Untitled watchalong')
 }
 
-export function sortPairings(sessions: LibrarySession[]): LibrarySession[] {
-  return [...sessions].sort((left, right) => {
-    const updatedDifference = safeTimestamp(right.updatedAt) - safeTimestamp(left.updatedAt)
-    if (updatedDifference !== 0) {
-      return updatedDifference
-    }
-
-    return labelCollator.compare(pairingDisplayTitle(left), pairingDisplayTitle(right)) || left.id.localeCompare(right.id)
-  })
+export function sortPairings(
+  sessions: LibrarySession[],
+  sort: LibrarySort = 'date-added'
+): LibrarySession[] {
+  return [...sessions].sort((left, right) => compareSessions(left, right, pairingDisplayTitle, sort))
 }
 
-export function groupSessionsByMovie(sessions: LibrarySession[]): LibraryGroup[] {
-  return groupSessions(sessions, deriveMovieIdentity, deriveReactorIdentity)
+export function groupSessionsByMovie(
+  sessions: LibrarySession[],
+  sort: LibrarySort = 'date-added'
+): LibraryGroup[] {
+  return groupSessions(sessions, deriveMovieIdentity, deriveReactorIdentity, sort)
 }
 
-export function groupSessionsByReactor(sessions: LibrarySession[]): LibraryGroup[] {
-  return groupSessions(sessions, deriveReactorIdentity, deriveMovieIdentity)
+export function groupSessionsByReactor(
+  sessions: LibrarySession[],
+  sort: LibrarySort = 'date-added'
+): LibraryGroup[] {
+  return groupSessions(sessions, deriveReactorIdentity, deriveMovieIdentity, sort)
+}
+
+export function continueWatchingSessions(sessions: LibrarySession[]): LibrarySession[] {
+  return sessions
+    .filter(isContinueWatchingCandidate)
+    .sort((left, right) => {
+      const activityDifference = safeTimestamp(right.updatedAt) - safeTimestamp(left.updatedAt)
+      return activityDifference || labelCollator.compare(pairingDisplayTitle(left), pairingDisplayTitle(right)) || left.id.localeCompare(right.id)
+    })
+}
+
+export function sessionProgressPercent(session: LibrarySession): number | null {
+  const duration = session.reactionDurationSeconds
+  const position = session.lastReactionTimeSeconds
+  if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0 || !Number.isFinite(position)) return null
+  return Math.min(100, Math.max(0, (position / duration) * 100))
 }
 
 export function humanizeMediaName(pathOrName: string): string {
@@ -170,7 +189,8 @@ export function humanizeMediaName(pathOrName: string): string {
 function groupSessions(
   sessions: LibrarySession[],
   groupIdentity: (session: LibrarySession) => LibraryIdentity,
-  itemIdentity: (session: LibrarySession) => LibraryIdentity
+  itemIdentity: (session: LibrarySession) => LibraryIdentity,
+  sort: LibrarySort
 ): LibraryGroup[] {
   const grouped = new Map<string, LibraryGroup>()
   for (const session of sessions) {
@@ -185,24 +205,45 @@ function groupSessions(
 
   const groups = [...grouped.values()]
   for (const group of groups) {
-    group.sessions.sort((left, right) => {
-      const labelDifference = labelCollator.compare(itemIdentity(left).label, itemIdentity(right).label)
-      if (labelDifference !== 0) {
-        return labelDifference
-      }
-
-      const updatedDifference = safeTimestamp(right.updatedAt) - safeTimestamp(left.updatedAt)
-      return updatedDifference || left.id.localeCompare(right.id)
-    })
+    group.sessions.sort((left, right) => compareSessions(left, right, (session) => itemIdentity(session).label, sort))
   }
 
   return groups.sort((left, right) => {
-    if (left.known !== right.known) {
+    if (sort === 'date-added') {
+      const createdDifference = newestCreatedAt(right) - newestCreatedAt(left)
+      if (createdDifference !== 0) return createdDifference
+    } else if (left.known !== right.known) {
       return left.known ? -1 : 1
     }
 
     return labelCollator.compare(left.label, right.label) || left.key.localeCompare(right.key)
   })
+}
+
+function compareSessions(
+  left: LibrarySession,
+  right: LibrarySession,
+  label: (session: LibrarySession) => string,
+  sort: LibrarySort
+): number {
+  if (sort === 'date-added') {
+    const createdDifference = safeTimestamp(right.createdAt) - safeTimestamp(left.createdAt)
+    if (createdDifference !== 0) return createdDifference
+  }
+
+  return labelCollator.compare(label(left), label(right)) || left.id.localeCompare(right.id)
+}
+
+function newestCreatedAt(group: LibraryGroup): number {
+  return group.sessions.reduce((newest, session) => Math.max(newest, safeTimestamp(session.createdAt)), 0)
+}
+
+function isContinueWatchingCandidate(session: LibrarySession): boolean {
+  const position = session.lastReactionTimeSeconds
+  if (!session.moviePath || !session.reactionPath || !Number.isFinite(position) || position <= 0) return false
+
+  const progress = sessionProgressPercent(session)
+  return progress === null || progress < 95
 }
 
 function derivePatreonIdentity(reactionPath: string): LibraryIdentity | null {

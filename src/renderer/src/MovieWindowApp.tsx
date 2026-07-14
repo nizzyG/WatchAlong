@@ -1,11 +1,16 @@
 import { LogIn, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   MovieWindowInit,
   RemoteMediaCommand,
   RemoteMediaEventType,
   RemoteMediaState
 } from '@shared/types'
+import {
+  hasPlaybackShortcutModifier,
+  isInteractiveShortcutTarget,
+  isRepeatedToggleShortcut
+} from './keyboardShortcuts'
 
 const mediaEvents: RemoteMediaEventType[] = [
   'play',
@@ -32,6 +37,16 @@ export function MovieWindowApp(): JSX.Element {
   const [init, setInit] = useState<MovieWindowInit | null>(null)
   const [subtitleText, setSubtitleText] = useState<string | null>(null)
   const [fadingOut, setFadingOut] = useState(false)
+
+  const toggleFullscreen = useCallback((): void => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined)
+      return
+    }
+
+    const request = windowRef.current?.requestFullscreen()
+    if (request) void request.catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     const unsubscribe = window.watchAlong.onMovieMediaCommand((command) => {
@@ -101,16 +116,24 @@ export function MovieWindowApp(): JSX.Element {
     }
   }, [])
 
-  const title = init?.title ?? 'Movie'
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (
+        event.code !== 'KeyF'
+        || hasPlaybackShortcutModifier(event)
+        || isInteractiveShortcutTarget(event.target)
+        || isRepeatedToggleShortcut(event)
+      ) return
 
-  const toggleFullscreen = (): void => {
-    if (document.fullscreenElement) {
-      void document.exitFullscreen()
-      return
+      event.preventDefault()
+      toggleFullscreen()
     }
 
-    void windowRef.current?.requestFullscreen()
-  }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [toggleFullscreen])
+
+  const title = init?.title ?? 'Movie'
 
   return (
     <main ref={windowRef} className={`movie-window ${fadingOut ? 'movie-window-fading' : ''}`}>

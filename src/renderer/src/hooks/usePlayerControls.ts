@@ -71,7 +71,7 @@ export function usePlayerControls({
     setSyncState,
     setPendingSyncSetup
   } = playback
-  const { sessionRef, activeSessionIdRef, setLibrary } = sessionState
+  const { sessionRef, activeSessionIdRef, setLibrary, appView } = sessionState
   const mediaRecoveryCleanupRef = useRef<Record<MediaRole, (() => void) | null>>({
     reaction: null,
     movie: null
@@ -327,8 +327,12 @@ export function usePlayerControls({
   }
 
   const toggleFullscreen = (): void => {
-    if (document.fullscreenElement) void document.exitFullscreen()
-    else void document.documentElement.requestFullscreen()
+    if (appView !== 'player') return
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined)
+      return
+    }
+    void document.documentElement.requestFullscreen().catch(() => undefined)
   }
 
   const enterSyncSetup = (): void => {
