@@ -47,14 +47,12 @@ Go back to the WatchAlong window, click the **Patreon post** option to expand it
 
 Patreon videos live behind a subscription tier. WatchAlong needs to verify you're an active supporter.
 
-1. WatchAlong detects the browsers installed on your computer.
-2. **Firefox** is recommended — it lets WatchAlong read your session cookie automatically in one click.
-3. Click **Firefox** to connect.
+Choose either connection path:
 
-> **Don't use Firefox?**
-> If browser security prevents automatic extraction, WatchAlong provides a secure in-app sign-in window. You can also follow the in-app instructions to copy and paste your `session_id` cookie manually. It takes about thirty seconds.
+1. Click **Sign in with browser** to open Patreon securely inside WatchAlong, then use your usual Patreon sign-in method.
+2. Or, if you are already signed in to Patreon in Firefox, click **Use Firefox** for a one-click connection.
 
-![Browser Cookie Extraction Options](docs/images/pat-4.png)
+Firefox is the only browser supported for cookie extraction. If you use another browser, the in-app sign-in works without copying cookies or opening Developer Tools.
 
 ## Step 6 — WatchAlong does the rest
 

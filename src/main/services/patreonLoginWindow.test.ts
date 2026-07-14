@@ -1,9 +1,10 @@
 import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron'
+import { shell, type BrowserWindow, type BrowserWindowConstructorOptions } from 'electron'
 
 vi.mock('electron', () => ({
-  BrowserWindow: class BrowserWindow {}
+  BrowserWindow: class BrowserWindow {},
+  shell: { openExternal: vi.fn(async () => undefined) }
 }))
 
 import { PatreonLoginWindowManager } from './patreonLoginWindow'
@@ -11,17 +12,16 @@ import { PatreonLoginWindowManager } from './patreonLoginWindow'
 describe('PatreonLoginWindowManager', () => {
   beforeEach(() => {
     vi.useRealTimers()
+    vi.mocked(shell.openExternal).mockClear()
   })
 
-  it('denies permissions and guards popups, navigation, and redirects', async () => {
-    const rootSession = new FakeSession()
-    const popupSession = new FakeSession()
-    const root = new FakeWindow(rootSession)
-    const popup = new FakeWindow(popupSession)
+  it('preserves the native OAuth opener lifecycle from the known-working login window', async () => {
+    const loginSession = new FakeSession()
+    const root = new FakeWindow(loginSession)
+    const popup = new FakeWindow(loginSession)
     const options: BrowserWindowConstructorOptions[] = []
-    const vault = new FakeVault()
     const manager = new PatreonLoginWindowManager(
-      vault as never,
+      new FakeVault() as never,
       (windowOptions) => {
         options.push(windowOptions)
         return root as unknown as BrowserWindow
@@ -29,61 +29,76 @@ describe('PatreonLoginWindowManager', () => {
     )
 
     const resultPromise = manager.open({} as BrowserWindow)
-    const requestPermission = rootSession.setPermissionRequestHandler.mock.calls[0]?.[0]
-    const permissionCallback = vi.fn()
-    requestPermission?.(null, 'media', permissionCallback, {} as never)
-    expect(permissionCallback).toHaveBeenCalledWith(false)
-    expect(rootSession.setPermissionCheckHandler.mock.calls[0]?.[0]()).toBe(false)
-    expect(rootSession.setDevicePermissionHandler.mock.calls[0]?.[0]({} as never)).toBe(false)
-    const displayMediaCallback = vi.fn()
-    rootSession.setDisplayMediaRequestHandler.mock.calls[0]?.[0](
-      {} as never,
-      displayMediaCallback
-    )
-    expect(displayMediaCallback).toHaveBeenCalledWith({})
 
-    expect(root.openHandler?.({ url: 'https://user:secret@patreon.com/login' })).toEqual({
-      action: 'deny'
-    })
-    const popupDecision = root.openHandler?.({
-      url: 'https://accounts.google.com/o/oauth2/v2/auth'
-    }) as Electron.WindowOpenHandlerResponse
-    expect(popupDecision.action).toBe('allow')
-    expect(popupDecision.overrideBrowserWindowOptions?.webPreferences).toMatchObject({
-      partition: options[0]?.webPreferences?.partition,
+    expect(options[0]?.webPreferences).toMatchObject({
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true
     })
+    expect(options[0]?.webPreferences?.partition).toMatch(/^patreon-login-/)
 
-    const redirectEvent = { preventDefault: vi.fn() }
-    root.webContents.emit(
-      'will-redirect',
-      redirectEvent,
-      'https://patreon.com.evil.test/steal'
-    )
-    expect(redirectEvent.preventDefault).toHaveBeenCalledOnce()
+    const popupDecision = root.openHandler?.({
+      url: 'https://accounts.google.com/o/oauth2/v2/auth'
+    }) as Electron.WindowOpenHandlerResponse
+    expect(popupDecision.action).toBe('allow')
+    expect(popupDecision.overrideBrowserWindowOptions).toMatchObject({
+      parent: root,
+      backgroundColor: '#05070a',
+      autoHideMenuBar: true
+    })
+    expect(popupDecision.overrideBrowserWindowOptions?.webPreferences).toBeUndefined()
+
+    root.webContents.emit('did-create-window', popup)
+    expect(popup.openHandler?.({ url: 'https://www.patreon.com/api/oauth2/callback' })).toEqual({
+      action: 'allow'
+    })
+    expect(popup.webContents.listenerCount('will-redirect')).toBe(0)
+    expect(popup.webContents.listenerCount('did-navigate')).toBe(0)
 
     const allowedNavigation = { preventDefault: vi.fn() }
-    root.webContents.emit(
+    popup.webContents.emit(
       'will-navigate',
       allowedNavigation,
-      'https://www.facebook.com/login'
+      'https://accounts.google.com/signin/oauth/consent'
     )
     expect(allowedNavigation.preventDefault).not.toHaveBeenCalled()
 
-    root.webContents.emit('did-create-window', popup)
-    expect(popup.openHandler).toBeTypeOf('function')
-    expect(popupSession.setPermissionRequestHandler).toHaveBeenCalledOnce()
+    const blockedNavigation = { preventDefault: vi.fn() }
+    popup.webContents.emit(
+      'will-navigate',
+      blockedNavigation,
+      'https://example.test/leave-login'
+    )
+    expect(blockedNavigation.preventDefault).toHaveBeenCalledOnce()
+    expect(shell.openExternal).toHaveBeenCalledWith('https://example.test/leave-login')
 
     await manager.closeAll()
     await expect(resultPromise).resolves.toMatchObject({ ok: false })
-    expect(root.destroy).toHaveBeenCalledOnce()
-    expect(popup.destroy).toHaveBeenCalledOnce()
-    expect(rootSession.clearStorageData).toHaveBeenCalledOnce()
-    expect(rootSession.clearCache).toHaveBeenCalledOnce()
-    expect(popupSession.clearStorageData).toHaveBeenCalledOnce()
-    expect(popupSession.clearCache).toHaveBeenCalledOnce()
+    expect(root.close).toHaveBeenCalledOnce()
+    expect(popup.close).not.toHaveBeenCalled()
+  })
+
+  it('captures the Patreon cookie and closes the opener normally', async () => {
+    const loginSession = new FakeSession()
+    const root = new FakeWindow(loginSession)
+    const vault = new FakeVault()
+    const manager = new PatreonLoginWindowManager(
+      vault as never,
+      () => root as unknown as BrowserWindow
+    )
+
+    const resultPromise = manager.open({} as BrowserWindow)
+    loginSession.cookies.emit(
+      'changed',
+      {},
+      { name: 'session_id', value: 'oauth-cookie', domain: '.patreon.com' },
+      'explicit',
+      false
+    )
+
+    await expect(resultPromise).resolves.toEqual({ ok: true, token: 'patreon-token' })
+    expect(vault.createToken).toHaveBeenCalledWith('session_id=oauth-cookie', 0)
+    expect(root.close).toHaveBeenCalledOnce()
   })
 
   it('cannot create a token after Forget advances the authorization epoch', async () => {
@@ -110,7 +125,49 @@ describe('PatreonLoginWindowManager', () => {
       message: 'Patreon sign-in was cancelled.'
     })
     expect(vault.createToken).toHaveBeenCalledWith('session_id=late-cookie', 0)
-    await manager.dispose()
+    expect(root.close).toHaveBeenCalledOnce()
+  })
+
+  it('does not mint a token when cookie polling finishes after cancellation', async () => {
+    const loginSession = new FakeSession()
+    const root = new FakeWindow(loginSession)
+    const vault = new FakeVault()
+    let resolveCookies: ((cookies: Electron.Cookie[]) => void) | undefined
+    loginSession.cookies.get.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCookies = resolve
+      })
+    )
+    const manager = new PatreonLoginWindowManager(
+      vault as never,
+      () => root as unknown as BrowserWindow
+    )
+
+    const resultPromise = manager.open({} as BrowserWindow)
+    root.webContents.emit('did-finish-load')
+    await manager.closeAll()
+    resolveCookies?.([
+      { name: 'session_id', value: 'late-cookie', domain: '.patreon.com' } as Electron.Cookie
+    ])
+    await Promise.resolve()
+
+    await expect(resultPromise).resolves.toMatchObject({ ok: false })
+    expect(vault.createToken).not.toHaveBeenCalled()
+  })
+
+  it('does not send unsafe external schemes to the operating system', async () => {
+    const root = new FakeWindow(new FakeSession())
+    const manager = new PatreonLoginWindowManager(
+      new FakeVault() as never,
+      () => root as unknown as BrowserWindow
+    )
+
+    const resultPromise = manager.open({} as BrowserWindow)
+    expect(root.openHandler?.({ url: 'javascript:alert(1)' })).toEqual({ action: 'deny' })
+    expect(shell.openExternal).not.toHaveBeenCalled()
+
+    await manager.closeAll()
+    await expect(resultPromise).resolves.toMatchObject({ ok: false })
   })
 })
 
@@ -127,17 +184,11 @@ class FakeVault {
 }
 
 class FakeCookies extends EventEmitter {
-  get = vi.fn(async () => [])
+  get = vi.fn(async (): Promise<Electron.Cookie[]> => [])
 }
 
 class FakeSession {
   cookies = new FakeCookies()
-  setPermissionCheckHandler = vi.fn()
-  setPermissionRequestHandler = vi.fn()
-  setDevicePermissionHandler = vi.fn()
-  setDisplayMediaRequestHandler = vi.fn()
-  clearStorageData = vi.fn(async () => undefined)
-  clearCache = vi.fn(async () => undefined)
 }
 
 class FakeWebContents extends EventEmitter {
@@ -158,7 +209,7 @@ class FakeWindow extends EventEmitter {
   readonly webContents: FakeWebContents
   private destroyed = false
   loadURL = vi.fn(async () => undefined)
-  destroy = vi.fn(() => {
+  close = vi.fn(() => {
     if (this.destroyed) return
     this.destroyed = true
     this.emit('closed')

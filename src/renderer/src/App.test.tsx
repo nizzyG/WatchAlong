@@ -159,10 +159,12 @@ function createApi(
       }
       return currentLibrary
     }),
-    renameSession: vi.fn(async (sessionId: string, title: string) => {
+    renameSession: vi.fn(async (sessionId: string, title: string, reactorName?: string) => {
       currentLibrary = {
         ...currentLibrary,
-        sessions: currentLibrary.sessions.map((session) => (session.id === sessionId ? { ...session, title } : session))
+        sessions: currentLibrary.sessions.map((session) => (session.id === sessionId
+          ? { ...session, title, reactorName: reactorName?.trim() || null, reactorNameOrigin: 'custom' as const }
+          : session))
       }
       return currentLibrary
     }),
@@ -371,6 +373,11 @@ describe('App', () => {
       expect(movie).toHaveAttribute('src', 'watchalong://media/s1/movie')
     })
 
+    // A real controller animation frame runs before media metadata arrives.
+    // It must not replace the stored position with the element's initial zero.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(api.saveSessionPosition).not.toHaveBeenCalledWith('s1', 0)
+
     fireEvent.loadedMetadata(reaction)
     fireEvent.loadedMetadata(movie)
 
@@ -380,6 +387,27 @@ describe('App', () => {
       expect(movie.currentTime).toBe(37.5)
     })
     loadSession.mockRestore()
+  })
+
+  it('keeps the saved position when a loading session is closed before metadata arrives', async () => {
+    const session = createSession('s1', 'First', 37.5)
+    const api = createApi(createLibrary('s1', [session]))
+    window.watchAlong = api
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /Open First/ }))
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+
+    // Let the controller's pre-metadata animation frames run. They report the
+    // element's initial zero, which must not replace the disk-backed fallback.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 50)))
+    vi.mocked(api.saveSessionPosition).mockClear()
+
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    fireEvent.click(await screen.findByRole('button', { name: /Close Session/i }))
+
+    await waitFor(() => expect(api.saveSessionPosition).toHaveBeenCalledWith('s1', 37.5))
+    expect(api.saveSessionPosition).not.toHaveBeenCalledWith('s1', 0)
   })
 
   it('falls back to the empty library when resume on launch is enabled but no sessions exist', async () => {
@@ -464,6 +492,32 @@ describe('App', () => {
     )
   })
 
+  it('keeps downloaded reactor metadata when a missing reaction is relocated', async () => {
+    const session = createSession('s1', 'Movie — Downloaded Name', 0, {
+      titleOrigin: 'generated',
+      reactionSource: 'youtube',
+      reactorName: 'Downloaded Name',
+      reactorNameOrigin: 'metadata'
+    })
+    const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
+    api.getMediaUrl = vi.fn(async (role, sessionId) =>
+      role === 'reaction' ? null : `watchalong://media/${sessionId}/${role}`)
+    window.watchAlong = api
+
+    render(<App />)
+    expect(await screen.findByLabelText('Missing media recovery')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Locate reaction/i }))
+
+    await waitFor(() => expect(api.replaceSessionMedia).toHaveBeenCalledWith(
+      's1',
+      'reaction',
+      'C:\\Reactions\\Located reaction.mp4',
+      'youtube',
+      undefined,
+      'Downloaded Name'
+    ))
+  })
+
   it('opens an existing pairing without deleting either session when replacement conflicts', async () => {
     const existing = createSession('s2', 'Already saved', 97, {
       reactionPath: firstSession.reactionPath,
@@ -526,7 +580,11 @@ describe('App', () => {
     const { container } = render(<App />)
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
     const reaction = container.querySelector('video.reaction-video') as HTMLVideoElement
+    fireEvent.loadedMetadata(reaction)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
     reaction.currentTime = 42.25
+    fireEvent.click(screen.getByLabelText('Play'))
+    await waitFor(() => expect(playMock).toHaveBeenCalled())
 
     await waitFor(() => expect(api.saveSessionPosition).toHaveBeenCalledWith('s1', 42.25))
     expect(api.saveActiveSession).not.toHaveBeenCalledWith(expect.objectContaining({ lastReactionTimeSeconds: 42.25 }))
@@ -539,6 +597,8 @@ describe('App', () => {
     const { container } = render(<App />)
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
     const reaction = container.querySelector('video.reaction-video') as HTMLVideoElement
+    fireEvent.loadedMetadata(reaction)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
     reaction.currentTime = 51.125
     vi.mocked(api.saveSessionPosition).mockClear()
     vi.mocked(api.setActiveSession).mockClear()
@@ -564,6 +624,8 @@ describe('App', () => {
     const { container } = render(<App />)
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
     const reaction = container.querySelector('video.reaction-video') as HTMLVideoElement
+    fireEvent.loadedMetadata(reaction)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
     reaction.currentTime = 64.5
     vi.mocked(api.saveSessionPosition).mockClear()
 
@@ -574,6 +636,64 @@ describe('App', () => {
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
   })
 
+  it('flushes the native reaction time when the media element resets before close', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    const reaction = container.querySelector('video.reaction-video') as HTMLVideoElement
+    fireEvent.loadedMetadata(reaction)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+    reaction.currentTime = 37.25
+    Object.defineProperty(reaction, 'readyState', { configurable: true, get: () => 4 })
+    fireEvent.timeUpdate(reaction)
+    Object.defineProperty(reaction, 'readyState', { configurable: true, get: () => 0 })
+    vi.mocked(api.saveSessionPosition).mockClear()
+
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    fireEvent.click(await screen.findByRole('button', { name: /Close Session/i }))
+
+    await waitFor(() => expect(api.saveSessionPosition).toHaveBeenCalledWith('s1', 37.25))
+  })
+
+  it('restores the freshly flushed position when closing and reopening the same session', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+    const loadSession = vi.spyOn(SyncController.prototype, 'loadSession')
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    const firstReaction = container.querySelector('video.reaction-video') as HTMLVideoElement
+    fireEvent.loadedMetadata(firstReaction)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+    firstReaction.currentTime = 64.5
+    vi.mocked(api.saveSessionPosition).mockClear()
+
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    fireEvent.click(await screen.findByRole('button', { name: /Close Session/i }))
+    await waitFor(() => expect(api.saveSessionPosition).toHaveBeenCalledWith('s1', 64.5))
+    expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
+
+    loadSession.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: /Open First/ }))
+    await waitFor(() => expect(container.querySelector('video.reaction-video')).toBeInTheDocument())
+    const reopenedReaction = container.querySelector('video.reaction-video') as HTMLVideoElement
+    const reopenedMovie = container.querySelector('video.pip-video') as HTMLVideoElement
+    await waitFor(() => {
+      expect(reopenedReaction).toHaveAttribute('src', 'watchalong://media/s1/reaction')
+      expect(reopenedMovie).toHaveAttribute('src', 'watchalong://media/s1/movie')
+    })
+
+    fireEvent.loadedMetadata(reopenedReaction)
+    fireEvent.loadedMetadata(reopenedMovie)
+
+    await waitFor(() => expect(loadSession).toHaveBeenCalledWith(64.5))
+    expect(reopenedReaction.currentTime).toBe(64.5)
+    expect(reopenedMovie.currentTime).toBe(64.5)
+    loadSession.mockRestore()
+  })
+
   it('flushes the current position before confirming main-window close', async () => {
     const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
     window.watchAlong = api
@@ -581,6 +701,8 @@ describe('App', () => {
     const { container } = render(<App />)
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
     const reaction = container.querySelector('video.reaction-video') as HTMLVideoElement
+    fireEvent.loadedMetadata(reaction)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
     reaction.currentTime = 73.25
     vi.mocked(api.saveSessionPosition).mockClear()
 
@@ -849,7 +971,8 @@ describe('App', () => {
       'reaction',
       'C:\\Reactions\\Aladdin reaction.mp4',
       'youtube',
-      's1-movie — Addie Counts'
+      's1-movie — Addie Counts',
+      'Addie Counts'
     ))
     expect(api.setSessionMedia).not.toHaveBeenCalled()
     await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1', 'initial'))
@@ -1118,15 +1241,41 @@ describe('App', () => {
     fireEvent.click(screen.getAllByRole('button', { name: /More actions for/ })[0])
     fireEvent.click(screen.getByRole('button', { name: /Rename/i }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Renamed session' } })
+    fireEvent.change(screen.getByLabelText(/Reactor \(optional\)/i), { target: { value: 'Cinema Therapy' } })
     fireEvent.click(screen.getByRole('button', { name: /^Save$/i }))
 
-    await waitFor(() => expect(api.renameSession).toHaveBeenCalledWith('s1', 'Renamed session'))
+    await waitFor(() => expect(api.renameSession).toHaveBeenCalledWith('s1', 'Renamed session', 'Cinema Therapy'))
+    fireEvent.click(screen.getByRole('button', { name: 'By Reactor' }))
+    expect(screen.getByRole('heading', { name: 'Cinema Therapy' })).toBeInTheDocument()
 
     fireEvent.click(screen.getAllByRole('button', { name: /More actions for/ })[0])
     fireEvent.click(screen.getByRole('button', { name: /Delete/i }))
     fireEvent.click(screen.getByRole('button', { name: /^Delete$/i }))
 
     await waitFor(() => expect(api.deleteSession).toHaveBeenCalledWith('s1'))
+  })
+
+  it('submits an unchanged downloaded reactor name during a title-only rename', async () => {
+    const session = createSession('s1', 'Movie — Downloaded Name', 0, {
+      titleOrigin: 'generated',
+      reactorName: 'Downloaded Name',
+      reactorNameOrigin: 'metadata'
+    })
+    const api = createApi(createLibrary('s1', [session]))
+    window.watchAlong = api
+
+    render(<App />)
+    expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /More actions for/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Rename/i }))
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'My custom title' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }))
+
+    await waitFor(() => expect(api.renameSession).toHaveBeenCalledWith(
+      's1',
+      'My custom title',
+      'Downloaded Name'
+    ))
   })
 
   it('renders unknown for invalid session timestamps', async () => {
@@ -1173,6 +1322,8 @@ function createSession(
     id,
     title,
     titleOrigin: 'custom',
+    reactorName: null,
+    reactorNameOrigin: 'metadata',
     reactionPath: `C:\\Videos\\${id}-reaction.mp4`,
     reactionSource: 'local',
     reactionDurationSeconds: 120,

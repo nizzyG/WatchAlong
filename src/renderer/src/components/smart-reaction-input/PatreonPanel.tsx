@@ -1,16 +1,6 @@
-import { Check, Loader2, Lock, ShieldCheck } from 'lucide-react'
-import type { RefObject } from 'react'
-import type { BrowserDetection, BrowserName } from '@shared/types'
+import { Loader2, Lock, ShieldCheck } from 'lucide-react'
+import type { BrowserDetection } from '@shared/types'
 import type { ReactionDownloadController } from './useReactionDownload'
-
-const browserGlyphs: Record<BrowserName, string> = {
-  firefox: 'F',
-  chrome: 'C',
-  edge: 'E',
-  brave: 'B',
-  safari: 'S',
-  opera: 'O'
-}
 
 export function PatreonPanel({ controller }: { controller: ReactionDownloadController }): JSX.Element {
   const {
@@ -19,14 +9,10 @@ export function PatreonPanel({ controller }: { controller: ReactionDownloadContr
     dismissSavedSession,
     interactionBusy,
     loginWindowOpen,
-    manualGuideBrowser,
-    manualSessionId,
-    manualSessionInputRef,
     openLoginWindow,
     patreonUrl,
     readBrowserSession,
     savedSession,
-    setManualSessionId,
     setPatreonUrl,
     startPatreonDownload,
     validPatreonUrl
@@ -84,34 +70,24 @@ export function PatreonPanel({ controller }: { controller: ReactionDownloadContr
                 onClick={() => void openLoginWindow()}
               >
                 {loginWindowOpen ? <Loader2 size={17} aria-hidden className="spin" /> : <Lock size={17} aria-hidden />}
-                {loginWindowOpen ? 'Waiting for Patreon sign-in...' : 'Sign in to Patreon'}
+                {loginWindowOpen ? 'Waiting for Patreon sign-in...' : 'Sign in with browser'}
               </button>
-              <small className="login-hint">Works with any browser - opens a secure sign-in window</small>
+              <small className="login-hint">Opens Patreon securely inside WatchAlong.</small>
 
-              <div className="tier-divider"><span>or use an existing browser session</span></div>
-              <BrowserChoices
+              <div className="tier-divider"><span>or use Firefox in one click</span></div>
+              <FirefoxChoice
                 browsers={browsers}
                 disabled={interactionBusy}
                 onChoose={(browser) => void readBrowserSession(browser)}
               />
-              <small className="login-hint">Firefox is the most reliable automatic option. Manual entry works across all browsers.</small>
-
-              <div className="tier-divider"><span>or paste your session_id</span></div>
-              <ManualPatreonFallback
-                value={manualSessionId}
-                disabled={interactionBusy}
-                guideBrowser={manualGuideBrowser}
-                inputRef={manualSessionInputRef}
-                onChange={setManualSessionId}
-                onSubmit={() => void startPatreonDownload({ type: 'manual', sessionId: manualSessionId })}
-              />
+              <small className="login-hint">Use this if you are already signed in to Patreon in Firefox.</small>
             </>
           )}
 
           {browserReading && (
             <div className="inline-status">
               <Loader2 size={17} aria-hidden className="spin" />
-              Reading Patreon session from {browserLabel(browserReading, browsers)}...
+              Reading Patreon session from Firefox...
             </div>
           )}
         </div>
@@ -120,7 +96,7 @@ export function PatreonPanel({ controller }: { controller: ReactionDownloadContr
   )
 }
 
-function BrowserChoices({
+function FirefoxChoice({
   browsers,
   disabled,
   onChoose
@@ -129,84 +105,23 @@ function BrowserChoices({
   disabled: boolean
   onChoose(browser: BrowserDetection): void
 }): JSX.Element {
-  return (
-    <div className="browser-row" aria-label="Browser sessions">
-      {browsers.map((browser) => {
-        const statusText = browser.installed ? browser.subtitle : 'Not found'
-        const manualOnly = browser.extractionMode === 'manual-only'
-        const className = [
-          'browser-choice',
-          `browser-${browser.name}`,
-          browser.installed ? '' : 'browser-missing',
-          manualOnly ? 'browser-manual-only' : ''
-        ].filter(Boolean).join(' ')
-
-        return (
-          <button
-            key={browser.name}
-            className={className}
-            type="button"
-            disabled={!browser.installed || disabled}
-            onClick={() => onChoose(browser)}
-          >
-            <span className="browser-icon" aria-hidden>{browserGlyphs[browser.name]}</span>
-            <span>{browser.label}</span>
-            {statusText && <small>{statusText}</small>}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-function ManualPatreonFallback({
-  value,
-  disabled,
-  guideBrowser,
-  inputRef,
-  onChange,
-  onSubmit
-}: {
-  value: string
-  disabled: boolean
-  guideBrowser: BrowserName | null
-  inputRef: RefObject<HTMLInputElement>
-  onChange(value: string): void
-  onSubmit(): void
-}): JSX.Element {
-  const developerToolsStep = guideBrowser === 'safari'
-    ? 'Enable the Develop menu in Safari > Settings/Preferences > Advanced, then open Web Inspector from the Develop menu.'
-    : 'Press F12 to open Developer Tools, then click the Application tab (Chrome/Edge) or Storage tab (Firefox).'
+  const firefox = browsers.find((browser) => browser.name === 'firefox') ?? {
+    name: 'firefox' as const,
+    label: 'Firefox',
+    installed: false,
+    paths: []
+  }
+  const label = browsers.length > 0 && !firefox.installed ? 'Try Firefox' : 'Use Firefox'
 
   return (
-    <div className="manual-fallback">
-      <p>Grab your session_id manually in a few clicks:</p>
-      <ol>
-        <li>Open Patreon in your browser and log in if needed.</li>
-        <li>{developerToolsStep}</li>
-        <li>In the left sidebar, find Cookies &gt; https://www.patreon.com. Double-click the session_id row and copy the Value.</li>
-      </ol>
-      <label>
-        <span>session_id</span>
-        <input
-          ref={inputRef}
-          type="password"
-          value={value}
-          disabled={disabled}
-          placeholder="Paste your session_id here"
-          autoComplete="off"
-          spellCheck={false}
-          onChange={(event) => onChange(event.currentTarget.value)}
-        />
-      </label>
-      <button className="primary-button" type="button" disabled={disabled || value.trim().length < 8} onClick={onSubmit}>
-        <Check size={16} aria-hidden />
-        Use this session &amp; download
-      </button>
-    </div>
+    <button
+      className="secondary-button firefox-instant"
+      type="button"
+      disabled={disabled}
+      onClick={() => onChoose(firefox)}
+    >
+      <span className="browser-icon firefox-icon" aria-hidden>F</span>
+      <span>{label}</span>
+    </button>
   )
-}
-
-function browserLabel(name: BrowserName, browsers: BrowserDetection[]): string {
-  return browsers.find((browser) => browser.name === name)?.label ?? name
 }

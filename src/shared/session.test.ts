@@ -19,6 +19,8 @@ describe('session helpers', () => {
     expect(session.overlay.height).toBe(180)
     expect(session.reactionPath).toBeNull()
     expect(session.titleOrigin).toBe('generated')
+    expect(session.reactorName).toBeNull()
+    expect(session.reactorNameOrigin).toBe('metadata')
     expect(session.playbackRate).toBe(1)
     expect(session.reactorSource).toBe('ntsc')
     expect(session.detectedMovieFps).toBeNull()
@@ -69,6 +71,30 @@ describe('session helpers', () => {
     expect(mergeSession(session, { titleOrigin: 'custom' }).titleOrigin).toBe('generated')
   })
 
+  it('normalizes reactor names and preserves their provenance', () => {
+    const metadataNamed = createSessionFromPaths(
+      'reaction.mp4',
+      'movie.mp4',
+      new Date('2026-07-14T00:00:00.000Z'),
+      'youtube',
+      'Movie — Cinema Therapy',
+      '  Cinema\nTherapy\u0000  '
+    )
+
+    expect(metadataNamed).toMatchObject({
+      reactorName: 'Cinema Therapy',
+      reactorNameOrigin: 'metadata'
+    })
+    expect(mergeSession(metadataNamed, { title: 'My title' })).toMatchObject({
+      reactorName: 'Cinema Therapy',
+      reactorNameOrigin: 'metadata'
+    })
+    expect(mergeSession(metadataNamed, { reactorName: '  My favorite creator  ' })).toMatchObject({
+      reactorName: 'My favorite creator',
+      reactorNameOrigin: 'custom'
+    })
+  })
+
   it('migrates legacy single-session data into a library', () => {
     const library = normalizeLibrary({
       reactionPath: 'C:\\Videos\\reaction.mp4',
@@ -87,6 +113,8 @@ describe('session helpers', () => {
       movieVolume: 0.4,
       offsetSeconds: 12.5,
       lastReactionTimeSeconds: 90,
+      reactorName: null,
+      reactorNameOrigin: 'metadata',
       timingOrigin: 'manual',
       autoSyncConfidence: null,
       autoSyncAnalyzedAt: null,
@@ -167,5 +195,16 @@ describe('session helpers', () => {
 
     expect(legacyNamed.titleOrigin).toBe('custom')
     expect(legacyDefault.titleOrigin).toBe('custom')
+  })
+
+  it('migrates a stored reactor name without provenance conservatively as custom', () => {
+    const migrated = normalizeSession({
+      reactorName: '  Movie Night  ',
+      moviePath: 'C:\\Movies\\Movie.mp4',
+      reactionPath: 'C:\\Reactions\\Reaction.mp4'
+    })
+
+    expect(migrated.reactorName).toBe('Movie Night')
+    expect(migrated.reactorNameOrigin).toBe('custom')
   })
 })

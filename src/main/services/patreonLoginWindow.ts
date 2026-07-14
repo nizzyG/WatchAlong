@@ -1,8 +1,7 @@
 import {
   BrowserWindow,
-  type BrowserWindowConstructorOptions,
-  type Session,
-  type WebContents
+  shell,
+  type BrowserWindowConstructorOptions
 } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { isAllowedPatreonLoginUrl } from '../patreonLoginUrls'
@@ -20,19 +19,18 @@ export type PatreonLoginWindowFactory = (
 ) => BrowserWindow
 
 interface ActivePatreonLogin {
-  cancel(): Promise<void>
+  cancel(): void
 }
 
 const CANCELLED_MESSAGE = 'Patreon sign-in was cancelled.'
 
 /**
  * Owns every short-lived Patreon login partition. The manager is deliberately
- * separate from IPC registration so Forget and app shutdown can invalidate and
- * scrub all active browser state in one place.
+ * separate from IPC registration so Forget and app shutdown can cancel every
+ * active browser flow in one place.
  */
 export class PatreonLoginWindowManager {
   private readonly activeLogins = new Set<ActivePatreonLogin>()
-  private readonly cleanupPromises = new Set<Promise<void>>()
 
   constructor(
     private readonly vault: PatreonSessionVault,
@@ -67,20 +65,13 @@ export class PatreonLoginWindowManager {
 
     return new Promise((resolve) => {
       const loginSession = loginWindow.webContents.session
-      const windows = new Set<BrowserWindow>()
-      const sessions = new Set<Session>()
       let settled = false
       let timer: NodeJS.Timeout | undefined
-      let cleanupPromise = Promise.resolve()
       let scope: ActivePatreonLogin
 
-      const clearSessions = async (): Promise<void> => {
-        await Promise.all([...sessions].map(clearLoginSession))
-      }
-
-      const finish = (result: PatreonLoginResult): Promise<void> => {
+      const finish = (result: PatreonLoginResult): void => {
         if (settled) {
-          return cleanupPromise
+          return
         }
 
         settled = true
@@ -90,29 +81,29 @@ export class PatreonLoginWindowManager {
         loginSession.cookies.off('changed', onCookieChanged)
         this.activeLogins.delete(scope)
 
-        for (const window of windows) {
-          if (!window.isDestroyed()) {
-            // destroy() cannot be held open by a remote beforeunload handler.
-            window.destroy()
-          }
+        // Let Chromium close the opener-owned OAuth popup normally. Forced
+        // destruction can interrupt the provider's final postMessage/callback.
+        if (!loginWindow.isDestroyed()) {
+          loginWindow.close()
         }
 
-        cleanupPromise = clearSessions()
-        this.trackCleanup(cleanupPromise)
         resolve(result)
-        return cleanupPromise
       }
 
       const capture = (
         cookies: Array<{ name: string; value?: string; domain?: string }>
       ): boolean => {
+        if (settled) {
+          return false
+        }
+
         const value = findPatreonSessionCookieValue(cookies)
         if (!value) {
           return false
         }
 
         const token = this.vault.createToken(`session_id=${value}`, authorizationEpoch)
-        void finish(
+        finish(
           token
             ? { ok: true, token }
             : { ok: false, message: CANCELLED_MESSAGE }
@@ -128,7 +119,7 @@ export class PatreonLoginWindowManager {
         try {
           capture(await loginSession.cookies.get({ name: 'session_id' }))
         } catch {
-          // The partition may be clearing while a final navigation event lands.
+          // The window may close while a final navigation event lands.
         }
       }
 
@@ -143,43 +134,64 @@ export class PatreonLoginWindowManager {
         }
       }
 
-      const hardenWindow = (window: BrowserWindow): void => {
-        if (settled) {
-          if (!window.isDestroyed()) {
-            window.destroy()
-          }
-          return
+      const guardPopupOpen = ({ url }: { url: string }): Electron.WindowOpenHandlerResponse => {
+        if (isAllowedPatreonLoginUrl(url)) {
+          return { action: 'allow' }
         }
 
-        windows.add(window)
-        sessions.add(window.webContents.session)
-        denyPatreonLoginPermissions(window.webContents.session)
-        installPatreonNavigationGuards(
-          window.webContents,
-          securePopupOptions(loginWindow, partition)
-        )
-        window.webContents.on('did-create-window', (popup) => hardenWindow(popup))
-        window.on('closed', () => {
-          windows.delete(window)
-          if (window === loginWindow) {
-            void finish({
-              ok: false,
-              message: 'Patreon sign-in window was closed before a session was found.'
-            })
-          }
-        })
+        openExternalUrl(url)
+        return { action: 'deny' }
       }
 
       scope = {
         cancel: () => finish({ ok: false, message: CANCELLED_MESSAGE })
       }
       this.activeLogins.add(scope)
-      hardenWindow(loginWindow)
+
+      // Match the known-working OAuth lifecycle from ad3564d. Security-related
+      // webPreferences are inherited from the root window, while Chromium keeps
+      // the native opener relationship used by Google's popup callback.
+      loginWindow.webContents.setWindowOpenHandler(({ url }) => {
+        if (isAllowedPatreonLoginUrl(url)) {
+          return {
+            action: 'allow',
+            overrideBrowserWindowOptions: {
+              parent: loginWindow,
+              backgroundColor: '#05070a',
+              autoHideMenuBar: true
+            }
+          }
+        }
+
+        openExternalUrl(url)
+        return { action: 'deny' }
+      })
+      loginWindow.webContents.on('did-create-window', (popup) => {
+        popup.webContents.setWindowOpenHandler(guardPopupOpen)
+        popup.webContents.on('will-navigate', (event, url) => {
+          if (!isAllowedPatreonLoginUrl(url)) {
+            event.preventDefault()
+            openExternalUrl(url)
+          }
+        })
+      })
+      loginWindow.webContents.on('will-navigate', (event, url) => {
+        if (!isAllowedPatreonLoginUrl(url)) {
+          event.preventDefault()
+          openExternalUrl(url)
+        }
+      })
 
       loginSession.cookies.on('changed', onCookieChanged)
       loginWindow.webContents.on('did-navigate', () => void checkCookies())
       loginWindow.webContents.on('did-navigate-in-page', () => void checkCookies())
       loginWindow.webContents.on('did-finish-load', () => void checkCookies())
+      loginWindow.on('closed', () =>
+        finish({
+          ok: false,
+          message: 'Patreon sign-in window was closed before a session was found.'
+        })
+      )
       timer = setInterval(() => void checkCookies(), 1500)
       timer.unref?.()
 
@@ -195,61 +207,13 @@ export class PatreonLoginWindowManager {
   }
 
   async closeAll(): Promise<void> {
-    await Promise.all([...this.activeLogins].map((login) => login.cancel()))
-    await Promise.all([...this.cleanupPromises])
+    for (const login of [...this.activeLogins]) {
+      login.cancel()
+    }
   }
 
   dispose(): Promise<void> {
     return this.closeAll()
-  }
-
-  private trackCleanup(promise: Promise<void>): void {
-    this.cleanupPromises.add(promise)
-    void promise.finally(() => this.cleanupPromises.delete(promise))
-  }
-}
-
-export function denyPatreonLoginPermissions(loginSession: Session): void {
-  loginSession.setPermissionCheckHandler(() => false)
-  loginSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
-    callback(false)
-  })
-  loginSession.setDevicePermissionHandler(() => false)
-  loginSession.setDisplayMediaRequestHandler((_request, callback) => {
-    callback({})
-  })
-}
-
-export function installPatreonNavigationGuards(
-  webContents: WebContents,
-  popupOptions: BrowserWindowConstructorOptions
-): void {
-  webContents.setWindowOpenHandler(({ url }) =>
-    isAllowedPatreonLoginUrl(url)
-      ? { action: 'allow', overrideBrowserWindowOptions: popupOptions }
-      : { action: 'deny' }
-  )
-
-  const guardNavigation = (event: Electron.Event, url: string): void => {
-    if (!isAllowedPatreonLoginUrl(url)) {
-      event.preventDefault()
-    }
-  }
-  webContents.on('will-navigate', guardNavigation)
-  webContents.on('will-redirect', guardNavigation)
-}
-
-async function clearLoginSession(loginSession: Session): Promise<void> {
-  try {
-    await loginSession.clearStorageData()
-  } catch {
-    // A destroyed Chromium partition can reject while it tears down.
-  }
-
-  try {
-    await loginSession.clearCache()
-  } catch {
-    // Best effort; the partition is in-memory and uniquely named regardless.
   }
 }
 
@@ -262,15 +226,13 @@ function secureLoginWebPreferences(partition: string): Electron.WebPreferences {
   }
 }
 
-function securePopupOptions(
-  parent: BrowserWindow,
-  partition: string
-): BrowserWindowConstructorOptions {
-  return {
-    parent,
-    modal: false,
-    backgroundColor: '#05070a',
-    autoHideMenuBar: true,
-    webPreferences: secureLoginWebPreferences(partition)
+function openExternalUrl(rawUrl: string): void {
+  try {
+    const url = new URL(rawUrl)
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      void shell.openExternal(rawUrl)
+    }
+  } catch {
+    // Ignore malformed navigation targets.
   }
 }

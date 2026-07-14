@@ -22,16 +22,27 @@ jobs:
             artifact-name: watchalong-windows
             artifact-path: release/*.exe
             arch-args: ""
+            tool-platform: win32
+            tool-arch: x64
           - name: macOS (Intel)
             os: macos-latest
             artifact-name: watchalong-macos-x64
             artifact-path: release/*.dmg
             arch-args: "--mac dmg --x64"
+            tool-platform: darwin
+            tool-arch: x64
           - name: macOS (Apple Silicon)
             os: macos-latest
             artifact-name: watchalong-macos-arm64
             artifact-path: release/*.dmg
             arch-args: "--mac dmg --arm64"
+            tool-platform: darwin
+            tool-arch: arm64
+
+    env:
+      WATCHALONG_TARGET_PLATFORM: ${{ matrix.tool-platform }}
+      WATCHALONG_TARGET_ARCH: ${{ matrix.tool-arch }}
+      WATCHALONG_TARGET_NODE_VERSION: '24.15.0'
 
     steps:
       - name: Check out repository

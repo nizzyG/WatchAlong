@@ -17,6 +17,7 @@ export type RendererSessionPatch = Partial<Pick<
   | 'reactorSource'
   | 'detectedMovieFps'
   | 'movieRateCorrection'
+  | 'reactorName'
 >>
 
 const rendererWritableSessionKeys = new Set<keyof RendererSessionPatch>([
@@ -34,7 +35,8 @@ const rendererWritableSessionKeys = new Set<keyof RendererSessionPatch>([
   'playbackRate',
   'reactorSource',
   'detectedMovieFps',
-  'movieRateCorrection'
+  'movieRateCorrection',
+  'reactorName'
 ])
 
 export function pickRendererSessionPatch(value: unknown): RendererSessionPatch {

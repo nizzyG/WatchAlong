@@ -1,3 +1,5 @@
+import { canonicalizePatreonPostUrl } from '@shared/patreonUrls'
+
 export function isValidYouTubeUrl(value: string): boolean {
   try {
     const url = new URL(value.trim())
@@ -12,16 +14,5 @@ export function isValidYouTubeUrl(value: string): boolean {
 }
 
 export function isValidPatreonPostUrl(value: string): boolean {
-  try {
-    const url = new URL(value.trim())
-    const hostname = url.hostname.toLowerCase()
-    return url.protocol === 'https:' &&
-      !url.username &&
-      !url.password &&
-      !url.port &&
-      (hostname === 'patreon.com' || hostname.endsWith('.patreon.com')) &&
-      url.pathname.includes('/posts/')
-  } catch {
-    return false
-  }
+  return canonicalizePatreonPostUrl(value) !== null
 }

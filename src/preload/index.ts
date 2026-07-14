@@ -21,13 +21,14 @@ const api: WatchAlongApi = {
   openVideos: () => ipcRenderer.invoke(`${IPC_PREFIX}:open-videos`),
   selectMovieFile: () => ipcRenderer.invoke(`${IPC_PREFIX}:select-movie-file`),
   selectReactionFile: () => ipcRenderer.invoke(`${IPC_PREFIX}:select-reaction-file`),
-  createOrSwitchSessionFromPaths: (reactionPath, moviePath, reactionSource, suggestedTitle) =>
+  createOrSwitchSessionFromPaths: (reactionPath, moviePath, reactionSource, suggestedTitle, reactorName) =>
     ipcRenderer.invoke(
       `${IPC_PREFIX}:create-or-switch-session-from-paths`,
       reactionPath,
       moviePath,
       reactionSource,
-      suggestedTitle
+      suggestedTitle,
+      reactorName
     ),
   getLibrary: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-library`),
   getLibraryRecoveryStatus: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-library-recovery-status`),
@@ -36,13 +37,14 @@ const api: WatchAlongApi = {
   saveActiveSession: (patch: Partial<LibrarySession>) => ipcRenderer.invoke(`${IPC_PREFIX}:save-active-session`, patch),
   saveSessionPosition: (sessionId: string, lastReactionTimeSeconds: number) =>
     ipcRenderer.invoke(`${IPC_PREFIX}:save-session-position`, sessionId, lastReactionTimeSeconds),
-  setSessionMedia: (role, path, reactionSource, suggestedTitle) =>
-    ipcRenderer.invoke(`${IPC_PREFIX}:set-session-media`, role, path, reactionSource, suggestedTitle),
-  replaceSessionMedia: (sessionId, role, path, reactionSource, suggestedTitle) =>
-    ipcRenderer.invoke(`${IPC_PREFIX}:replace-session-media`, sessionId, role, path, reactionSource, suggestedTitle),
+  setSessionMedia: (role, path, reactionSource, suggestedTitle, reactorName) =>
+    ipcRenderer.invoke(`${IPC_PREFIX}:set-session-media`, role, path, reactionSource, suggestedTitle, reactorName),
+  replaceSessionMedia: (sessionId, role, path, reactionSource, suggestedTitle, reactorName) =>
+    ipcRenderer.invoke(`${IPC_PREFIX}:replace-session-media`, sessionId, role, path, reactionSource, suggestedTitle, reactorName),
   setActiveSession: (sessionId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:set-active-session`, sessionId),
   deleteSession: (sessionId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:delete-session`, sessionId),
-  renameSession: (sessionId: string, title: string) => ipcRenderer.invoke(`${IPC_PREFIX}:rename-session`, sessionId, title),
+  renameSession: (sessionId: string, title: string, reactorName?: string) =>
+    ipcRenderer.invoke(`${IPC_PREFIX}:rename-session`, sessionId, title, reactorName),
   openSubtitle: () => ipcRenderer.invoke(`${IPC_PREFIX}:open-subtitle`),
   clearSubtitle: () => ipcRenderer.invoke(`${IPC_PREFIX}:clear-subtitle`),
   getSubtitleText: (sessionId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:get-subtitle-text`, sessionId),

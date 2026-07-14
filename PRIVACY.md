@@ -38,7 +38,7 @@ Stored as `patreon-session.bin` in the same `userData` directory. Encrypted with
 
 When you connect to Patreon or download a reaction, WatchAlong uses short-lived temporary files. It scrubs and removes them during normal cleanup; if the OS prevents removal or the app crashes, WatchAlong retries matching leftovers the next time it starts.
 
-- **Browser cookie extraction:** If you use automatic browser extraction, `yt-dlp` writes a temporary browser cookie jar in a private OS temp directory. That jar can contain cookies beyond Patreon; WatchAlong reads only Patreon's `session_id`, then removes the directory. Crash leftovers are removed at the next launch.
+- **Firefox cookie extraction:** If you use Firefox one-click connection, `yt-dlp` writes a temporary browser cookie jar in a private OS temp directory. That jar can contain cookies beyond Patreon; WatchAlong reads only Patreon's `session_id`, then removes the directory. Crash leftovers are removed at the next launch.
 - **patreon-dl config:** During download, a temporary config file containing your session cookie is written to an OS temp directory with `0600` permissions where supported (owner read/write only). WatchAlong clears the credential contents before removal and retries any locked leftovers at startup.
 - **In-memory holding:** After a successful Patreon download, the session cookie is held briefly in memory so the app can offer to save it. If you decline or dismiss, it's discarded.
 

@@ -15,7 +15,7 @@ interface PipOverlayProps {
   onPopIn(): void
   onLoadedMetadata(): void
   onTimeUpdate(): void
-  onVideoError(): void
+  onVideoError(video: HTMLVideoElement): void
   subtitleText?: string | null
 }
 
@@ -178,7 +178,7 @@ export function PipOverlay({
             preload="metadata"
             onLoadedMetadata={onLoadedMetadata}
             onTimeUpdate={onTimeUpdate}
-            onError={onVideoError}
+            onError={(event) => onVideoError(event.currentTarget)}
           />
           {subtitleText && <div className="pip-subtitles">{subtitleText}</div>}
           <button

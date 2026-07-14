@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Dispatch, RefObject, SetStateAction } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import type {
   BrowserDetection,
   BrowserName,
@@ -21,11 +21,8 @@ export interface ReactionDownloadController {
   setYoutubeUrl: Dispatch<SetStateAction<string>>
   patreonUrl: string
   setPatreonUrl: Dispatch<SetStateAction<string>>
-  manualSessionId: string
-  setManualSessionId: Dispatch<SetStateAction<string>>
   browsers: BrowserDetection[]
   browserReading: BrowserName | null
-  manualGuideBrowser: BrowserName | null
   loginWindowOpen: boolean
   savedSession: SavedPatreonSessionStatus
   dismissSavedSession(): void
@@ -36,7 +33,6 @@ export interface ReactionDownloadController {
   isWorking: boolean
   interactionBusy: boolean
   retryNeedsPatreonSignIn: boolean
-  manualSessionInputRef: RefObject<HTMLInputElement>
   startYouTubeDownload(): Promise<void>
   startPatreonDownload(sessionSource: PatreonSessionSource): Promise<void>
   readBrowserSession(browser: BrowserDetection): Promise<void>
@@ -52,10 +48,8 @@ export function useReactionDownload({
 }: UseReactionDownloadOptions): ReactionDownloadController {
   const [youtubeUrl, setYoutubeUrl] = useState('')
   const [patreonUrl, setPatreonUrl] = useState('')
-  const [manualSessionId, setManualSessionId] = useState('')
   const [browsers, setBrowsers] = useState<BrowserDetection[]>([])
   const [browserReading, setBrowserReading] = useState<BrowserName | null>(null)
-  const [manualGuideBrowser, setManualGuideBrowser] = useState<BrowserName | null>(null)
   const [loginWindowOpen, setLoginWindowOpen] = useState(false)
   const [savedSession, setSavedSession] = useState<SavedPatreonSessionStatus>({ available: false, canEncrypt: false })
   const [progress, setProgress] = useState<DownloadProgressEvent | null>(null)
@@ -68,7 +62,6 @@ export function useReactionDownload({
   const downloadBusy = startingSource !== null || isWorking
   const authBusy = loginWindowOpen || browserReading !== null
   const interactionBusy = downloadBusy || authBusy
-  const manualSessionInputRef = useRef<HTMLInputElement | null>(null)
   const lastPatreonSessionSourceRef = useRef<PatreonSessionSource | null>(null)
   const jobIdRef = useRef<string | null>(null)
   const startingDownloadRef = useRef(false)
@@ -98,7 +91,7 @@ export function useReactionDownload({
         }
       } catch {
         if (mounted) {
-          setError('WatchAlong could not check Patreon sign-in options. You can still paste your session_id manually.')
+          setError('WatchAlong could not check for Firefox. You can still try Firefox or use Sign in with browser.')
         }
       }
     })()
@@ -176,10 +169,7 @@ export function useReactionDownload({
 
     startingDownloadRef.current = true
     setStartingSource('patreon')
-    // Never retain the raw manual cookie for a later retry. Saved sessions and
-    // opaque one-use tokens can be retried safely; a pasted secret must be
-    // cleared as soon as it crosses the IPC boundary.
-    lastPatreonSessionSourceRef.current = sessionSource.type === 'manual' ? null : sessionSource
+    lastPatreonSessionSourceRef.current = sessionSource
     setError(null)
     setProgress(null)
     jobIdRef.current = null
@@ -198,9 +188,14 @@ export function useReactionDownload({
         percent: null
       })
     } catch {
+      if (sessionSource.type === 'token' || sessionSource.type === 'browser') {
+        await discardUnusedToken(sessionSource.token)
+      }
+      if (lastPatreonSessionSourceRef.current === sessionSource) {
+        lastPatreonSessionSourceRef.current = null
+      }
       setError('WatchAlong could not start that Patreon download. Check access to the post and try again.')
     } finally {
-      if (sessionSource.type === 'manual') setManualSessionId('')
       startingDownloadRef.current = false
       setStartingSource(null)
     }
@@ -209,15 +204,7 @@ export function useReactionDownload({
   const readBrowserSession = async (browser: BrowserDetection): Promise<void> => {
     if (!validPatreonUrl || downloadBusy) return
 
-    if (browser.extractionMode === 'manual-only') {
-      setManualGuideBrowser(browser.name)
-      setError(`${browser.label} requires manual Patreon session entry. Paste your session_id to continue.`)
-      window.setTimeout(() => manualSessionInputRef.current?.focus(), 0)
-      return
-    }
-
     setError(null)
-    setManualGuideBrowser(browser.name)
     setBrowserReading(browser.name)
     try {
       const result = await window.watchAlong.extractPatreonSession(browser.name)
@@ -258,14 +245,13 @@ export function useReactionDownload({
     } catch {
       if (!mountedRef.current) return
       setLoginWindowOpen(false)
-      setError('Patreon sign-in could not be opened. You can paste your session_id manually.')
+      setError('Patreon sign-in could not be opened. Try again or use Firefox.')
     }
   }
 
   const cancelDownload = async (): Promise<void> => {
     const activeJobId = jobIdRef.current
     if (!activeJobId) return
-    setManualSessionId('')
     try {
       await window.watchAlong.cancelDownload(activeJobId)
     } catch {
@@ -290,7 +276,10 @@ export function useReactionDownload({
     }
 
     const sessionSource = lastPatreonSessionSourceRef.current
-    if (sessionSource?.type === 'manual' || sessionSource?.type === 'saved') {
+    if (
+      sessionSource &&
+      (sessionSource.type === 'saved' || progress?.retryWithoutPatreonSignIn === true)
+    ) {
       void startPatreonDownload(sessionSource)
       return
     }
@@ -304,11 +293,8 @@ export function useReactionDownload({
     setYoutubeUrl,
     patreonUrl,
     setPatreonUrl,
-    manualSessionId,
-    setManualSessionId,
     browsers,
     browserReading,
-    manualGuideBrowser,
     loginWindowOpen,
     savedSession,
     dismissSavedSession: () => setSavedSession((current) => ({ ...current, available: false })),
@@ -319,8 +305,8 @@ export function useReactionDownload({
     isWorking,
     interactionBusy,
     retryNeedsPatreonSignIn: progress?.source === 'patreon' &&
-      !['manual', 'saved'].includes(lastPatreonSessionSourceRef.current?.type ?? ''),
-    manualSessionInputRef,
+      lastPatreonSessionSourceRef.current?.type !== 'saved' &&
+      progress.retryWithoutPatreonSignIn !== true,
     startYouTubeDownload,
     startPatreonDownload,
     readBrowserSession,

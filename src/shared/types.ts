@@ -2,8 +2,7 @@ export type MediaRole = 'reaction' | 'movie'
 export type PlaybackRate = 1 | 1.25 | 1.5 | 2
 export type ReactorSource = 'streaming' | 'ntsc' | 'pal'
 export type ToolName = 'yt-dlp' | 'ffmpeg' | 'node' | 'patreon-dl'
-export type BrowserName = 'firefox' | 'chrome' | 'edge' | 'brave' | 'safari' | 'opera'
-export type BrowserExtractionMode = 'automatic' | 'best-effort' | 'manual-only'
+export type BrowserName = 'firefox'
 export type ReactionDownloadSource = 'youtube' | 'patreon'
 export type ReactionSource = 'local' | ReactionDownloadSource
 export type DownloadJobState = 'idle' | 'checking' | 'downloading' | 'success' | 'failed' | 'cancelled'
@@ -14,6 +13,7 @@ export type AutoSyncIntent = 'initial' | 'recheck'
 export type LibraryViewPreference = 'grid' | 'list'
 export type ImportWizardMode = 'new' | 'show-again' | 'swap-reaction'
 export type SessionTitleOrigin = 'generated' | 'custom'
+export type ReactorNameOrigin = 'metadata' | 'custom'
 
 export interface MediaFile {
   path: string
@@ -31,6 +31,8 @@ export interface LibrarySession {
   id: string
   title: string
   titleOrigin: SessionTitleOrigin
+  reactorName: string | null
+  reactorNameOrigin: ReactorNameOrigin
   reactionPath: string | null
   reactionSource: ReactionSource
   reactionDurationSeconds: number | null
@@ -101,9 +103,6 @@ export interface BrowserDetection {
   name: BrowserName
   label: string
   installed: boolean
-  extractionSupported: boolean
-  extractionMode: BrowserExtractionMode
-  subtitle?: string
   paths: string[]
 }
 
@@ -133,6 +132,12 @@ export interface DownloadProgressEvent {
   state: DownloadJobState
   message: string
   percent: number | null
+  /**
+   * True only when a Patreon failure happened before main consumed the
+   * supplied session source, so retrying the same request does not require a
+   * new sign-in.
+   */
+  retryWithoutPatreonSignIn?: boolean
   speed?: string
   eta?: string
   fragmentIndex?: number
@@ -339,7 +344,8 @@ export interface WatchAlongApi {
     reactionPath: string,
     moviePath: string,
     reactionSource?: ReactionSource,
-    suggestedTitle?: string
+    suggestedTitle?: string,
+    reactorName?: string
   ): Promise<SessionLibrary>
   getLibrary(): Promise<SessionLibrary>
   getLibraryRecoveryStatus(): Promise<LibraryRecoveryStatus>
@@ -351,18 +357,20 @@ export interface WatchAlongApi {
     role: MediaRole,
     path: string,
     reactionSource?: ReactionSource,
-    suggestedTitle?: string
+    suggestedTitle?: string,
+    reactorName?: string
   ): Promise<SessionLibrary>
   replaceSessionMedia(
     sessionId: string,
     role: MediaRole,
     path: string,
     reactionSource?: ReactionSource,
-    suggestedTitle?: string
+    suggestedTitle?: string,
+    reactorName?: string
   ): Promise<ReplaceSessionMediaResult>
   setActiveSession(sessionId: string): Promise<SessionLibrary>
   deleteSession(sessionId: string): Promise<SessionLibrary>
-  renameSession(sessionId: string, title: string): Promise<SessionLibrary>
+  renameSession(sessionId: string, title: string, reactorName?: string): Promise<SessionLibrary>
   openSubtitle(): Promise<SessionLibrary | null>
   clearSubtitle(): Promise<SessionLibrary>
   getSubtitleText(sessionId: string): Promise<string | null>

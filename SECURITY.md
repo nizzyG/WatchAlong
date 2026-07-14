@@ -8,9 +8,9 @@ The `session_id` cookie from Patreon is a bearer token — anyone who has it can
 
 ## How the session is handled
 
-### Extraction (automatic browser)
+### Extraction (Firefox)
 
-If you use the automatic browser extraction:
+If you choose the Firefox one-click extraction:
 1. `yt-dlp` reads your browser's cookie store and writes a short-lived cookie jar in a private OS temp directory; that jar can include cookies beyond Patreon
 2. WatchAlong reads only Patreon's `session_id` value from that file
 3. WatchAlong removes the temporary directory after the attempt; if a crash or file lock interrupts cleanup, the next app launch retries it before opening a window
@@ -21,11 +21,7 @@ If you use the in-app login window:
 1. An isolated browser window opens (`contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`)
 2. Navigation is restricted to Patreon domains and selected identity providers (Google, Facebook, Apple)
 3. Only `session_id` cookies from `patreon.com` are read — nothing else
-4. The window is destroyed after the cookie is captured
-
-### Manual entry
-
-If you paste the session ID yourself, it goes directly into memory. No temp file.
+4. After the cookie is captured, the login window closes normally so the identity provider can finish its OAuth callback
 
 ### During download
 

@@ -1,8 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { rmdirSync } from 'node:fs'
 import type {
   DownloadedReactionMetadata,
   DownloadProgressEvent,
+  PatreonSessionSource,
   ReactionDownloadRequest,
   SavedPatreonSessionStatus,
   StartDownloadResult
@@ -21,6 +23,7 @@ import {
 } from './downloadProcess'
 import {
   buildPatreonDownloadArgs,
+  canonicalizePatreonPostUrl,
   createPatreonCookieConfig,
   derivePatreonDownloadMetadata,
   humanizePatreonLine,
@@ -45,6 +48,7 @@ import {
 export { getDefaultReactionDownloadDirectory } from './downloadFiles'
 export { BufferedLineReader } from './downloadProcess'
 export {
+  canonicalizePatreonPostUrl,
   derivePatreonDownloadMetadata,
   humanizePatreonLine,
   isAllowedPatreonDownloadUrl,
@@ -74,6 +78,7 @@ interface RunningDownload {
 interface PendingDownload {
   timer: ReturnType<typeof setTimeout>
   source: DownloadSource
+  sessionToken?: string
 }
 
 export class DownloadManager {
@@ -93,7 +98,9 @@ export class DownloadManager {
 
   start(request: ReactionDownloadRequest): StartDownloadResult {
     const jobId = randomUUID()
+    const sessionToken = getPatreonSessionToken(request)
     if (this.disposed) {
+      if (sessionToken) this.vault.discardToken(sessionToken)
       return { jobId }
     }
 
@@ -120,7 +127,7 @@ export class DownloadManager {
         )
       })
     }, 25)
-    this.pending.set(jobId, { timer, source: request.source })
+    this.pending.set(jobId, { timer, source: request.source, sessionToken })
     return { jobId }
   }
 
@@ -129,6 +136,7 @@ export class DownloadManager {
     if (pending) {
       clearTimeout(pending.timer)
       this.pending.delete(jobId)
+      if (pending.sessionToken) this.vault.discardToken(pending.sessionToken)
       this.emit(jobId, pending.source, 'cancelled', 'Download cancelled.', null)
       return
     }
@@ -188,10 +196,10 @@ export class DownloadManager {
       return
     }
 
-    // Consume renderer-visible login/browser tokens exactly once regardless
-    // of which validation or setup branch follows.
-    const cookie = this.vault.resolve(request.sessionSource, authorizationEpoch)
-    if (!isAllowedPatreonDownloadUrl(request.url)) {
+    const canonicalUrl = canonicalizePatreonPostUrl(request.url)
+    if (!canonicalUrl) {
+      // Invalid renderer input must not leave a bearer token reusable.
+      this.vault.resolve(request.sessionSource, authorizationEpoch)
       this.emit(
         jobId,
         'patreon',
@@ -201,7 +209,13 @@ export class DownloadManager {
       )
       return
     }
-    await this.runPatreon(jobId, request.url, cookie, this.patreonSessions.generation)
+    await this.runPatreon(
+      jobId,
+      canonicalUrl,
+      request.sessionSource,
+      authorizationEpoch,
+      this.patreonSessions.generation
+    )
   }
 
   private async runYouTube(jobId: string, url: string): Promise<void> {
@@ -231,10 +245,56 @@ export class DownloadManager {
   private async runPatreon(
     jobId: string,
     url: string,
-    cookie: string | null,
+    sessionSource: PatreonSessionSource,
+    authorizationEpoch: number | undefined,
     retentionGeneration: number
   ): Promise<void> {
+    const cliPath = this.tools.getPatreonCliPath()
+    const nodePath = this.tools.getNodePath()
+    if (!cliPath || !nodePath || !this.tools.getPatreonDistPath()) {
+      this.emit(
+        jobId,
+        'patreon',
+        'failed',
+        'Patreon downloader is not ready.',
+        null,
+        undefined,
+        'Patreon downloader is not ready.',
+        { retryWithoutPatreonSignIn: true }
+      )
+      return
+    }
+
+    // Local prerequisites are independent of authentication. Check them before
+    // resolving a one-use renderer token so a broken installation or download
+    // location never turns a successful OAuth flow into another forced sign-in.
+    let downloadDir: string
+    try {
+      downloadDir = createDownloadDir('patreon', this.getDownloadDirectory())
+    } catch (error) {
+      const details =
+        error instanceof Error ? error.message : 'The download folder could not be prepared.'
+      this.emit(
+        jobId,
+        'patreon',
+        'failed',
+        'WatchAlong could not use the download location. Choose another folder and try again.',
+        null,
+        undefined,
+        sanitizeOutput(details),
+        { retryWithoutPatreonSignIn: true }
+      )
+      return
+    }
+
+    const cookie = this.vault.resolve(sessionSource, authorizationEpoch)
     if (!cookie) {
+      try {
+        rmdirSync(downloadDir)
+      } catch {
+        // The unique job directory is empty here; leaving it behind is harmless
+        // if another process briefly holds it open.
+      }
       this.emit(
         jobId,
         'patreon',
@@ -247,22 +307,6 @@ export class DownloadManager {
       return
     }
 
-    const cliPath = this.tools.getPatreonCliPath()
-    const nodePath = this.tools.getNodePath()
-    if (!cliPath || !nodePath || !this.tools.getPatreonDistPath()) {
-      this.emit(
-        jobId,
-        'patreon',
-        'failed',
-        'Patreon downloader is not ready.',
-        null,
-        undefined,
-        'Patreon downloader is not ready.'
-      )
-      return
-    }
-
-    const downloadDir = createDownloadDir('patreon', this.getDownloadDirectory())
     const cookieConfig = createPatreonCookieConfig(cookie)
     try {
       const args = buildPatreonDownloadArgs(
@@ -524,7 +568,12 @@ export class DownloadManager {
     details: Partial<
       Pick<
         DownloadProgressEvent,
-        'speed' | 'eta' | 'fragmentIndex' | 'fragmentCount' | 'metadata'
+        | 'speed'
+        | 'eta'
+        | 'fragmentIndex'
+        | 'fragmentCount'
+        | 'metadata'
+        | 'retryWithoutPatreonSignIn'
       >
     > = {}
   ): void {
@@ -534,6 +583,7 @@ export class DownloadManager {
   private cancelAllInternal(emitCancelled: boolean): void {
     for (const [jobId, pending] of this.pending) {
       clearTimeout(pending.timer)
+      if (pending.sessionToken) this.vault.discardToken(pending.sessionToken)
       if (emitCancelled) {
         this.emit(jobId, pending.source, 'cancelled', 'Download cancelled.', null)
       }
@@ -568,4 +618,11 @@ export class DownloadManager {
     }
     this.running.delete(jobId)
   }
+}
+
+function getPatreonSessionToken(request: ReactionDownloadRequest): string | undefined {
+  if (request.source !== 'patreon') return undefined
+  return request.sessionSource.type === 'browser' || request.sessionSource.type === 'token'
+    ? request.sessionSource.token
+    : undefined
 }

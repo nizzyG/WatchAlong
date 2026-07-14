@@ -7,7 +7,8 @@
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
-    "postinstall": "npm ci --omit=dev --prefix resources/tools/patreon-dl",
+    "postinstall": "node scripts/install-patreon-tools.mjs",
+    "verify:patreon-tools": "node scripts/verify-patreon-tools.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "build": "npm run postinstall && npm run typecheck && electron-vite build",

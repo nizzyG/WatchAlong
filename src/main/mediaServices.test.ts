@@ -6,14 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DownloadProgressEvent } from '@shared/types'
 import { cleanupStalePatreonTempDirectories } from './services/patreonDownload'
 import {
-  canExtractNatively,
   BufferedLineReader,
+  canonicalizePatreonPostUrl,
   detectBrowsers,
   derivePatreonDownloadMetadata,
   DownloadManager,
   extractPatreonSession,
   findPatreonSessionCookieValue,
-  getBrowserExtractionMode,
   getPlatformToolFilename,
   humanizePatreonLine,
   humanizeCookieExtractionError,
@@ -94,8 +93,15 @@ describe('media services', () => {
 
       expect(isAllowedPatreonDownloadUrl('https://www.patreon.com/posts/example-123')).toBe(true)
       expect(isAllowedPatreonDownloadUrl('https://creator.patreon.com/posts/example-123')).toBe(true)
+      expect(canonicalizePatreonPostUrl(
+        'https://www.patreon.com/HoldDownA/posts/tombstone-watch-88502955?utm_source=copy'
+      )).toBe('https://www.patreon.com/posts/tombstone-watch-88502955')
+      expect(canonicalizePatreonPostUrl(
+        'https://creator.patreon.com/liteweightgames/posts/v-for-vendetta-139304164/'
+      )).toBe('https://www.patreon.com/posts/v-for-vendetta-139304164')
       expect(isAllowedPatreonDownloadUrl('https://www.patreon.com/home')).toBe(false)
       expect(isAllowedPatreonDownloadUrl('https://patreon.com.evil.test/posts/example-123')).toBe(false)
+      expect(canonicalizePatreonPostUrl('https://www.patreon.com/posts/example%2Fescape')).toBeNull()
     })
 
     it('allows creator images only from secure YouTube image hosts', () => {
@@ -153,88 +159,38 @@ describe('media services', () => {
     })
   })
 
-  describe('canExtractNatively', () => {
-    it('returns true for firefox', () => {
-      expect(canExtractNatively('firefox')).toBe(true)
-    })
-
-    it('keeps Windows chromium browsers manual-only', () => {
-      expect(canExtractNatively('chrome', 'win32')).toBe(false)
-      expect(canExtractNatively('edge', 'win32')).toBe(false)
-      expect(canExtractNatively('brave', 'win32')).toBe(false)
-      expect(canExtractNatively('opera', 'win32')).toBe(false)
-    })
-
-    it('allows macOS chromium browsers as best-effort extraction targets', () => {
-      expect(canExtractNatively('chrome', 'darwin')).toBe(true)
-      expect(getBrowserExtractionMode('chrome', 'darwin')).toBe('best-effort')
-      expect(getBrowserExtractionMode('firefox', 'darwin')).toBe('automatic')
-      expect(getBrowserExtractionMode('safari', 'darwin')).toBe('manual-only')
-    })
-  })
-
   describe('detectBrowsers', () => {
-    it('reports macOS browser policy metadata', () => {
-      const browsers = detectBrowsers('darwin', (browserPath) =>
-        browserPath === '/Applications/Firefox.app' ||
-        browserPath === '/Applications/Google Chrome.app' ||
-        browserPath === '/Applications/Safari.app'
-      )
+    it('reports only Firefox on macOS', () => {
+      const browsers = detectBrowsers('darwin', (browserPath) => browserPath === '/Applications/Firefox.app')
 
-      expect(browsers.map((browser) => browser.name)).toEqual(['firefox', 'chrome', 'edge', 'brave', 'safari', 'opera'])
-      expect(browsers.find((browser) => browser.name === 'firefox')).toMatchObject({
+      expect(browsers).toEqual([{
+        name: 'firefox',
+        label: 'Firefox',
         installed: true,
-        extractionMode: 'automatic',
-        extractionSupported: true,
-        subtitle: undefined
-      })
-      expect(browsers.find((browser) => browser.name === 'chrome')).toMatchObject({
-        installed: true,
-        extractionMode: 'best-effort',
-        extractionSupported: true,
-        subtitle: 'May not work'
-      })
-      expect(browsers.find((browser) => browser.name === 'safari')).toMatchObject({
-        installed: true,
-        extractionMode: 'manual-only',
-        extractionSupported: false,
-        subtitle: 'Rarely works - manual entry needed'
-      })
+        paths: ['/Applications/Firefox.app']
+      }])
     })
 
-    it('reports Windows chromium browsers as manual-only', () => {
-      const browsers = detectBrowsers('win32', (browserPath) => browserPath.endsWith('chrome.exe'))
-      expect(browsers.find((browser) => browser.name === 'chrome')).toMatchObject({
+    it('reports Firefox as unavailable when no Windows Firefox path exists', () => {
+      expect(detectBrowsers('win32', () => false)).toEqual([{
+        name: 'firefox',
+        label: 'Firefox',
+        installed: false,
+        paths: []
+      }])
+    })
+
+    it('detects common Linux Firefox installations', () => {
+      expect(detectBrowsers('linux', (browserPath) => browserPath === '/snap/bin/firefox')[0]).toEqual({
+        name: 'firefox',
+        label: 'Firefox',
         installed: true,
-        extractionMode: 'manual-only',
-        extractionSupported: false,
-        subtitle: 'Manual entry needed'
+        paths: ['/snap/bin/firefox']
       })
     })
   })
 
   describe('extractPatreonSession', () => {
-    it('does not request yt-dlp for manual-only browsers', async () => {
-      const result = await extractPatreonSession(
-        'safari',
-        {
-          getYtDlpPath: () => {
-            throw new Error('yt-dlp should not be requested')
-          }
-        } as never,
-        {
-          createToken: () => {
-            throw new Error('no token should be created')
-          }
-        } as never,
-        'darwin'
-      )
-
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain('Safari')
-      expect(result.message).toContain('manual')
-    })
-
     it('does not mint a token when Forget is pressed during browser extraction', async () => {
       const root = mkdtempSync(join(tmpdir(), 'watchalong-extraction-epoch-test-'))
       try {
@@ -243,8 +199,8 @@ describe('media services', () => {
           'firefox',
           { getYtDlpPath: () => 'yt-dlp' } as ToolResolver,
           vault,
-          'win32',
           async (_command, args) => {
+            expect(valueAfter(args, '--cookies-from-browser')).toBe('firefox')
             const cookiePath = valueAfter(args, '--cookies')
             writeFileSync(
               cookiePath,
@@ -288,9 +244,9 @@ describe('media services', () => {
   })
 
   describe('humanizeCookieExtractionError', () => {
-    it('maps locked Brave cookie database errors to guided copy', () => {
-      expect(humanizeCookieExtractionError('brave', 'ERROR: Could not copy Chrome cookie database')).toContain(
-        'Patreon sign-in window'
+    it('maps a locked Firefox cookie database to guided copy', () => {
+      expect(humanizeCookieExtractionError('firefox', 'ERROR: database is locked')).toContain(
+        'Sign in with browser'
       )
     })
 
@@ -301,9 +257,9 @@ describe('media services', () => {
     })
 
     it('provides a generic fallback message for unknown errors', () => {
-      const message = humanizeCookieExtractionError('edge', 'Something unexpected happened')
-      expect(message).toContain('Edge')
-      expect(message).toContain('session_id')
+      const message = humanizeCookieExtractionError('firefox', 'Something unexpected happened')
+      expect(message).toContain('Firefox')
+      expect(message).toContain('Sign in with browser')
     })
   })
 
@@ -715,6 +671,112 @@ describe('media services', () => {
       expect(vault.save).not.toHaveBeenCalled()
     })
 
+    it('passes patreon-dl a canonical post URL for creator-prefixed links', async () => {
+      const child = createFakeChildProcess()
+      const cookie = 'session_id=canonical-cookie'
+      const { manager, spawnProcess } = createPatreonDownloadManager(child, tempDir, cookie)
+
+      manager.start({
+        source: 'patreon',
+        url: 'https://www.patreon.com/HoldDownA/posts/tombstone-watch-88502955?utm_source=copy',
+        sessionSource: { type: 'manual', sessionId: cookie }
+      })
+      await vi.advanceTimersByTimeAsync(25)
+
+      expect(spawnProcess.mock.calls[0][1].at(-1)).toBe(
+        'https://www.patreon.com/posts/tombstone-watch-88502955'
+      )
+      manager.dispose()
+    })
+
+    it('does not consume a one-use OAuth token when Patreon tools are unavailable', async () => {
+      const child = createFakeChildProcess()
+      const events: DownloadProgressEvent[] = []
+      const resolveSession = vi.fn(() => 'session_id=oauth-cookie')
+      const vault = {
+        authEpoch: 0,
+        resolve: resolveSession
+      }
+      let toolsReady = false
+      const spawnProcess = vi.fn(() => child as never)
+      const manager = new DownloadManager(
+        {
+          getPatreonCliPath: () => toolsReady ? 'patreon-dl.js' : null,
+          getPatreonDistPath: () => toolsReady ? 'dist/cli/index.js' : null,
+          getNodePath: () => toolsReady ? 'node' : null,
+          getFfmpegPath: () => null
+        } as ToolResolver,
+        vault as never,
+        (event) => events.push(event),
+        () => tempDir,
+        spawnProcess as never
+      )
+      const request = {
+        source: 'patreon' as const,
+        url: 'https://www.patreon.com/posts/example-123',
+        sessionSource: { type: 'token' as const, token: 'one-use-token' }
+      }
+
+      manager.start(request)
+      await vi.advanceTimersByTimeAsync(25)
+
+      expect(events.at(-1)).toMatchObject({
+        state: 'failed',
+        message: 'Patreon downloader is not ready.',
+        retryWithoutPatreonSignIn: true
+      })
+      expect(resolveSession).not.toHaveBeenCalled()
+      expect(spawnProcess).not.toHaveBeenCalled()
+
+      toolsReady = true
+      manager.start(request)
+      await vi.advanceTimersByTimeAsync(25)
+
+      expect(resolveSession).toHaveBeenCalledOnce()
+      expect(spawnProcess).toHaveBeenCalledOnce()
+      manager.dispose()
+    })
+
+    it('does not consume a one-use OAuth token when the download location is unusable', async () => {
+      const child = createFakeChildProcess()
+      const events: DownloadProgressEvent[] = []
+      const resolveSession = vi.fn(() => 'session_id=oauth-cookie')
+      const blockedRoot = join(tempDir, 'not-a-directory')
+      writeFileSync(blockedRoot, 'file')
+      const spawnProcess = vi.fn(() => child as never)
+      const manager = new DownloadManager(
+        {
+          getPatreonCliPath: () => 'patreon-dl.js',
+          getPatreonDistPath: () => 'dist/cli/index.js',
+          getNodePath: () => 'node',
+          getFfmpegPath: () => null
+        } as ToolResolver,
+        {
+          authEpoch: 0,
+          resolve: resolveSession
+        } as never,
+        (event) => events.push(event),
+        () => blockedRoot,
+        spawnProcess as never
+      )
+
+      manager.start({
+        source: 'patreon',
+        url: 'https://www.patreon.com/posts/example-123',
+        sessionSource: { type: 'token', token: 'one-use-token' }
+      })
+      await vi.advanceTimersByTimeAsync(25)
+
+      expect(events.at(-1)).toMatchObject({
+        state: 'failed',
+        message: 'WatchAlong could not use the download location. Choose another folder and try again.',
+        retryWithoutPatreonSignIn: true
+      })
+      expect(resolveSession).not.toHaveBeenCalled()
+      expect(spawnProcess).not.toHaveBeenCalled()
+      manager.dispose()
+    })
+
     it('forgets both saved and not-yet-accepted Patreon sessions', async () => {
       const child = createFakeChildProcess()
       const cookie = 'session_id=forget-everywhere'
@@ -857,6 +919,54 @@ describe('media services', () => {
       await vi.advanceTimersByTimeAsync(25)
 
       expect(spawnProcess).not.toHaveBeenCalled()
+    })
+
+    it('discards an OAuth token when its pending download is cancelled', async () => {
+      const discardToken = vi.fn()
+      const resolveSession = vi.fn(() => 'session_id=should-not-resolve')
+      const spawnProcess = vi.fn()
+      const manager = new DownloadManager(
+        {} as ToolResolver,
+        { authEpoch: 0, discardToken, resolve: resolveSession } as never,
+        vi.fn(),
+        () => tempDir,
+        spawnProcess as never
+      )
+
+      const { jobId } = manager.start({
+        source: 'patreon',
+        url: 'https://www.patreon.com/posts/example-123',
+        sessionSource: { type: 'token', token: 'pending-oauth-token' }
+      })
+      manager.cancel(jobId)
+      await vi.advanceTimersByTimeAsync(25)
+
+      expect(discardToken).toHaveBeenCalledOnce()
+      expect(discardToken).toHaveBeenCalledWith('pending-oauth-token')
+      expect(resolveSession).not.toHaveBeenCalled()
+      expect(spawnProcess).not.toHaveBeenCalled()
+    })
+
+    it('discards pending OAuth tokens when the download manager is disposed', async () => {
+      const discardToken = vi.fn()
+      const manager = new DownloadManager(
+        {} as ToolResolver,
+        { authEpoch: 0, discardToken } as never,
+        vi.fn(),
+        () => tempDir,
+        vi.fn() as never
+      )
+
+      manager.start({
+        source: 'patreon',
+        url: 'https://www.patreon.com/posts/example-123',
+        sessionSource: { type: 'browser', browser: 'firefox', token: 'pending-browser-token' }
+      })
+      manager.dispose()
+      await vi.advanceTimersByTimeAsync(25)
+
+      expect(discardToken).toHaveBeenCalledOnce()
+      expect(discardToken).toHaveBeenCalledWith('pending-browser-token')
     })
   })
 })

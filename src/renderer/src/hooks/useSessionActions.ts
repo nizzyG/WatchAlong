@@ -95,6 +95,8 @@ export function useSessionActions({
     setRenameTargetId,
     renameDraft,
     setRenameDraft,
+    renameReactorDraft,
+    setRenameReactorDraft,
     deleteTarget,
     setDeleteTarget
   } = sessionState
@@ -176,12 +178,17 @@ export function useSessionActions({
     if (!media) return
 
     await stopDetachedMovie()
-    const replacement = await resolveMediaReplacement(await window.watchAlong.replaceSessionMedia(
-      activeSession.id,
-      role,
-      media.path,
-      role === 'reaction' ? activeSession.reactionSource ?? 'local' : undefined
-    ))
+    const replacementRequest = role === 'reaction'
+      ? window.watchAlong.replaceSessionMedia(
+          activeSession.id,
+          role,
+          media.path,
+          activeSession.reactionSource ?? 'local',
+          undefined,
+          activeSession.reactorName ?? undefined
+        )
+      : window.watchAlong.replaceSessionMedia(activeSession.id, role, media.path, undefined)
+    const replacement = await resolveMediaReplacement(await replacementRequest)
     if (!replacement) return
     const nextSession = commitLibrary(replacement.library)
     setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
@@ -271,7 +278,7 @@ export function useSessionActions({
       if (activeSession?.moviePath) {
         const suggestedTitle = buildSuggestedPairingTitle(activeSession.moviePath, event.metadata?.reactorName)
         const replacement = await resolveMediaReplacement(await window.watchAlong.replaceSessionMedia(
-          activeSession.id, 'reaction', event.filePath, event.source, suggestedTitle
+          activeSession.id, 'reaction', event.filePath, event.source, suggestedTitle, event.metadata?.reactorName
         ))
         if (!replacement) return
         let nextSession = commitLibrary(replacement.library)
@@ -296,9 +303,13 @@ export function useSessionActions({
       const movie = await window.watchAlong.selectMovieFile()
       if (!movie) return
       const suggestedTitle = buildSuggestedPairingTitle(movie.path, event.metadata?.reactorName)
-      const next = suggestedTitle
-        ? await window.watchAlong.createOrSwitchSessionFromPaths(event.filePath, movie.path, event.source, suggestedTitle)
-        : await window.watchAlong.createOrSwitchSessionFromPaths(event.filePath, movie.path, event.source)
+      const next = await window.watchAlong.createOrSwitchSessionFromPaths(
+        event.filePath,
+        movie.path,
+        event.source,
+        suggestedTitle,
+        event.metadata?.reactorName
+      )
       const nextSession = commitLibrary(next)
       setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
       setMoviePosition(0)
@@ -389,7 +400,7 @@ export function useSessionActions({
 
     const suggestedTitle = buildSuggestedPairingTitle(initiatingSession.moviePath, metadata.reactorName)
     const replacement = await resolveMediaReplacement(await window.watchAlong.replaceSessionMedia(
-      initiatingSessionId, 'reaction', filePath, metadata.source, suggestedTitle
+      initiatingSessionId, 'reaction', filePath, metadata.source, suggestedTitle, metadata.reactorName
     ))
     if (!replacement) return
     if (replacement.replaced && activeSessionIdRef.current !== initiatingSessionId) return
@@ -438,16 +449,22 @@ export function useSessionActions({
     const current = library.sessions.find((item) => item.id === sessionId)
     setRenameTargetId(sessionId)
     setRenameDraft(current?.title ?? '')
+    setRenameReactorDraft(current?.reactorName ?? '')
   }
 
   const cancelRenameSession = (): void => {
     setRenameTargetId(null)
     setRenameDraft('')
+    setRenameReactorDraft('')
   }
 
   const confirmRenameSession = async (): Promise<void> => {
     if (!renameTargetId || !renameDraft.trim()) return
-    commitLibrary(await window.watchAlong.renameSession(renameTargetId, renameDraft.trim()))
+    commitLibrary(await window.watchAlong.renameSession(
+      renameTargetId,
+      renameDraft.trim(),
+      renameReactorDraft.trim()
+    ))
     cancelRenameSession()
   }
 

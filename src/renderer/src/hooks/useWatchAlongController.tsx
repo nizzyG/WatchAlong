@@ -66,7 +66,7 @@ export function useWatchAlongController({
     showWelcome, setShowWelcome, wizardDimmed,
     setWizardDimmed, commandPanelOpen, setCommandPanelOpen, expandedPanelSection,
     setExpandedPanelSection, patreonStatus, setPatreonStatus, renameTargetId, setRenameTargetId,
-    renameDraft, setRenameDraft, deleteTarget, setDeleteTarget
+    renameDraft, setRenameDraft, renameReactorDraft, setRenameReactorDraft, deleteTarget, setDeleteTarget
   } = sessionState
   const { subtitleCues, setSubtitleCues } = subtitles
   const { setDownloadIndicator, setDownloadEvents } = downloads
@@ -82,11 +82,18 @@ export function useWatchAlongController({
   const commitLibrary = useCallback((next: SessionLibrary): LibrarySession | null => {
     const nextSession = getActiveSession(next)
     if (nextSession) {
+      if (activeSessionIdRef.current !== nextSession.id) {
+        // Establish the disk-backed fallback synchronously when session
+        // identity changes. Media elements can emit initial zero-valued events
+        // before metadata and restoration have completed.
+        positionRef.current = nextSession.lastReactionTimeSeconds
+      }
       sessionRef.current = nextSession
       activeSessionIdRef.current = nextSession.id
     } else {
       sessionRef.current = emptySession
       activeSessionIdRef.current = null
+      positionRef.current = 0
     }
     setLibrary(next)
     return nextSession
@@ -142,11 +149,17 @@ export function useWatchAlongController({
     }
 
     const reaction = reactionVideoRef.current
-    const nextReactionTime = reaction && reaction.readyState > 0 && Number.isFinite(reaction.currentTime)
-      ? reaction.currentTime
-      : positionRef.current
+    const currentRestoreToken = `${sessionId}|${mediaUrls.reaction ?? ''}|${mediaUrls.movie ?? ''}`
+    const mediaRestored = restoreToken === currentRestoreToken
+    const nextReactionTime = mediaRestored
+      ? reaction && reaction.readyState > 0 && Number.isFinite(reaction.currentTime)
+        ? reaction.currentTime
+        : positionRef.current
+      : sessionRef.current.id === sessionId
+        ? sessionRef.current.lastReactionTimeSeconds
+        : positionRef.current
     await saveSessionPosition(sessionId, nextReactionTime)
-  }, [appView, saveSessionPosition])
+  }, [appView, mediaUrls.movie, mediaUrls.reaction, restoreToken, saveSessionPosition])
 
   const getMovieAdapter = useCallback((): VideoAdapter | null => {
     if (remoteMovieAdapterRef.current) {
@@ -179,13 +192,24 @@ export function useWatchAlongController({
           return
         }
 
-        positionRef.current = reactionTime
-        setPosition(reactionTime)
         if (setupModeRef.current) {
+          positionRef.current = reactionTime
+          setPosition(reactionTime)
           setSetupPositions((current) => ({ ...current, reaction: reactionTime }))
           return
         }
 
+        // attach() starts the controller's animation loop before the stored
+        // position has been restored. Persisting those initial zero-valued
+        // frames can overwrite the disk value that loadSession is about to
+        // read. Paused/seeking positions are still saved by explicit flushes;
+        // only genuinely playing media needs periodic persistence.
+        if (controllerRef.current?.getState() !== 'playing') {
+          return
+        }
+
+        positionRef.current = reactionTime
+        setPosition(reactionTime)
         const currentSession = sessionRef.current
         const now = Date.now()
         if (now - lastPositionSaveRef.current > 1500 && currentSession.reactionPath && currentSession.moviePath) {
@@ -340,7 +364,12 @@ export function useWatchAlongController({
       }
 
       if (event.type === 'error') {
-        handleVideoError('movie')
+        handleVideoError('movie', state)
+      } else if (
+        event.type === 'play' || event.type === 'loadeddata' || event.type === 'canplay' ||
+        event.type === 'canplaythrough' || event.type === 'timeupdate'
+      ) {
+        handleVideoRecovery('movie', state)
       }
     })
   }, [])
@@ -387,9 +416,15 @@ export function useWatchAlongController({
   ])
 
   useEffect(() => {
-    const token = `${session.id}|${mediaUrls.reaction ?? ''}|${mediaUrls.movie ?? ''}`
+    // Library IPC commits update sessionRef synchronously, while the `session`
+    // render value can still be one React commit behind. This matters when the
+    // user closes and immediately reopens the same pairing after its position
+    // was flushed: the old render still contains the pre-flush position.
+    const restoreSession = sessionRef.current
+    const token = `${restoreSession.id}|${mediaUrls.reaction ?? ''}|${mediaUrls.movie ?? ''}`
     if (
       !activeSession ||
+      restoreSession.id !== activeSessionIdRef.current ||
       !mediaUrls.reaction ||
       !mediaUrls.movie ||
       !metadataReady.reaction ||
@@ -399,13 +434,14 @@ export function useWatchAlongController({
       return
     }
 
-    controllerRef.current?.setAudio(audioState(session))
-    controllerRef.current?.setPlaybackRate(session.playbackRate)
-    controllerRef.current?.loadSession(session.lastReactionTimeSeconds)
-    setPosition(session.lastReactionTimeSeconds)
+    controllerRef.current?.setAudio(audioState(restoreSession))
+    controllerRef.current?.setPlaybackRate(restoreSession.playbackRate)
+    positionRef.current = restoreSession.lastReactionTimeSeconds
+    controllerRef.current?.loadSession(restoreSession.lastReactionTimeSeconds)
+    setPosition(restoreSession.lastReactionTimeSeconds)
     setMoviePosition(getMovieAdapter()?.currentTime ?? 0)
     setRestoreToken(token)
-  }, [activeSession, getMovieAdapter, mediaUrls, metadataReady, restoreToken, session])
+  }, [activeSession, activeSessionIdRef, getMovieAdapter, mediaUrls, metadataReady, restoreToken, sessionRef])
 
   useEffect(() => {
     let mounted = true
@@ -650,6 +686,7 @@ export function useWatchAlongController({
     togglePlayPause, seekBy, seekTo, setReactionVolume, setMovieVolume, toggleReactionMute,
     toggleMovieMute, setPlaybackRate, setMovieRateCorrection, setReactorSource, detectSyncAgain,
     togglePipVisibility, nudgeOffset, handleMetadata, handleTimeUpdate, handleVideoError,
+    handleVideoRecovery,
     updateOverlay, commitOverlay, toggleFullscreen, toggleReactionFullscreen, enterSyncSetup,
     syncNow, cancelSyncSetup, saveSyncSetup, setIndependentSetupTime, nudgeSetupTime,
     toggleSetupPreview

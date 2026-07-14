@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, join } from 'node:path'
 import type { DownloadedReactionMetadata, SavedPatreonSessionStatus } from '@shared/types'
+import { canonicalizePatreonPostUrl } from '@shared/patreonUrls'
 import { cleanMediaFilename, cleanMetadataValue, compactMetadata } from './downloadMetadata'
 import { stripAnsi } from './downloadProcess'
 import { PatreonSessionVault } from './patreonSessionVault'
@@ -259,25 +260,10 @@ export function derivePatreonDownloadMetadata(
 }
 
 export function isAllowedPatreonDownloadUrl(value: string): boolean {
-  const url = parseSecureNetworkUrl(value)
-  if (!url) return false
-  const hostname = url.hostname.toLowerCase()
-  return (
-    (hostname === 'patreon.com' || hostname.endsWith('.patreon.com')) &&
-    url.pathname.includes('/posts/')
-  )
+  return canonicalizePatreonPostUrl(value) !== null
 }
 
-function parseSecureNetworkUrl(value: string): URL | null {
-  try {
-    const url = new URL(value.trim())
-    return url.protocol === 'https:' && !url.username && !url.password && !url.port && !url.hash
-      ? url
-      : null
-  } catch {
-    return null
-  }
-}
+export { canonicalizePatreonPostUrl } from '@shared/patreonUrls'
 
 function findPatreonAncestry(
   filePath: string

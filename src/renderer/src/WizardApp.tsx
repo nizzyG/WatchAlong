@@ -225,7 +225,8 @@ export function WizardApp(): JSX.Element {
           'reaction',
           selection.path,
           selection.source,
-          suggestedTitle
+          suggestedTitle,
+          selection.download?.reactorName
         )
         if (replacement.status === 'missing') {
           throw new Error('The watchalong being updated no longer exists.')
@@ -243,9 +244,13 @@ export function WizardApp(): JSX.Element {
         library = replacement.library
         library = await window.watchAlong.saveSessionPosition(context.sessionId, 0)
       } else {
-        library = suggestedTitle
-          ? await window.watchAlong.createOrSwitchSessionFromPaths(selection.path, movie.path, selection.source, suggestedTitle)
-          : await window.watchAlong.createOrSwitchSessionFromPaths(selection.path, movie.path, selection.source)
+        library = await window.watchAlong.createOrSwitchSessionFromPaths(
+          selection.path,
+          movie.path,
+          selection.source,
+          suggestedTitle,
+          selection.download?.reactorName
+        )
         await window.watchAlong.completeOnboarding()
       }
       const sessionId = context.sessionId ?? library.activeSessionId

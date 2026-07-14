@@ -42,28 +42,29 @@ export function registerSessionIpc(deps: {
   handleTrustedIpc(
     `${IPC_PREFIX}:set-session-media`,
     APP_RENDERERS,
-    (_event, role: MediaRole, path: string, source?: ReactionSource, suggestedTitle?: string) =>
+    (_event, role: MediaRole, path: string, source?: ReactionSource, suggestedTitle?: string, reactorName?: string) =>
       mediaPathGrants.withAuthorizedPaths([path], ([authorizedPath]) =>
-        sessionStore.setSessionMedia(role, authorizedPath, source, suggestedTitle))
+        sessionStore.setSessionMedia(role, authorizedPath, source, suggestedTitle, reactorName))
   )
   handleTrustedIpc(
     `${IPC_PREFIX}:replace-session-media`,
     APP_RENDERERS,
-    (_event, id: string, role: MediaRole, path: string, source?: ReactionSource, suggestedTitle?: string) =>
+    (_event, id: string, role: MediaRole, path: string, source?: ReactionSource, suggestedTitle?: string, reactorName?: string) =>
       mediaPathGrants.withAuthorizedPaths([path], ([authorizedPath]) =>
-        sessionStore.replaceSessionMedia(id, role, authorizedPath, source, suggestedTitle),
+        sessionStore.replaceSessionMedia(id, role, authorizedPath, source, suggestedTitle, reactorName),
       (result) => result.status !== 'missing')
   )
   handleTrustedIpc(
     `${IPC_PREFIX}:create-or-switch-session-from-paths`,
     APP_RENDERERS,
-    (_event, reaction: string, movie: string, source?: ReactionSource, suggestedTitle?: string) =>
+    (_event, reaction: string, movie: string, source?: ReactionSource, suggestedTitle?: string, reactorName?: string) =>
       mediaPathGrants.withAuthorizedPaths([reaction, movie], ([authorizedReaction, authorizedMovie]) =>
-        sessionStore.createOrSwitchSession(authorizedReaction, authorizedMovie, source, suggestedTitle))
+        sessionStore.createOrSwitchSession(authorizedReaction, authorizedMovie, source, suggestedTitle, reactorName))
   )
   handleTrustedIpc(`${IPC_PREFIX}:set-active-session`, MAIN_RENDERER, (_event, id: string) => sessionStore.setActiveSession(id))
   handleTrustedIpc(`${IPC_PREFIX}:delete-session`, MAIN_RENDERER, (_event, id: string) => sessionStore.deleteSession(id))
-  handleTrustedIpc(`${IPC_PREFIX}:rename-session`, MAIN_RENDERER, (_event, id: string, title: string) => sessionStore.renameSession(id, title))
+  handleTrustedIpc(`${IPC_PREFIX}:rename-session`, MAIN_RENDERER, (_event, id: string, title: string, reactorName?: string) =>
+    sessionStore.renameSession(id, title, reactorName))
 
   handleTrustedIpc(`${IPC_PREFIX}:get-media-url`, MAIN_RENDERER, (_event, role: MediaRole, sessionId: string) => {
     const session = sessionStore.getSession(sessionId)

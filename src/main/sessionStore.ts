@@ -8,6 +8,7 @@ import {
   getActiveSession,
   normalizeLibrary,
   normalizeSession,
+  sanitizeReactorName,
   sanitizeSuggestedSessionTitle
 } from '@shared/session'
 import type {
@@ -69,20 +70,41 @@ export class SessionStore {
     reactionPath: string,
     moviePath: string,
     reactionSource: ReactionSource = 'local',
-    suggestedTitle?: string
+    suggestedTitle?: string,
+    reactorName?: string
   ): SessionLibrary {
     const library = this.read()
     const existing = findMatchingSession(library, reactionPath, moviePath)
     const now = new Date()
-    const next = existing
-      ? { ...library, activeSessionId: existing.id }
+    const updatedExisting = existing && existing.reactorNameOrigin === 'metadata' && sanitizeReactorName(reactorName)
+      ? normalizeSession({
+          ...existing,
+          reactorName,
+          reactorNameOrigin: 'metadata',
+          createdAt: existing.createdAt,
+          updatedAt: now.toISOString()
+        })
+      : existing
+    const next = updatedExisting
+      ? {
+          ...library,
+          activeSessionId: updatedExisting.id,
+          sessions: library.sessions.map((session) => session.id === updatedExisting.id ? updatedExisting : session)
+        }
       : {
           ...library,
           activeSessionId: null,
-          sessions: [...library.sessions, createSessionFromPaths(reactionPath, moviePath, now, reactionSource, suggestedTitle)]
+          sessions: [...library.sessions, createSessionFromPaths(
+            reactionPath,
+            moviePath,
+            now,
+            reactionSource,
+            suggestedTitle,
+            reactorName
+          )]
         }
 
-    if (!existing) {
+    if (!updatedExisting) {
       next.activeSessionId = next.sessions.at(-1)?.id ?? null
     }
 
@@ -93,7 +115,8 @@ export class SessionStore {
     role: MediaRole,
     filePath: string,
     reactionSource: ReactionSource = 'local',
-    suggestedTitle?: string
+    suggestedTitle?: string,
+    reactorName?: string
   ): SessionLibrary {
     const library = this.read()
     const active = getActiveSession(library)
@@ -104,7 +127,9 @@ export class SessionStore {
       const draft = createSessionFromMedia(
         {
           [pathKey]: filePath,
-          ...(role === 'reaction' ? { reactionSource } : {})
+          ...(role === 'reaction'
+            ? { reactionSource, reactorName: sanitizeReactorName(reactorName), reactorNameOrigin: 'metadata' as const }
+            : {})
         },
         now
       )
@@ -119,6 +144,7 @@ export class SessionStore {
       ...active,
       [pathKey]: filePath,
       ...(role === 'reaction' ? { reactionSource } : {}),
+      ...reactorIdentityAfterReactionChange(active, role, reactorName),
       ...(role === 'movie' ? { detectedMovieFps: null } : {}),
       ...resetAutoSyncMetadata,
       title: completedDraftTitle(active, role, suggestedTitle) ?? (
@@ -151,7 +177,8 @@ export class SessionStore {
     role: MediaRole,
     filePath: string,
     reactionSource: ReactionSource = 'local',
-    suggestedTitle?: string
+    suggestedTitle?: string,
+    reactorName?: string
   ): ReplaceSessionMediaResult {
     const library = this.read()
     const target = library.sessions.find((session) => session.id === sessionId)
@@ -165,6 +192,7 @@ export class SessionStore {
       ...(role === 'movie'
         ? { moviePath: filePath, detectedMovieFps: null }
         : { reactionPath: filePath, reactionSource }),
+      ...reactorIdentityAfterReactionChange(target, role, reactorName),
       title: completedDraftTitle(target, role, suggestedTitle) ?? target.title,
       ...resetAutoSyncMetadata,
       createdAt: target.createdAt,
@@ -258,6 +286,9 @@ export class SessionStore {
             titleOrigin: !Object.prototype.hasOwnProperty.call(patch, 'title')
               ? session.titleOrigin
               : patch.titleOrigin === 'generated' ? 'generated' : 'custom',
+            reactorNameOrigin: !Object.prototype.hasOwnProperty.call(patch, 'reactorName')
+              ? session.reactorNameOrigin
+              : patch.reactorNameOrigin === 'metadata' ? 'metadata' : 'custom',
             id: session.id,
             overlay: patch.overlay ? { ...session.overlay, ...patch.overlay } : session.overlay,
             movieWindowGeometry: patch.movieWindowGeometry
@@ -293,12 +324,22 @@ export class SessionStore {
     return this.writeAndReturn({ ...library, sessions })
   }
 
-  renameSession(sessionId: string, title: string): SessionLibrary {
+  renameSession(sessionId: string, title: string, reactorName?: string): SessionLibrary {
     const now = new Date().toISOString()
     const library = this.read()
+    const sanitizedReactorName = reactorName === undefined ? undefined : sanitizeReactorName(reactorName)
     const sessions = library.sessions.map((session) =>
       session.id === sessionId
-        ? normalizeSession({ ...session, title, titleOrigin: 'custom', updatedAt: now, createdAt: session.createdAt })
+        ? normalizeSession({
+            ...session,
+            title,
+            titleOrigin: title.trim() === session.title ? session.titleOrigin : 'custom',
+            ...(sanitizedReactorName === undefined || sanitizedReactorName === session.reactorName
+              ? {}
+              : { reactorName: sanitizedReactorName, reactorNameOrigin: 'custom' as const }),
+            updatedAt: now,
+            createdAt: session.createdAt
+          })
         : session
     )
 
@@ -534,4 +575,16 @@ function completedDraftTitle(
   const title = sanitizeSuggestedSessionTitle(suggestedTitle)
   if (!title) return null
   return session.titleOrigin === 'generated' ? title : null
+}
+
+function reactorIdentityAfterReactionChange(
+  session: LibrarySession,
+  role: MediaRole,
+  reactorName?: string
+): Partial<Pick<LibrarySession, 'reactorName' | 'reactorNameOrigin'>> {
+  if (role !== 'reaction' || session.reactorNameOrigin === 'custom') return {}
+  return {
+    reactorName: sanitizeReactorName(reactorName),
+    reactorNameOrigin: 'metadata'
+  }
 }

@@ -63,7 +63,7 @@ export interface WatchAlongViewActions {
   popInMovie: () => Promise<void>
   handleMetadata: (role: MediaRole) => void
   handleTimeUpdate: (role: MediaRole) => void
-  handleVideoError: (role: MediaRole) => void
+  handleVideoError: (role: MediaRole, video: HTMLVideoElement) => void
   cancelSyncSetup: () => void
   saveSyncSetup: () => Promise<void>
   toggleSetupPreview: (role: MediaRole) => Promise<void>
@@ -183,6 +183,8 @@ export function WatchAlongView({
     renameTargetId,
     renameDraft,
     setRenameDraft,
+    renameReactorDraft,
+    setRenameReactorDraft,
     deleteTarget
   } = sessionState
   const {
@@ -206,7 +208,7 @@ export function WatchAlongView({
         onDoubleClick={actions.toggleReactionFullscreen}
         onLoadedMetadata={() => actions.handleMetadata('reaction')}
         onTimeUpdate={() => actions.handleTimeUpdate('reaction')}
-        onError={() => actions.handleVideoError('reaction')}
+        onError={(event) => actions.handleVideoError('reaction', event.currentTarget)}
       />
 
       {appView === 'loading' && (
@@ -270,7 +272,7 @@ export function WatchAlongView({
           onPopIn={() => void actions.popInMovie()}
           onLoadedMetadata={() => actions.handleMetadata('movie')}
           onTimeUpdate={() => actions.handleTimeUpdate('movie')}
-          onVideoError={() => actions.handleVideoError('movie')}
+          onVideoError={(video) => actions.handleVideoError('movie', video)}
           subtitleText={activeSubtitleText ?? undefined}
         />
       )}
@@ -542,6 +544,8 @@ export function WatchAlongView({
         <RenameSessionDialog
           title={renameDraft}
           onTitleChange={setRenameDraft}
+          reactorName={renameReactorDraft}
+          onReactorNameChange={setRenameReactorDraft}
           onCancel={actions.cancelRenameSession}
           onConfirm={() => void actions.confirmRenameSession()}
         />

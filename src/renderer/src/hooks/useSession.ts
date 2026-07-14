@@ -33,6 +33,7 @@ export function useSession() {
   const [patreonStatus, setPatreonStatus] = useState<SavedPatreonSessionStatus>({ available: false, canEncrypt: false })
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
+  const [renameReactorDraft, setRenameReactorDraft] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<{ sessionId: string; returnToLibrary: boolean } | null>(null)
 
   return {
@@ -42,7 +43,7 @@ export function useSession() {
     showWelcome, setShowWelcome, wizardDimmed,
     setWizardDimmed, commandPanelOpen, setCommandPanelOpen, expandedPanelSection,
     setExpandedPanelSection, patreonStatus, setPatreonStatus, renameTargetId, setRenameTargetId,
-    renameDraft, setRenameDraft, deleteTarget, setDeleteTarget
+    renameDraft, setRenameDraft, renameReactorDraft, setRenameReactorDraft, deleteTarget, setDeleteTarget
   }
 }
 

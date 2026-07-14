@@ -89,7 +89,7 @@ describe('session media IPC capabilities', () => {
 
     await expect(select({})).resolves.toEqual({ path: reactionPath, name: 'reaction.mp4' })
     expect(setMedia({}, 'reaction', reactionPath, 'local')).toEqual({ ok: true })
-    expect(sessionStore.setSessionMedia).toHaveBeenCalledWith('reaction', reactionPath, 'local', undefined)
+    expect(sessionStore.setSessionMedia).toHaveBeenCalledWith('reaction', reactionPath, 'local', undefined, undefined)
     expect(() => setMedia({}, 'reaction', reactionPath, 'local')).toThrow(/Select the media file/)
   })
 
@@ -114,7 +114,7 @@ describe('session media IPC capabilities', () => {
 
     expect(replaceMedia({}, 'deleted-session', 'reaction', reactionPath, 'youtube')).toEqual({ status: 'missing' })
     expect(setMedia({}, 'reaction', reactionPath, 'youtube')).toEqual({ ok: true })
-    expect(sessionStore.setSessionMedia).toHaveBeenCalledWith('reaction', reactionPath, 'youtube', undefined)
+    expect(sessionStore.setSessionMedia).toHaveBeenCalledWith('reaction', reactionPath, 'youtube', undefined, undefined)
   })
 
   it('accepts a downloaded reaction together with an already-bound movie', () => {
@@ -122,12 +122,24 @@ describe('session media IPC capabilities', () => {
     mediaPathGrants.grantDownloadedPath(reactionPath)
     const create = getHandler(`${IPC_PREFIX}:create-or-switch-session-from-paths`)
 
-    expect(create({}, reactionPath, moviePath, 'youtube', 'Movie — Creator')).toEqual({ ok: true })
+    expect(create({}, reactionPath, moviePath, 'youtube', 'Movie — Creator', 'Creator')).toEqual({ ok: true })
     expect(sessionStore.createOrSwitchSession).toHaveBeenCalledWith(
       reactionPath,
       moviePath,
       'youtube',
-      'Movie — Creator'
+      'Movie — Creator',
+      'Creator'
+    )
+  })
+
+  it('passes reactor edits through the trusted rename channel', () => {
+    const rename = getHandler(`${IPC_PREFIX}:rename-session`)
+
+    expect(rename({}, 'session-a', 'My WatchAlong', 'Cinema Therapy')).toEqual({ ok: true })
+    expect(sessionStore.renameSession).toHaveBeenCalledWith(
+      'session-a',
+      'My WatchAlong',
+      'Cinema Therapy'
     )
   })
 

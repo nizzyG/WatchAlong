@@ -7,6 +7,7 @@ import {
   groupSessionsByMovie,
   groupSessionsByReactor,
   humanizeMediaName,
+  pairingDisplayTitle,
   sortPairings,
   splitPairingTitle
 } from './libraryPresentation'
@@ -73,6 +74,64 @@ describe('library presentation', () => {
     expect(groups).toHaveLength(2)
     expect(groups.find((group) => group.key === 'youtube:uc-one')?.sessions).toHaveLength(2)
     expect(groups.find((group) => group.key === 'youtube:uc-two')?.sessions).toHaveLength(1)
+  })
+
+  it('uses a stored custom reactor for local sessions without parsing the title', () => {
+    const local = makeSession('local', {
+      title: 'reaction-from-drive.mp4',
+      titleOrigin: 'generated',
+      reactionPath: 'D:\\Shared reactions\\reaction-from-drive.mp4',
+      reactorName: '  Cinema Therapy  ',
+      reactorNameOrigin: 'custom'
+    })
+
+    expect(deriveReactorIdentity(local)).toEqual({
+      key: 'named:cinema therapy',
+      label: 'Cinema Therapy',
+      known: true
+    })
+    expect(groupSessionsByReactor([local])[0]).toMatchObject({
+      key: 'named:cinema therapy',
+      label: 'Cinema Therapy',
+      known: true
+    })
+  })
+
+  it('keeps stable download identities while using stored metadata as the display label', () => {
+    const download = makeSession('download', {
+      reactionPath: 'C:\\Reactions\\youtube\\job-one\\UC123 - Old Label\\video.mp4',
+      reactorName: 'Current Channel Name',
+      reactorNameOrigin: 'metadata'
+    })
+
+    expect(deriveReactorIdentity(download)).toEqual({
+      key: 'youtube:uc123',
+      label: 'Current Channel Name',
+      known: true
+    })
+  })
+
+  it('keeps a custom pairing title even when movie and reactor identities are known', () => {
+    const custom = makeSession('custom', {
+      title: 'My movie-night favorite',
+      titleOrigin: 'custom',
+      reactorName: 'Cinema Therapy',
+      reactorNameOrigin: 'custom'
+    })
+
+    expect(pairingDisplayTitle(custom)).toBe('My movie-night favorite')
+  })
+
+  it('refreshes a generated pairing title after the reactor is renamed', () => {
+    const renamed = makeSession('renamed', {
+      title: 'Alien — Old Reactor',
+      titleOrigin: 'generated',
+      moviePath: 'C:\\Movies\\Alien.mkv',
+      reactorName: 'New Reactor',
+      reactorNameOrigin: 'custom'
+    })
+
+    expect(pairingDisplayTitle(renamed)).toBe('Alien — New Reactor')
   })
 
   it('uses honest stable fallbacks and sorts unknown groups last', () => {

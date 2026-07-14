@@ -12,7 +12,11 @@ describe('IPC argument validation', () => {
 
   it('accepts only supported browser identifiers', () => {
     expect(isBrowserName('firefox')).toBe(true)
-    expect(isBrowserName('opera')).toBe(true)
+    expect(isBrowserName('chrome')).toBe(false)
+    expect(isBrowserName('edge')).toBe(false)
+    expect(isBrowserName('brave')).toBe(false)
+    expect(isBrowserName('safari')).toBe(false)
+    expect(isBrowserName('opera')).toBe(false)
     expect(isBrowserName('chromium')).toBe(false)
     expect(isBrowserName('../firefox')).toBe(false)
     expect(isBrowserName(null)).toBe(false)

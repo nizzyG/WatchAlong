@@ -45,7 +45,13 @@ describe('WizardApp', () => {
     fireEvent.click(screen.getByRole('button', { name: /Find My Sync/i }))
 
     await waitFor(() =>
-      expect(window.watchAlong.createOrSwitchSessionFromPaths).toHaveBeenCalledWith(reaction.path, firstMovie.path, 'local')
+      expect(window.watchAlong.createOrSwitchSessionFromPaths).toHaveBeenCalledWith(
+        reaction.path,
+        firstMovie.path,
+        'local',
+        undefined,
+        undefined
+      )
     )
     await waitFor(() => expect(window.watchAlong.completeOnboarding).toHaveBeenCalled())
     await waitFor(() => expect(window.watchAlong.finishOnboardingWizard).toHaveBeenCalledWith('completed'))
@@ -89,7 +95,8 @@ describe('WizardApp', () => {
       success.filePath,
       firstMovie.path,
       'youtube',
-      'Movie — Addie Counts'
+      'Movie — Addie Counts',
+      'Addie Counts'
     ))
     expect(window.watchAlong.createOrSwitchSessionFromPaths).toHaveBeenCalledTimes(1)
     await waitFor(() => expect(window.watchAlong.startSessionAutoSync).toHaveBeenCalledWith('session-1', 'initial'))
@@ -153,7 +160,14 @@ describe('WizardApp', () => {
     fireEvent.click(screen.getByRole('button', { name: /Find My Sync/i }))
 
     await waitFor(() =>
-      expect(window.watchAlong.replaceSessionMedia).toHaveBeenCalledWith('s1', 'reaction', reaction.path, 'local', undefined)
+      expect(window.watchAlong.replaceSessionMedia).toHaveBeenCalledWith(
+        's1',
+        'reaction',
+        reaction.path,
+        'local',
+        undefined,
+        undefined
+      )
     )
     expect(window.watchAlong.createOrSwitchSessionFromPaths).not.toHaveBeenCalled()
     await waitFor(() => expect(window.watchAlong.finishOnboardingWizard).toHaveBeenCalledWith('completed'))

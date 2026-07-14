@@ -68,17 +68,31 @@ export function deriveMovieIdentity(session: LibrarySession): LibraryIdentity {
 }
 
 export function deriveReactorIdentity(session: LibrarySession): LibraryIdentity {
+  const storedName = cleanLabel(session.reactorName ?? '')
+  if (storedName && session.reactorNameOrigin === 'custom') {
+    return namedReactorIdentity(storedName)
+  }
+
   const patreonIdentity = session.reactionPath ? derivePatreonIdentity(session.reactionPath) : null
   if (patreonIdentity) {
-    return patreonIdentity
+    return storedName ? { ...patreonIdentity, label: storedName } : patreonIdentity
   }
 
   const youtubeIdentity = session.reactionPath ? deriveYouTubeIdentity(session.reactionPath) : null
   if (youtubeIdentity) {
-    return youtubeIdentity
+    return storedName ? { ...youtubeIdentity, label: storedName } : youtubeIdentity
   }
 
+  if (storedName) return namedReactorIdentity(storedName)
   return unknownReactor
+}
+
+function namedReactorIdentity(name: string): LibraryIdentity {
+  return {
+    key: `named:${normalizeLabel(name)}`,
+    label: name,
+    known: true
+  }
 }
 
 function deriveYouTubeIdentity(reactionPath: string): LibraryIdentity | null {
@@ -104,15 +118,19 @@ function deriveYouTubeIdentity(reactionPath: string): LibraryIdentity | null {
 
 export function pairingDisplayTitle(session: LibrarySession): string {
   const explicitTitle = cleanLabel(session.title)
-  const generatedTitle = splitPairingTitle(explicitTitle)
-  if (generatedTitle) {
-    return `${generatedTitle.movie} — ${generatedTitle.reactor}`
+  if (explicitTitle && session.titleOrigin === 'custom') {
+    return stripMediaExtension(explicitTitle)
   }
 
   const movie = deriveMovieIdentity(session)
   const reactor = deriveReactorIdentity(session)
   if (movie.known && reactor.known) {
     return `${movie.label} — ${reactor.label}`
+  }
+
+  const generatedTitle = splitPairingTitle(explicitTitle)
+  if (generatedTitle) {
+    return `${generatedTitle.movie} — ${generatedTitle.reactor}`
   }
 
   if (explicitTitle) {

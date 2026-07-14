@@ -1,11 +1,15 @@
 export function RenameSessionDialog({
   title,
   onTitleChange,
+  reactorName,
+  onReactorNameChange,
   onCancel,
   onConfirm
 }: {
   title: string
   onTitleChange(value: string): void
+  reactorName: string
+  onReactorNameChange(value: string): void
   onCancel(): void
   onConfirm(): void
 }): JSX.Element {
@@ -19,7 +23,7 @@ export function RenameSessionDialog({
         }}
       >
         <h1>Rename watchalong</h1>
-        <p>Give this session a name that is easy to find in your local library.</p>
+        <p>Give this watchalong a clear title and add the reactor so it appears on the right creator shelf.</p>
         <label>
           <span>Title</span>
           <input
@@ -27,6 +31,18 @@ export function RenameSessionDialog({
             value={title}
             onChange={(event) => onTitleChange(event.currentTarget.value)}
           />
+        </label>
+        <label>
+          <span>Reactor (optional)</span>
+          <input
+            aria-label="Reactor (optional)"
+            aria-describedby="rename-reactor-help"
+            value={reactorName}
+            maxLength={120}
+            placeholder="For example, Addie Counts"
+            onChange={(event) => onReactorNameChange(event.currentTarget.value)}
+          />
+          <small id="rename-reactor-help">Used to organize the By Reactor view.</small>
         </label>
         <div className="session-dialog-actions">
           <button className="secondary-button" type="button" onClick={onCancel}>

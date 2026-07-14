@@ -67,17 +67,17 @@ Patreon doesn't provide a public video-download API for subscriber-only watchalo
 
 Your session is never sent to WatchAlong-operated servers. It's used locally by WatchAlong and bundled tools to authenticate directly with Patreon. During extraction and download, it may be written temporarily to OS temp files; WatchAlong scrubs and removes them during cleanup and retries crash leftovers at startup. If you choose to save it, WatchAlong stores it encrypted with Electron safeStorage, using your operating system's secure storage where available. You can delete the saved session or revoke it from Patreon's account settings at any time.
 
-### 11. Why browser cookies instead of a normal login screen?
+### 11. How do I sign in to Patreon?
 
-Patreon's public API doesn't expose video streams, even for subscribers. WatchAlong uses the same access path your browser uses. The browser-selection flow — no extensions, no third-party sites — is designed to be as transparent as possible.
+Choose **Sign in with browser** to open Patreon securely inside WatchAlong. The window supports Patreon's Google, Facebook, Apple, and email sign-in flows. If you are already signed in to Patreon in Firefox, choose **Use Firefox** for one-click connection instead. No extension or third-party site is involved.
 
 ### 12. What if automatic Patreon extraction fails?
 
-You'll get simple manual instructions: open your browser's Developer Tools (F12), find the `session_id` cookie for `patreon.com`, and paste it. Most people only need to do this once, since WatchAlong offers to save the session. See the [tutorial](tutorial.md#step-5-connect-to-patreon) for a visual walkthrough.
+Choose **Sign in with browser** instead. Firefox cookie extraction and the in-app Patreon sign-in are the two supported connection paths. After a successful download, WatchAlong can securely save the session so you can skip this step next time. See the [tutorial](tutorial.md#step-5-connect-to-patreon) for the walkthrough.
 
 ### 13. Which browsers work for Patreon extraction?
 
-Firefox is the most reliable on both Windows and macOS. On macOS, Chromium-based browsers (Chrome, Edge, Brave, Opera) work on a best-effort basis because recent browser security changes can block extraction. Chromium browsers on Windows and Safari on macOS use the guided manual flow.
+Firefox is the only browser supported for one-click cookie extraction. Everyone else can use **Sign in with browser**, which opens Patreon directly inside WatchAlong.
 
 ### 14. I have an unlisted YouTube link. Can I use that?
 

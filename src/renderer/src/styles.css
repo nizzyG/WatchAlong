@@ -520,6 +520,12 @@ input:disabled {
   border-color: rgba(224, 238, 247, 0.48);
 }
 
+.session-dialog label small {
+  color: rgba(220, 232, 243, 0.64);
+  font-size: 11px;
+  font-weight: 500;
+}
+
 .missing-media-list {
   display: grid;
   gap: 8px;
@@ -915,7 +921,6 @@ input:disabled {
 .smart-input-header p,
 .onboarding-page p,
 .patreon-connect p,
-.manual-fallback p,
 .patreon-storage-offer p {
   margin: 6px 0 0;
   color: #aebdcb;
@@ -1023,8 +1028,7 @@ input:disabled {
 
 .expanded-form,
 .patreon-flow,
-.patreon-connect,
-.manual-fallback {
+.patreon-connect {
   display: grid;
   gap: 12px;
   min-width: 0;
@@ -1034,8 +1038,7 @@ input:disabled {
   padding: 0 15px 15px;
 }
 
-.expanded-form label,
-.manual-fallback label {
+.expanded-form label {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -1045,8 +1048,7 @@ input:disabled {
 }
 
 .expanded-form input,
-.expanded-form textarea,
-.manual-fallback textarea {
+.expanded-form textarea {
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
@@ -1073,18 +1075,8 @@ input:disabled {
   word-break: break-word;
 }
 
-.manual-fallback textarea {
-  resize: vertical;
-  min-height: 74px;
-  padding: 10px 11px;
-  overflow-x: hidden;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
 .expanded-form input:focus,
-.expanded-form textarea:focus,
-.manual-fallback textarea:focus {
+.expanded-form textarea:focus {
   border-color: rgba(224, 238, 247, 0.48);
 }
 
@@ -1139,34 +1131,6 @@ input:disabled {
   line-height: 1.35;
 }
 
-.browser-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
-  gap: 8px;
-}
-
-.browser-choice {
-  display: grid;
-  place-items: center;
-  gap: 6px;
-  min-height: 102px;
-  padding: 10px 6px;
-  color: #eef5ff;
-  border: 1px solid rgba(194, 212, 232, 0.14);
-  border-radius: 8px;
-  background: rgba(16, 24, 32, 0.72);
-  cursor: pointer;
-  transition:
-    opacity 180ms ease,
-    transform 120ms ease,
-    border-color 120ms ease;
-}
-
-.browser-choice:hover {
-  border-color: rgba(224, 238, 247, 0.38);
-  transform: translateY(-1px);
-}
-
 .browser-icon {
   display: grid;
   place-items: center;
@@ -1176,56 +1140,6 @@ input:disabled {
   color: #fff;
   font-size: 19px;
   font-weight: 850;
-}
-
-.browser-chrome .browser-icon {
-  background: conic-gradient(#e64545 0 33%, #f2c94c 0 66%, #3aa569 0 82%, #3b7bd9 0);
-}
-
-.browser-firefox .browser-icon {
-  background: linear-gradient(135deg, #e65e35, #8d5bd6);
-}
-
-.browser-edge .browser-icon {
-  background: linear-gradient(135deg, #2bb6b3, #3478dc);
-}
-
-.browser-brave .browser-icon {
-  background: linear-gradient(135deg, #f47d31, #bd3434);
-}
-
-.browser-safari .browser-icon {
-  background: linear-gradient(135deg, #5cb7f2, #2d68d8);
-}
-
-.browser-opera .browser-icon {
-  background: linear-gradient(135deg, #e3354b, #821a2a);
-}
-
-.browser-choice span:not(.browser-icon) {
-  font-size: 12px;
-  font-weight: 750;
-}
-
-.browser-choice small {
-  color: #9facba;
-  font-size: 11px;
-}
-
-.browser-missing {
-  opacity: 0.42;
-}
-
-.browser-manual-only {
-  opacity: 0.72;
-}
-
-.browser-manual-only:hover {
-  opacity: 0.86;
-}
-
-.browser-safari .browser-icon {
-  opacity: 0.62;
 }
 
 .saved-session-button {
@@ -1327,13 +1241,6 @@ input:disabled {
   color: #8ee2b1;
 }
 
-.manual-fallback {
-  padding: 12px;
-  border: 1px solid rgba(245, 155, 155, 0.18);
-  border-radius: 8px;
-  background: rgba(123, 28, 28, 0.16);
-}
-
 .fallback-reason {
   margin: 0;
   padding: 9px 10px;
@@ -1342,16 +1249,6 @@ input:disabled {
   color: #ffd9d9;
   background: rgba(123, 28, 28, 0.24);
   font-size: 12px;
-}
-
-.manual-fallback ol {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding-left: 21px;
-  color: #dce8f3;
-  font-size: 12px;
-  line-height: 1.42;
 }
 
 .download-status {
@@ -1708,15 +1605,9 @@ input:disabled {
   padding: 0 11px 11px;
 }
 
-.wizard-reaction-step .patreon-connect,
-.wizard-reaction-step .manual-fallback {
+.wizard-reaction-step .patreon-connect {
   gap: 9px;
   padding: 10px;
-}
-
-.wizard-reaction-step .manual-fallback ol {
-  gap: 8px 18px;
-  font-size: 11px;
 }
 
 .wizard-reaction-ready {
@@ -3393,7 +3284,6 @@ summary:focus-visible,
 .smart-input-header p,
 .onboarding-page p,
 .patreon-connect p,
-.manual-fallback p,
 .patreon-storage-offer p,
 .media-format-hint {
   color: var(--wa-muted);
@@ -3452,6 +3342,7 @@ summary:focus-visible,
 
 .reaction-card-button small,
 .expanded-form small,
+.session-dialog label small,
 .login-hint,
 .wizard-sync-hint,
 .wizard-summary dt {
@@ -3460,7 +3351,6 @@ summary:focus-visible,
 
 .expanded-form input,
 .expanded-form textarea,
-.manual-fallback textarea,
 .session-dialog input {
   border-color: var(--wa-rule);
   border-radius: 2px;
@@ -3470,7 +3360,6 @@ summary:focus-visible,
 
 .expanded-form input:focus,
 .expanded-form textarea:focus,
-.manual-fallback textarea:focus,
 .session-dialog input:focus {
   border-color: var(--wa-green);
 }
@@ -3796,8 +3685,7 @@ summary:focus-visible,
 }
 
 .error-banner,
-.fallback-reason,
-.manual-fallback {
+.fallback-reason {
   border-color: #78483e;
   border-radius: 2px;
   color: #f4d4cb;

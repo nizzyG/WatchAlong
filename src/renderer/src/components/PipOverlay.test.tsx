@@ -53,6 +53,30 @@ describe('PipOverlay', () => {
     expect(document.querySelector('video.pip-video')).toBeInTheDocument()
   })
 
+  it('reports errors from the movie element itself', () => {
+    const onVideoError = vi.fn()
+    render(
+      <PipOverlay
+        geometry={{ x: 10, y: 10, width: 320, height: 180 }}
+        videoRef={createRef<HTMLVideoElement>()}
+        hidden={false}
+        onChange={vi.fn()}
+        onCommit={vi.fn()}
+        onHide={vi.fn()}
+        onPopOut={vi.fn()}
+        onPopIn={vi.fn()}
+        onLoadedMetadata={vi.fn()}
+        onTimeUpdate={vi.fn()}
+        onVideoError={onVideoError}
+      />
+    )
+
+    const movie = document.querySelector('video.pip-video') as HTMLVideoElement
+    fireEvent.error(movie)
+
+    expect(onVideoError).toHaveBeenCalledWith(movie)
+  })
+
   it('emits pop-out from the toolbar button', () => {
     const onPopOut = vi.fn()
     render(

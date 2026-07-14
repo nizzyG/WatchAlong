@@ -208,6 +208,92 @@ describe('SessionStore media drafts', () => {
     }
   })
 
+  it('stores downloaded reactor metadata and preserves a user-edited name across media and title changes', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
+    try {
+      const store = new SessionStore(join(dir, 'library.json'), join(dir, 'session.json'))
+      const created = store.createOrSwitchSession(
+        'C:\\Reactions\\First.mp4',
+        'C:\\Movies\\Movie.mp4',
+        'youtube',
+        'Movie — Downloaded Name',
+        'Downloaded Name'
+      )
+      const sessionId = created.activeSessionId!
+
+      expect(created.sessions[0]).toMatchObject({
+        reactorName: 'Downloaded Name',
+        reactorNameOrigin: 'metadata'
+      })
+
+      const titleOnlyWithPrefilledReactor = store.renameSession(
+        sessionId,
+        'My custom watchalong title',
+        'Downloaded Name'
+      )
+      expect(titleOnlyWithPrefilledReactor.sessions[0]).toMatchObject({
+        title: 'My custom watchalong title',
+        reactorName: 'Downloaded Name',
+        reactorNameOrigin: 'metadata'
+      })
+
+      const repaired = store.replaceSessionMedia(
+        sessionId,
+        'reaction',
+        'D:\\Moved reactions\\First.mp4',
+        'youtube',
+        undefined,
+        titleOnlyWithPrefilledReactor.sessions[0].reactorName ?? undefined
+      ).library
+      expect(repaired.sessions[0]).toMatchObject({
+        reactorName: 'Downloaded Name',
+        reactorNameOrigin: 'metadata'
+      })
+
+      const metadataUpdated = store.replaceSessionMedia(
+        sessionId,
+        'reaction',
+        'C:\\Reactions\\Second.mp4',
+        'youtube',
+        'Movie — New Download',
+        'New Download'
+      ).library
+      expect(metadataUpdated.sessions[0]).toMatchObject({
+        reactorName: 'New Download',
+        reactorNameOrigin: 'metadata'
+      })
+
+      const renamed = store.renameSession(sessionId, metadataUpdated.sessions[0].title, '  My Reactor  ')
+      expect(renamed.sessions[0]).toMatchObject({
+        titleOrigin: 'custom',
+        reactorName: 'My Reactor',
+        reactorNameOrigin: 'custom'
+      })
+
+      const preserved = store.replaceSessionMedia(
+        sessionId,
+        'reaction',
+        'C:\\Reactions\\Third.mp4',
+        'patreon',
+        'Movie — Someone Else',
+        'Someone Else'
+      ).library
+      expect(preserved.sessions[0]).toMatchObject({
+        reactorName: 'My Reactor',
+        reactorNameOrigin: 'custom'
+      })
+
+      const titleOnlyRename = store.renameSession(sessionId, 'My custom watchalong')
+      expect(titleOnlyRename.sessions[0]).toMatchObject({
+        title: 'My custom watchalong',
+        reactorName: 'My Reactor',
+        reactorNameOrigin: 'custom'
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('resets automatic timing metadata when media is replaced', () => {
     const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
     try {
