@@ -290,6 +290,22 @@ describe('LibraryHome', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Posters' }))
     expect(onViewChange).toHaveBeenLastCalledWith('grid')
   })
+
+  it('exposes a stateful fullscreen control with the standard shortcut hint', () => {
+    const onToggleFullscreen = vi.fn()
+    const first = renderLibrary(vi.fn(), { onToggleFullscreen })
+
+    const enterButton = screen.getByRole('button', { name: 'Fullscreen' })
+    expect(enterButton).toHaveAttribute('aria-keyshortcuts', 'Alt+Enter')
+    expect(enterButton).toHaveAttribute('aria-pressed', 'false')
+    expect(enterButton).toHaveAttribute('title', 'Fullscreen (Alt+Enter)')
+    fireEvent.click(enterButton)
+    expect(onToggleFullscreen).toHaveBeenCalledOnce()
+
+    first.unmount()
+    renderLibrary(vi.fn(), { fullscreenActive: true, onToggleFullscreen })
+    expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toHaveAttribute('aria-pressed', 'true')
+  })
 })
 
 function renderLibrary(
@@ -298,6 +314,8 @@ function renderLibrary(
     library?: SessionLibrary
     view?: LibraryViewPreference
     onViewChange?: (view: LibraryViewPreference) => void
+    fullscreenActive?: boolean
+    onToggleFullscreen?: () => void
     onNew?: () => void
     onChoosePoster?: (sessionId: string) => Promise<MoviePosterActionResult>
     onClearPoster?: (sessionId: string) => Promise<MoviePosterActionResult>
@@ -320,6 +338,8 @@ function renderLibrary(
       library={library}
       view={options.view ?? 'grid'}
       onViewChange={options.onViewChange ?? vi.fn()}
+      fullscreenActive={options.fullscreenActive ?? false}
+      onToggleFullscreen={options.onToggleFullscreen ?? vi.fn()}
       onOpenCommandPanel={vi.fn()}
       onNew={options.onNew ?? vi.fn()}
       onOpenSession={onOpenSession}

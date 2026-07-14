@@ -486,18 +486,18 @@ export function useWatchAlongController({
     })
   }, [activeSubtitle?.text, movieWindowActive])
 
-  // Fullscreen belongs to the player, not the application window. Enforce the
-  // boundary both when the view changes and when a delayed fullscreen request
-  // settles after navigation has already started.
+  // Fullscreen belongs to the two primary application surfaces. Keep it while
+  // moving between the library and player, but leave it for loading and
+  // recovery screens, including when a delayed request settles after navigation.
   useEffect(() => {
-    const exitFullscreenOutsidePlayer = (): void => {
-      if (appView === 'player' || !document.fullscreenElement) return
+    const exitFullscreenOutsidePrimaryView = (): void => {
+      if (appView === 'library' || appView === 'player' || !document.fullscreenElement) return
       void document.exitFullscreen().catch(() => undefined)
     }
 
-    exitFullscreenOutsidePlayer()
-    document.addEventListener('fullscreenchange', exitFullscreenOutsidePlayer)
-    return () => document.removeEventListener('fullscreenchange', exitFullscreenOutsidePlayer)
+    exitFullscreenOutsidePrimaryView()
+    document.addEventListener('fullscreenchange', exitFullscreenOutsidePrimaryView)
+    return () => document.removeEventListener('fullscreenchange', exitFullscreenOutsidePrimaryView)
   }, [appView])
 
 
@@ -513,6 +513,17 @@ export function useWatchAlongController({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target instanceof HTMLElement ? event.target : null
+      const targetOwnsValueKeys = Boolean(target?.closest([
+        'input',
+        'textarea',
+        'select',
+        '[contenteditable]:not([contenteditable="false"])',
+        '[role="combobox"]',
+        '[role="listbox"]',
+        '[role="slider"]',
+        '[role="spinbutton"]',
+        '[role="textbox"]'
+      ].join(', ')))
 
       if (autoSyncRollInSessionId || autoSync.runningSessionId) {
         if (target?.closest('.auto-sync-rollin-overlay')) {
@@ -536,15 +547,12 @@ export function useWatchAlongController({
           return
         }
 
-        if (event.code === 'ArrowDown') {
-          event.preventDefault()
-          movePanelFocus(1)
-          return
-        }
-
-        if (event.code === 'ArrowUp') {
-          event.preventDefault()
-          movePanelFocus(-1)
+        if (event.code === 'ArrowDown' || event.code === 'ArrowUp') {
+          const panelContent = document.querySelector<HTMLElement>('.command-panel-content')
+          if (panelContent && !targetOwnsValueKeys) {
+            event.preventDefault()
+            panelContent.scrollTop += event.code === 'ArrowDown' ? 64 : -64
+          }
           return
         }
 
@@ -554,6 +562,19 @@ export function useWatchAlongController({
           return
         }
 
+        // Tab owns focus travel. Arrow keys scroll the panel unless the
+        // focused control has its own arrow-key value or caret behavior.
+        return
+      }
+
+      if (
+        (appView === 'library' || appView === 'player')
+        && !targetOwnsValueKeys
+        && isFullscreenShortcut(event)
+      ) {
+        event.preventDefault()
+        if (event.repeat) return
+        toggleFullscreen()
         return
       }
 
@@ -561,13 +582,6 @@ export function useWatchAlongController({
         appView !== 'player'
         || isInteractiveShortcutTarget(event.target)
       ) {
-        return
-      }
-
-      if (isFullscreenShortcut(event)) {
-        event.preventDefault()
-        if (event.repeat) return
-        toggleFullscreen()
         return
       }
 

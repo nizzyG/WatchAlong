@@ -96,14 +96,14 @@ describe('keyboard shortcuts', () => {
   it('keeps every supported binding in the published catalog', () => {
     expect(keyboardShortcutHelpGroups.flatMap((group) => group.items.map((item) => item.label))).toEqual([
       'Open or close the Command Panel',
+      'Enter or exit fullscreen',
       'Play or pause',
       'Seek back or forward 5 seconds',
       'Mute or unmute the reaction',
       'Mute or unmute the movie',
       'Show or hide the movie picture-in-picture',
-      'Enter or exit fullscreen',
       'Adjust sync by 0.1 seconds',
-      'Move to the next or previous control',
+      'Scroll through panel content',
       'Move between controls without leaving the panel',
       'Use the focused control',
       'Close the Command Panel'
@@ -113,5 +113,9 @@ describe('keyboard shortcuts', () => {
       .flatMap((group) => group.items)
       .find((item) => item.label === 'Enter or exit fullscreen')?.keys
     ).toEqual(['Alt', 'Enter'])
+    expect(keyboardShortcutHelpGroups
+      .find((group) => group.id === 'global')?.items
+      .some((item) => item.label === 'Enter or exit fullscreen')
+    ).toBe(true)
   })
 })

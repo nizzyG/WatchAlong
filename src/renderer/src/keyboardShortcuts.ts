@@ -19,7 +19,8 @@ export const keyboardShortcutHelpGroups: KeyboardShortcutHelpGroup[] = [
     id: 'global',
     label: 'Library or player',
     items: [
-      { keys: ['Ctrl', 'Shift', 'P'], label: 'Open or close the Command Panel' }
+      { keys: ['Ctrl', 'Shift', 'P'], label: 'Open or close the Command Panel' },
+      { keys: ['Alt', 'Enter'], label: 'Enter or exit fullscreen' }
     ]
   },
   {
@@ -31,7 +32,6 @@ export const keyboardShortcutHelpGroups: KeyboardShortcutHelpGroup[] = [
       { keys: ['R'], label: 'Mute or unmute the reaction' },
       { keys: ['M'], label: 'Mute or unmute the movie' },
       { keys: ['P'], label: 'Show or hide the movie picture-in-picture' },
-      { keys: ['Alt', 'Enter'], label: 'Enter or exit fullscreen' },
       { keys: ['[', ']'], label: 'Adjust sync by 0.1 seconds', separator: 'or' }
     ]
   },
@@ -39,7 +39,7 @@ export const keyboardShortcutHelpGroups: KeyboardShortcutHelpGroup[] = [
     id: 'command-panel',
     label: 'Inside the Command Panel',
     items: [
-      { keys: ['↑', '↓'], label: 'Move to the next or previous control', separator: 'or' },
+      { keys: ['↑', '↓'], label: 'Scroll through panel content', separator: 'or' },
       { keys: ['Tab', 'Shift+Tab'], label: 'Move between controls without leaving the panel', separator: 'or' },
       { keys: ['Enter'], label: 'Use the focused control' },
       { keys: ['Esc'], label: 'Close the Command Panel' }

@@ -119,11 +119,11 @@ export function CommandPanel({
         className="command-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="WatchAlong Command Panel"
+        aria-labelledby="command-panel-title"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="command-panel-titlebar">
-          <strong>WatchAlong</strong>
+          <strong id="command-panel-title">Command Panel</strong>
           <button
             className="icon-button"
             type="button"
@@ -136,243 +136,245 @@ export function CommandPanel({
           </button>
         </header>
 
-        {activeSession && (
-          <SessionTimingPanel
-            session={activeSession}
-            autoSyncBusy={autoSyncBusy}
-            autoSyncRunning={autoSyncRunning}
-            autoSyncProgressMessage={autoSyncProgressMessage}
-            onFindSyncAgain={onFindSyncAgain}
-            onSyncSetup={onSyncSetup}
-            onNudgeOffset={onNudgeOffset}
-            onReactorSource={onReactorSource}
-            onMovieRateCorrection={onMovieRateCorrection}
-          />
-        )}
+        <div className="command-panel-content" role="region" aria-label="Command Panel content" tabIndex={0}>
+          {activeSession && (
+            <SessionTimingPanel
+              session={activeSession}
+              autoSyncBusy={autoSyncBusy}
+              autoSyncRunning={autoSyncRunning}
+              autoSyncProgressMessage={autoSyncProgressMessage}
+              onFindSyncAgain={onFindSyncAgain}
+              onSyncSetup={onSyncSetup}
+              onNudgeOffset={onNudgeOffset}
+              onReactorSource={onReactorSource}
+              onMovieRateCorrection={onMovieRateCorrection}
+            />
+          )}
 
-        {activeSession && (
-          <CommandPanelSection
-            id="now-playing"
-            icon={<Clapperboard size={17} aria-hidden />}
-            label="Now Playing"
-            summary={activeSession.title}
-            expanded={expandedSection === 'now-playing'}
-            onToggle={() => onExpandedSection('now-playing')}
-          >
-            <div className="panel-session-summary">
-              <strong>{activeSession.title}</strong>
-              <small>
-                <ReactionSourceIcon source={activeSession.reactionSource} />
-                {reactionSourceLabel(activeSession.reactionSource)}
-              </small>
-              <ReadOnlyProgress value={progress} label={`${formatTime(position)} of ${formatTime(reactionDuration)}`} />
-            </div>
-            <div className="panel-action-grid">
-              <button className="secondary-button" type="button" onClick={onSwapReaction}>
-                <RefreshCw size={16} aria-hidden />
-                Swap Reaction
-              </button>
-              <button className="secondary-button" type="button" onClick={onCloseSession}>
-                <LibraryIcon size={16} aria-hidden />
-                Close Session
-              </button>
-            </div>
-          </CommandPanelSection>
-        )}
-
-        <CommandPanelSection
-          id="library"
-          icon={<LibraryIcon size={17} aria-hidden />}
-          label="Library"
-          summary={`${library.sessions.length} saved`}
-          expanded={expandedSection === 'library'}
-          onToggle={() => onExpandedSection('library')}
-        >
-          <div className="panel-library-list">
-            {recentSessions.map((session) => (
-              <LibrarySessionCard
-                key={session.id}
-                compact
-                session={session}
-                onOpen={() => onSwitchSession(session.id)}
-              />
-            ))}
-            {recentSessions.length === 0 && <p className="panel-muted">No sessions yet.</p>}
-          </div>
-          <div className="panel-action-grid">
-            <button className="secondary-button" type="button" onClick={onViewLibrary}>
-              <LayoutGrid size={16} aria-hidden />
-              View Full Library
-            </button>
-            <button className="secondary-button" type="button" onClick={onNewSession}>
-              <Plus size={16} aria-hidden />
-              New Session
-            </button>
-          </div>
-        </CommandPanelSection>
-
-        {showDownloads && (
-          <CommandPanelSection
-            id="downloads"
-            icon={<Download size={17} aria-hidden />}
-            label="Downloads"
-            summary={`${downloads.length} recent`}
-            expanded={expandedSection === 'downloads'}
-            onToggle={() => onExpandedSection('downloads')}
-          >
-            <div className="panel-download-list">
-              {downloads.map((download) => (
-                <DownloadPanelItem
-                  key={download.jobId}
-                  event={download}
-                  onCancel={() => onCancelDownload(download.jobId)}
-                  onAttach={() => onAttachDownload(download)}
-                />
-              ))}
-            </div>
-          </CommandPanelSection>
-        )}
-
-        <CommandPanelSection
-          id="preferences"
-          icon={<Settings size={17} aria-hidden />}
-          label="Preferences"
-          summary={preferences.openLibraryOnLaunch ? 'Library on launch' : 'Resume on launch'}
-          expanded={expandedSection === 'preferences'}
-          onToggle={() => onExpandedSection('preferences')}
-        >
-          <div className="panel-preferences">
-            <label className="panel-setting-row">
-              <span>
-                <strong>Reaction download location</strong>
-                <small>{preferences.reactionDownloadDirectory ?? 'Default: Videos\\WatchAlong\\Reactions'}</small>
-              </span>
-              <button className="secondary-button" type="button" onClick={onChooseDownloadDirectory}>
-                Change
-              </button>
-            </label>
-
-            <div className="panel-toggle-row panel-patreon-storage">
-              <span>
-                <strong>
-                  <Lock size={14} aria-hidden />
-                  Patreon saved session
-                </strong>
-                <small>{patreonStatus.available ? 'Saved' : 'Not saved'} / {patreonStatus.canEncrypt ? 'encrypted storage available' : 'encryption unavailable'}</small>
-                {showPatreonLearnMore && (
-                  <small className="panel-learn-more">
-                    Your Patreon session is used only for Patreon downloads. It never goes to a WatchAlong server or anyone besides Patreon, and it is saved on this device only if you choose.
-                  </small>
-                )}
-              </span>
-              <div className="panel-setting-actions">
-                <button className="link-button" type="button" onClick={() => setShowPatreonLearnMore((current) => !current)}>
-                  Learn more
+          {activeSession && (
+            <CommandPanelSection
+              id="now-playing"
+              icon={<Clapperboard size={17} aria-hidden />}
+              label="Now Playing"
+              summary={activeSession.title}
+              expanded={expandedSection === 'now-playing'}
+              onToggle={() => onExpandedSection('now-playing')}
+            >
+              <div className="panel-session-summary">
+                <strong>{activeSession.title}</strong>
+                <small>
+                  <ReactionSourceIcon source={activeSession.reactionSource} />
+                  {reactionSourceLabel(activeSession.reactionSource)}
+                </small>
+                <ReadOnlyProgress value={progress} label={`${formatTime(position)} of ${formatTime(reactionDuration)}`} />
+              </div>
+              <div className="panel-action-grid">
+                <button className="secondary-button" type="button" onClick={onSwapReaction}>
+                  <RefreshCw size={16} aria-hidden />
+                  Swap Reaction
                 </button>
-                <button className="secondary-button" type="button" disabled={!patreonStatus.available} onClick={onForgetPatreon}>
-                  Forget
+                <button className="secondary-button" type="button" onClick={onCloseSession}>
+                  <LibraryIcon size={16} aria-hidden />
+                  Close Session
                 </button>
               </div>
-            </div>
+            </CommandPanelSection>
+          )}
 
-            <label className="panel-toggle-row">
-              <span>Open Library on launch</span>
-              <input
-                type="checkbox"
-                checked={preferences.openLibraryOnLaunch}
-                onChange={(event) => void onPreference('openLibraryOnLaunch', event.currentTarget.checked)}
-              />
-            </label>
-
-            <div className="panel-segmented" role="group" aria-label="Library view">
-              <button
-                type="button"
-                className={preferences.libraryView === 'grid' ? 'segment-active' : ''}
-                onClick={() => void onPreference('libraryView', 'grid')}
-              >
-                <LayoutGrid size={15} aria-hidden />
-                Grid
-              </button>
-              <button
-                type="button"
-                className={preferences.libraryView === 'list' ? 'segment-active' : ''}
-                onClick={() => void onPreference('libraryView', 'list')}
-              >
-                <List size={15} aria-hidden />
-                List
-              </button>
-            </div>
-
-            <div className="panel-setting-row panel-setting-disabled">
-              <span>
-                <strong>Subtitle defaults</strong>
-                <small>Coming later</small>
-              </span>
-            </div>
-
-            <button className="secondary-button" type="button" onClick={onShowWizard}>
-              <Plus size={16} aria-hidden />
-              Show import wizard again
-            </button>
-          </div>
-        </CommandPanelSection>
-
-        <CommandPanelSection
-          id="help"
-          icon={<Clock3 size={17} aria-hidden />}
-          label="Help & About"
-          summary={`Version ${APP_VERSION}`}
-          expanded={expandedSection === 'help'}
-          onToggle={() => onExpandedSection('help')}
-        >
-          <div className="panel-about">
-            <section className="panel-shortcuts" aria-labelledby="keyboard-shortcuts-heading">
-              <h3 id="keyboard-shortcuts-heading">Keyboard shortcuts</h3>
-              {keyboardShortcutHelpGroups.map((group) => (
-                <div className="panel-shortcut-group" key={group.id}>
-                  <h4>{group.label}</h4>
-                  <dl>
-                    {group.items.map((shortcut) => (
-                      <div className="panel-shortcut-row" key={`${group.id}-${shortcut.label}`}>
-                        <dt aria-label={shortcut.keys.join(shortcut.separator === 'or' ? ' or ' : ' plus ')}>
-                          {shortcut.keys.map((key, index) => (
-                            <span key={`${key}-${index}`}>
-                              {index > 0 && (
-                                <span className="panel-shortcut-join" aria-hidden>
-                                  {shortcut.separator === 'or' ? '/' : '+'}
-                                </span>
-                              )}
-                              <kbd>{key}</kbd>
-                            </span>
-                          ))}
-                        </dt>
-                        <dd>{shortcut.label}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </div>
+          <CommandPanelSection
+            id="library"
+            icon={<LibraryIcon size={17} aria-hidden />}
+            label="Library"
+            summary={`${library.sessions.length} saved`}
+            expanded={expandedSection === 'library'}
+            onToggle={() => onExpandedSection('library')}
+          >
+            <div className="panel-library-list">
+              {recentSessions.map((session) => (
+                <LibrarySessionCard
+                  key={session.id}
+                  compact
+                  session={session}
+                  onOpen={() => onSwitchSession(session.id)}
+                />
               ))}
-              <p>Playback shortcuts pause while you’re typing or using a control.</p>
-            </section>
-            <p>Watch reactions alongside your own movies, perfectly in sync.</p>
-            <p>All data stays local. Patreon cookies are encrypted with OS storage when saved. WatchAlong has no telemetry.</p>
-            {ONLINE_HELP_URL && (
-              <button className="secondary-button" type="button" onClick={() => window.open(ONLINE_HELP_URL, '_blank')}>
-                <ExternalLink size={16} aria-hidden />
-                Online Help
+              {recentSessions.length === 0 && <p className="panel-muted">No sessions yet.</p>}
+            </div>
+            <div className="panel-action-grid">
+              <button className="secondary-button" type="button" onClick={onViewLibrary}>
+                <LayoutGrid size={16} aria-hidden />
+                View Full Library
               </button>
-            )}
-            <button
-              className="secondary-button"
-              type="button"
-              title="Open https://ko-fi.com/watchalong"
-              onClick={() => window.open(DONATION_URL, '_blank')}
+              <button className="secondary-button" type="button" onClick={onNewSession}>
+                <Plus size={16} aria-hidden />
+                New Session
+              </button>
+            </div>
+          </CommandPanelSection>
+
+          {showDownloads && (
+            <CommandPanelSection
+              id="downloads"
+              icon={<Download size={17} aria-hidden />}
+              label="Downloads"
+              summary={`${downloads.length} recent`}
+              expanded={expandedSection === 'downloads'}
+              onToggle={() => onExpandedSection('downloads')}
             >
-              <Coffee size={16} aria-hidden />
-              Support the developer on Ko-fi
-            </button>
-          </div>
-        </CommandPanelSection>
+              <div className="panel-download-list">
+                {downloads.map((download) => (
+                  <DownloadPanelItem
+                    key={download.jobId}
+                    event={download}
+                    onCancel={() => onCancelDownload(download.jobId)}
+                    onAttach={() => onAttachDownload(download)}
+                  />
+                ))}
+              </div>
+            </CommandPanelSection>
+          )}
+
+          <CommandPanelSection
+            id="preferences"
+            icon={<Settings size={17} aria-hidden />}
+            label="Preferences"
+            summary={preferences.openLibraryOnLaunch ? 'Library on launch' : 'Resume on launch'}
+            expanded={expandedSection === 'preferences'}
+            onToggle={() => onExpandedSection('preferences')}
+          >
+            <div className="panel-preferences">
+              <div className="panel-setting-row">
+                <span>
+                  <strong>Reaction download location</strong>
+                  <small>{preferences.reactionDownloadDirectory ?? 'Default: Videos\\WatchAlong\\Reactions'}</small>
+                </span>
+                <button className="secondary-button" type="button" onClick={onChooseDownloadDirectory}>
+                  Change
+                </button>
+              </div>
+
+              <div className="panel-toggle-row panel-patreon-storage">
+                <span>
+                  <strong>
+                    <Lock size={14} aria-hidden />
+                    Patreon saved session
+                  </strong>
+                  <small>{patreonStatus.available ? 'Saved' : 'Not saved'} / {patreonStatus.canEncrypt ? 'encrypted storage available' : 'encryption unavailable'}</small>
+                  {showPatreonLearnMore && (
+                    <small className="panel-learn-more">
+                      Your Patreon session is used only for Patreon downloads. It never goes to a WatchAlong server or anyone besides Patreon, and it is saved on this device only if you choose.
+                    </small>
+                  )}
+                </span>
+                <div className="panel-setting-actions">
+                  <button className="link-button" type="button" onClick={() => setShowPatreonLearnMore((current) => !current)}>
+                    Learn more
+                  </button>
+                  <button className="secondary-button" type="button" disabled={!patreonStatus.available} onClick={onForgetPatreon}>
+                    Forget
+                  </button>
+                </div>
+              </div>
+
+              <label className="panel-toggle-row">
+                <span>Open Library on launch</span>
+                <input
+                  type="checkbox"
+                  checked={preferences.openLibraryOnLaunch}
+                  onChange={(event) => void onPreference('openLibraryOnLaunch', event.currentTarget.checked)}
+                />
+              </label>
+
+              <div className="panel-segmented" role="group" aria-label="Library view">
+                <button
+                  type="button"
+                  className={preferences.libraryView === 'grid' ? 'segment-active' : ''}
+                  onClick={() => void onPreference('libraryView', 'grid')}
+                >
+                  <LayoutGrid size={15} aria-hidden />
+                  Grid
+                </button>
+                <button
+                  type="button"
+                  className={preferences.libraryView === 'list' ? 'segment-active' : ''}
+                  onClick={() => void onPreference('libraryView', 'list')}
+                >
+                  <List size={15} aria-hidden />
+                  List
+                </button>
+              </div>
+
+              <div className="panel-setting-row panel-setting-disabled">
+                <span>
+                  <strong>Subtitle defaults</strong>
+                  <small>Coming later</small>
+                </span>
+              </div>
+
+              <button className="secondary-button" type="button" onClick={onShowWizard}>
+                <Plus size={16} aria-hidden />
+                Show import wizard again
+              </button>
+            </div>
+          </CommandPanelSection>
+
+          <CommandPanelSection
+            id="help"
+            icon={<Clock3 size={17} aria-hidden />}
+            label="Help & About"
+            summary={`Version ${APP_VERSION}`}
+            expanded={expandedSection === 'help'}
+            onToggle={() => onExpandedSection('help')}
+          >
+            <div className="panel-about">
+              <section className="panel-shortcuts" aria-labelledby="keyboard-shortcuts-heading">
+                <h3 id="keyboard-shortcuts-heading">Keyboard shortcuts</h3>
+                {keyboardShortcutHelpGroups.map((group) => (
+                  <div className="panel-shortcut-group" key={group.id}>
+                    <h4>{group.label}</h4>
+                    <dl>
+                      {group.items.map((shortcut) => (
+                        <div className="panel-shortcut-row" key={`${group.id}-${shortcut.label}`}>
+                          <dt aria-label={shortcut.keys.join(shortcut.separator === 'or' ? ' or ' : ' plus ')}>
+                            {shortcut.keys.map((key, index) => (
+                              <span key={`${key}-${index}`}>
+                                {index > 0 && (
+                                  <span className="panel-shortcut-join" aria-hidden>
+                                    {shortcut.separator === 'or' ? '/' : '+'}
+                                  </span>
+                                )}
+                                <kbd>{key}</kbd>
+                              </span>
+                            ))}
+                          </dt>
+                          <dd>{shortcut.label}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                ))}
+                <p>Playback shortcuts pause while you’re typing or using a control.</p>
+              </section>
+              <p>Watch reactions alongside your own movies, perfectly in sync.</p>
+              <p>All data stays local. Patreon cookies are encrypted with OS storage when saved. WatchAlong has no telemetry.</p>
+              {ONLINE_HELP_URL && (
+                <button className="secondary-button" type="button" onClick={() => window.open(ONLINE_HELP_URL, '_blank')}>
+                  <ExternalLink size={16} aria-hidden />
+                  Online Help
+                </button>
+              )}
+              <button
+                className="secondary-button"
+                type="button"
+                title="Open https://ko-fi.com/watchalong"
+                onClick={() => window.open(DONATION_URL, '_blank')}
+              >
+                <Coffee size={16} aria-hidden />
+                Support the developer on Ko-fi
+              </button>
+            </div>
+          </CommandPanelSection>
+        </div>
       </aside>
     </div>
   )
@@ -431,38 +433,40 @@ function SessionTimingPanel({
         </div>
       </header>
 
-      <dl className="panel-sync-facts">
-        <div>
-          <Gauge size={17} aria-hidden />
-          <dt>Confidence</dt>
-          <dd>
-            <strong>{confidence.value}</strong>
-            <small>{confidence.label}</small>
-          </dd>
-        </div>
-        <div>
-          <Clock3 size={17} aria-hidden />
-          <dt>Last analyzed</dt>
-          <dd>
-            {session.autoSyncAnalyzedAt
-              ? <time dateTime={session.autoSyncAnalyzedAt} title={session.autoSyncAnalyzedAt}>{analyzedAt}</time>
-              : <strong>Not yet</strong>}
-            <small>{session.autoSyncAnalyzedAt ? 'On this device' : 'No automatic analysis'}</small>
-          </dd>
-        </div>
-        <div>
-          <Activity size={17} aria-hidden />
-          <dt>Sync engine</dt>
-          <dd>
-            <strong>
-              {automatic && session.autoSyncAlgorithmVersion !== null
-                ? `Algorithm v${session.autoSyncAlgorithmVersion}`
-                : automatic ? 'Automatic' : 'Manual'}
-            </strong>
-            <small>{automatic ? 'Local audio analysis' : 'Manual alignment'}</small>
-          </dd>
-        </div>
-      </dl>
+      {automatic && !autoSyncRunning && (
+        <dl className="panel-sync-facts">
+          <div>
+            <Gauge size={17} aria-hidden />
+            <dt>Confidence</dt>
+            <dd>
+              <strong>{confidence.value}</strong>
+              <small>{confidence.label}</small>
+            </dd>
+          </div>
+          <div>
+            <Clock3 size={17} aria-hidden />
+            <dt>Last analyzed</dt>
+            <dd>
+              {session.autoSyncAnalyzedAt
+                ? <time dateTime={session.autoSyncAnalyzedAt} title={session.autoSyncAnalyzedAt}>{analyzedAt}</time>
+                : <strong>Not yet</strong>}
+              <small>{session.autoSyncAnalyzedAt ? 'On this device' : 'No automatic analysis'}</small>
+            </dd>
+          </div>
+          <div>
+            <Activity size={17} aria-hidden />
+            <dt>Sync engine</dt>
+            <dd>
+              <strong>
+                {session.autoSyncAlgorithmVersion !== null
+                  ? `Algorithm v${session.autoSyncAlgorithmVersion}`
+                  : 'Automatic'}
+              </strong>
+              <small>Local audio analysis</small>
+            </dd>
+          </div>
+        </dl>
+      )}
 
       <button
         className="primary-button panel-find-sync-button"

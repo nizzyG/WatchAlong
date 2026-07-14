@@ -1061,7 +1061,7 @@ describe('App', () => {
     expect(fullscreenTargets).toEqual([document.documentElement])
   })
 
-  it('exits player fullscreen when Close Session returns to the library', async () => {
+  it('keeps app fullscreen when Close Session returns to the library', async () => {
     const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
     window.watchAlong = api
 
@@ -1074,11 +1074,12 @@ describe('App', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Close Session/i }))
 
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
-    await waitFor(() => expect(document.exitFullscreen).toHaveBeenCalledOnce())
-    expect(document.fullscreenElement).toBeNull()
+    expect(document.exitFullscreen).not.toHaveBeenCalled()
+    expect(document.fullscreenElement).toBe(document.documentElement)
+    expect(screen.getByLabelText('Exit fullscreen')).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('exits player fullscreen when missing-media navigation returns to the library', async () => {
+  it('keeps app fullscreen when missing-media navigation returns to the library', async () => {
     const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
     api.getMediaUrl = vi.fn(async (role, sessionId) => role === 'movie' ? null : `watchalong://media/${sessionId}/${role}`)
     window.watchAlong = api
@@ -1090,11 +1091,11 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /Back to Library/i }))
 
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
-    await waitFor(() => expect(document.exitFullscreen).toHaveBeenCalledOnce())
-    expect(document.fullscreenElement).toBeNull()
+    expect(document.exitFullscreen).not.toHaveBeenCalled()
+    expect(document.fullscreenElement).toBe(document.documentElement)
   })
 
-  it('exits player fullscreen when removing a broken session returns to the library', async () => {
+  it('keeps app fullscreen when removing a broken session returns to the library', async () => {
     const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
     api.getMediaUrl = vi.fn(async (role, sessionId) => role === 'movie' ? null : `watchalong://media/${sessionId}/${role}`)
     window.watchAlong = api
@@ -1107,8 +1108,8 @@ describe('App', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^Delete$/i }))
 
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
-    await waitFor(() => expect(document.exitFullscreen).toHaveBeenCalledOnce())
-    expect(document.fullscreenElement).toBeNull()
+    expect(document.exitFullscreen).not.toHaveBeenCalled()
+    expect(document.fullscreenElement).toBe(document.documentElement)
   })
 
   it('keeps fullscreen while switching sessions because the player remains active', async () => {
@@ -1530,9 +1531,23 @@ describe('App', () => {
 
     screen.getByLabelText('Command Panel').focus()
     fireEvent.keyDown(window, { code: 'KeyP', ctrlKey: true, shiftKey: true })
-    const panel = await screen.findByRole('dialog', { name: 'WatchAlong Command Panel' })
+    const panel = await screen.findByRole('dialog', { name: 'Command Panel' })
     expect(panel).toHaveAttribute('aria-modal', 'true')
     await waitFor(() => expect(screen.getByLabelText('Close Command Panel')).toHaveFocus())
+    const closePanelButton = screen.getByLabelText('Close Command Panel')
+    const panelContent = screen.getByRole('region', { name: 'Command Panel content' })
+    for (const [code, expectedScrollTop] of [['ArrowDown', 64], ['ArrowUp', 0]] as const) {
+      const arrowEvent = new KeyboardEvent('keydown', {
+        key: code,
+        code,
+        bubbles: true,
+        cancelable: true
+      })
+      closePanelButton.dispatchEvent(arrowEvent)
+      expect(arrowEvent.defaultPrevented).toBe(true)
+      expect(panelContent.scrollTop).toBe(expectedScrollTop)
+      expect(closePanelButton).toHaveFocus()
+    }
     const panelControls = Array.from(panel.querySelectorAll<HTMLElement>(
       'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, a[href], [tabindex="0"]'
     )).filter((element) => {
@@ -1580,7 +1595,7 @@ describe('App', () => {
     openMock.mockRestore()
 
     fireEvent.keyDown(window, { code: 'Escape' })
-    await waitFor(() => expect(screen.queryByLabelText('WatchAlong Command Panel')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Command Panel' })).not.toBeInTheDocument())
     await waitFor(() => expect(screen.getByLabelText('Command Panel')).toHaveFocus())
   })
 
@@ -1594,11 +1609,11 @@ describe('App', () => {
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
 
     fireEvent.click(screen.getByLabelText('Command Panel'))
-    const panel = await screen.findByRole('dialog', { name: 'WatchAlong Command Panel' })
+    const panel = await screen.findByRole('dialog', { name: 'Command Panel' })
     fireEvent.click(within(panel).getByText('Manual timing fallback'))
     fireEvent.click(within(panel).getByRole('button', { name: 'Open full manual alignment' }))
 
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'WatchAlong Command Panel' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Command Panel' })).not.toBeInTheDocument())
     expect(screen.getByLabelText('Sync setup')).toBeInTheDocument()
   })
 
@@ -1612,7 +1627,7 @@ describe('App', () => {
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
 
     fireEvent.click(screen.getByLabelText('Command Panel'))
-    const panel = await screen.findByRole('dialog', { name: 'WatchAlong Command Panel' })
+    const panel = await screen.findByRole('dialog', { name: 'Command Panel' })
     fireEvent.click(within(panel).getByRole('button', { name: /Find Sync Again/i }))
     await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1', 'recheck'))
 
@@ -1626,7 +1641,7 @@ describe('App', () => {
       anchorCount: 3
     }))
 
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'WatchAlong Command Panel' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Command Panel' })).not.toBeInTheDocument())
     expect(screen.getByLabelText('Sync setup')).toBeInTheDocument()
   })
 
@@ -1642,7 +1657,7 @@ describe('App', () => {
     await waitFor(() => expect(settingsButton).toHaveAttribute('aria-expanded', 'true'))
 
     fireEvent.keyDown(window, { code: 'KeyP', ctrlKey: true, shiftKey: true })
-    expect(await screen.findByLabelText('WatchAlong Command Panel')).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: 'Command Panel' })).toBeInTheDocument()
     await waitFor(() => expect(settingsButton).toHaveAttribute('aria-expanded', 'false'))
 
     fireEvent.click(screen.getByRole('button', { name: /Close Session/i }))
@@ -1652,6 +1667,30 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByLabelText('Playback settings')).toHaveAttribute('aria-expanded', 'false'))
   })
 
+  it('toggles library fullscreen with Alt+Enter and the header control', async () => {
+    const api = createApi()
+    window.watchAlong = api
+
+    render(<App />)
+    expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
+
+    fireEvent.keyDown(window, { code: 'KeyF' })
+    expect(fullscreenTargets).toHaveLength(0)
+
+    const pairingsButton = screen.getByRole('button', { name: 'Pairings' })
+    pairingsButton.focus()
+    fireEvent.keyDown(pairingsButton, { code: 'Enter', altKey: true })
+    expect(fullscreenTargets).toEqual([document.documentElement])
+    expect(screen.getByLabelText('Exit fullscreen')).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.click(screen.getByLabelText('Exit fullscreen'))
+    await waitFor(() => expect(document.exitFullscreen).toHaveBeenCalledOnce())
+    expect(screen.getByLabelText('Fullscreen')).toHaveAttribute('aria-pressed', 'false')
+
+    fireEvent.click(screen.getByLabelText('Fullscreen'))
+    expect(fullscreenTargets).toEqual([document.documentElement, document.documentElement])
+  })
+
   it('opens the Command Panel from the library by button or shortcut while player-only keys stay inactive', async () => {
     const api = createApi()
     window.watchAlong = api
@@ -1659,19 +1698,18 @@ describe('App', () => {
     render(<App />)
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
 
-    fireEvent.keyDown(window, { code: 'Enter', altKey: true })
     fireEvent.keyDown(window, { code: 'KeyR' })
     expect(fullscreenTargets).toHaveLength(0)
     expect(api.saveActiveSession).not.toHaveBeenCalled()
 
     fireEvent.keyDown(window, { code: 'KeyP', ctrlKey: true, shiftKey: true })
-    expect(await screen.findByLabelText('WatchAlong Command Panel')).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: 'Command Panel' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Now Playing/i })).not.toBeInTheDocument()
 
     fireEvent.keyDown(window, { code: 'Escape' })
-    await waitFor(() => expect(screen.queryByLabelText('WatchAlong Command Panel')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Command Panel' })).not.toBeInTheDocument())
     fireEvent.click(screen.getByLabelText('Command Panel'))
-    expect(await screen.findByLabelText('WatchAlong Command Panel')).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: 'Command Panel' })).toBeInTheDocument()
   })
 
   it('renames and deletes sessions from library card actions', async () => {

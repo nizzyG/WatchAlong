@@ -327,7 +327,7 @@ export function usePlayerControls({
   }
 
   const toggleFullscreen = (): void => {
-    if (appView !== 'player') return
+    if (appView !== 'library' && appView !== 'player') return
     if (document.fullscreenElement) {
       void document.exitFullscreen().catch(() => undefined)
       return

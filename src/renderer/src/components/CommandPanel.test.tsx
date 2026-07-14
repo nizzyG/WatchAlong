@@ -7,6 +7,23 @@ import { CommandPanel } from './CommandPanel'
 type CommandPanelProps = ComponentProps<typeof CommandPanel>
 
 describe('CommandPanel session timing', () => {
+  it('keeps the titlebar outside a dedicated scroll region that owns every panel command', () => {
+    renderPanel(createSession(), { expandedSection: 'help' })
+
+    const dialog = screen.getByRole('dialog', { name: 'Command Panel' })
+    const content = screen.getByRole('region', { name: 'Command Panel content' })
+    const title = within(dialog).getByText('Command Panel')
+
+    expect(content).not.toContainElement(title)
+    expect(dialog.firstElementChild).toContainElement(title)
+    expect(content).toHaveAttribute('tabindex', '0')
+    expect(content).toContainElement(screen.getByRole('heading', { name: 'Manual timing' }))
+    expect(content).toContainElement(within(content).getByRole('button', { name: /^Now Playing/i }))
+    expect(content).toContainElement(within(content).getByRole('button', { name: /^Library/i }))
+    expect(content).toContainElement(within(content).getByRole('button', { name: /^Preferences/i }))
+    expect(content).toContainElement(screen.getByRole('heading', { name: 'Keyboard shortcuts' }))
+  })
+
   it('leads with automatic-sync status, confidence, analysis time, algorithm, and re-analysis', () => {
     const session = createSession({
       timingOrigin: 'automatic',
@@ -46,10 +63,9 @@ describe('CommandPanel session timing', () => {
 
     expect(screen.getByRole('heading', { name: 'Manual timing' })).toBeInTheDocument()
     expect(screen.getByText('This session is using timing adjusted by hand.')).toBeInTheDocument()
-    expect(screen.getByText('Not scored')).toBeInTheDocument()
-    expect(screen.getAllByText('Manual timing').length).toBeGreaterThan(1)
-    expect(screen.getByText('Not yet')).toBeInTheDocument()
-    expect(screen.getByText('No automatic analysis')).toBeInTheDocument()
+    expect(screen.queryByText('Not scored')).not.toBeInTheDocument()
+    expect(screen.queryByText('Not yet')).not.toBeInTheDocument()
+    expect(screen.queryByText('No automatic analysis')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByText('Manual timing fallback'))
     const manualControls = screen.getByText('Use these controls only when automatic sync needs a hand.').parentElement!

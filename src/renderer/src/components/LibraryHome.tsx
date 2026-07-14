@@ -4,6 +4,8 @@ import {
   Film,
   Grid2X2,
   LayoutGrid,
+  Maximize,
+  Minimize,
   Plus,
   Rows3,
   Settings,
@@ -26,6 +28,8 @@ interface LibraryHomeProps {
   library: SessionLibrary
   view: LibraryViewPreference
   onViewChange(view: LibraryViewPreference): void
+  fullscreenActive: boolean
+  onToggleFullscreen(): void
   onOpenCommandPanel(): void
   onNew(): void
   onOpenSession(sessionId: string): void
@@ -40,6 +44,8 @@ export function LibraryHome({
   library,
   view,
   onViewChange,
+  fullscreenActive,
+  onToggleFullscreen,
   onOpenCommandPanel,
   onNew,
   onOpenSession,
@@ -133,6 +139,17 @@ export function LibraryHome({
           <button className="primary-button" type="button" onClick={onNew}>
             <Plus size={18} aria-hidden />
             New WatchAlong
+          </button>
+          <button
+            className="icon-button library-fullscreen-button"
+            type="button"
+            title={`${fullscreenActive ? 'Exit fullscreen' : 'Fullscreen'} (Alt+Enter)`}
+            aria-label={fullscreenActive ? 'Exit fullscreen' : 'Fullscreen'}
+            aria-keyshortcuts="Alt+Enter"
+            aria-pressed={fullscreenActive}
+            onClick={onToggleFullscreen}
+          >
+            {fullscreenActive ? <Minimize size={18} aria-hidden /> : <Maximize size={18} aria-hidden />}
           </button>
           <button
             className="icon-button library-command-panel-button"

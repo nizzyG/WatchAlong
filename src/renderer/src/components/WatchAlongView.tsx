@@ -294,6 +294,8 @@ export function WatchAlongView({
           library={library}
           view={preferences.libraryView}
           onViewChange={(view) => void actions.updatePreference('libraryView', view)}
+          fullscreenActive={fullscreenActive}
+          onToggleFullscreen={actions.toggleFullscreen}
           onOpenCommandPanel={() => actions.toggleCommandPanel()}
           onNew={() => void actions.openImportWizard({ mode: 'new' })}
           onOpenSession={(sessionId) => void actions.switchSession(sessionId)}
