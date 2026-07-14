@@ -31,7 +31,7 @@ export const keyboardShortcutHelpGroups: KeyboardShortcutHelpGroup[] = [
       { keys: ['R'], label: 'Mute or unmute the reaction' },
       { keys: ['M'], label: 'Mute or unmute the movie' },
       { keys: ['P'], label: 'Show or hide the movie picture-in-picture' },
-      { keys: ['F'], label: 'Enter or exit fullscreen' },
+      { keys: ['Alt', 'Enter'], label: 'Enter or exit fullscreen' },
       { keys: ['[', ']'], label: 'Adjust sync by 0.1 seconds', separator: 'or' }
     ]
   },
@@ -55,12 +55,23 @@ export function isCommandPanelShortcut(event: KeyboardEvent): boolean {
     && !event.metaKey
 }
 
+export function isFullscreenShortcut(event: KeyboardEvent): boolean {
+  return event.code === 'Enter'
+    && event.altKey
+    && !event.ctrlKey
+    && !event.shiftKey
+    && !event.metaKey
+}
+
 export function hasPlaybackShortcutModifier(event: KeyboardEvent): boolean {
   return event.ctrlKey || event.shiftKey || event.altKey || event.metaKey
 }
 
 export function isRepeatedToggleShortcut(event: KeyboardEvent): boolean {
-  return event.repeat && ['Space', 'KeyR', 'KeyM', 'KeyP', 'KeyF'].includes(event.code)
+  return event.repeat && (
+    ['Space', 'KeyR', 'KeyM', 'KeyP'].includes(event.code)
+    || isFullscreenShortcut(event)
+  )
 }
 
 /**

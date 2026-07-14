@@ -46,7 +46,7 @@ import { manualMovieSourceRates, playbackRates, reactorSourceOptions } from '../
 import type { MoviePosterActionResult } from '../moviePosterActions'
 
 const MOVIE_WINDOW_UNRESPONSIVE_MESSAGE =
-  'The movie window stopped responding. It has been moved back to the main window. You can pop it out again from the PiP toolbar.'
+  'The movie window stopped responding, so the movie has been brought back into the player.'
 
 export interface WatchAlongViewActions {
   loadInitialState: () => Promise<void>
@@ -66,7 +66,7 @@ export interface WatchAlongViewActions {
   updateOverlay: (overlay: OverlayGeometry) => void
   commitOverlay: (overlay: OverlayGeometry) => void
   persist: (patch: Partial<LibrarySession>) => Promise<LibrarySession | null>
-  popOutMovie: (geometryMode?: 'overlay' | 'screen') => Promise<void>
+  popOutMovie: () => Promise<void>
   popInMovie: () => Promise<void>
   togglePipVisibility: () => void
   handleMetadata: (role: MediaRole) => void
@@ -91,6 +91,7 @@ export interface WatchAlongViewActions {
   toggleMovieMute: () => void
   setPlaybackRate: (playbackRate: PlaybackRate) => void
   detectSyncAgain: () => Promise<void>
+  nudgeOffset: (deltaSeconds: number) => Promise<void>
   setReactorSource: (reactorSource: ReactorSource) => Promise<void>
   setMovieRateCorrection: (movieRateCorrection: number) => Promise<void>
   clearSubtitle: () => Promise<void>
@@ -205,9 +206,16 @@ export function WatchAlongView({
   const [fullscreenActive, setFullscreenActive] = useState(Boolean(document.fullscreenElement))
   const [playbackSettingsOpen, setPlaybackSettingsOpen] = useState(false)
   const playbackSettingsRef = useRef<HTMLDetailsElement>(null)
-  const pipControlLabel = movieWindowActive
-    ? 'Return movie to player'
-    : session.isPipHidden ? 'Show movie' : 'Hide movie'
+  const movieWindowControlLabel = movieWindowActive ? 'Bring movie back' : 'Pop out movie'
+  const activeAutoSyncRunning = autoSync.runningSessionId === activeSession?.id
+  const findSyncAgainLabel = activeAutoSyncRunning
+    ? autoSync.progress.message
+    : autoSyncBusy ? 'Sync analysis in progress' : 'Find Sync Again'
+
+  const toggleMovieWindow = (): void => {
+    if (movieWindowActive) void actions.popInMovie()
+    else void actions.popOutMovie()
+  }
 
   const closePlaybackSettings = (restoreFocus = false): void => {
     setPlaybackSettingsOpen(false)
@@ -242,6 +250,10 @@ export function WatchAlongView({
       setPlaybackSettingsOpen(false)
     }
   }, [appView, commandPanelOpen, playbackSettingsOpen])
+
+  useEffect(() => {
+    if (setupMode && commandPanelOpen) actions.closeCommandPanel()
+  }, [commandPanelOpen, setupMode])
 
   return (
     <main
@@ -313,17 +325,15 @@ export function WatchAlongView({
         />
       )}
 
-      {hasMedia && (
+      {hasMedia && !movieWindowActive && (
         <PipOverlay
           geometry={session.overlay}
           videoRef={movieVideoRef}
-          hidden={movieWindowActive ? false : session.isPipHidden}
-          poppedOut={movieWindowActive}
+          hidden={session.isPipHidden}
           onChange={actions.updateOverlay}
           onCommit={actions.commitOverlay}
           onHide={() => void actions.persist({ isPipHidden: true })}
-          onPopOut={() => void actions.popOutMovie('overlay')}
-          onPopIn={() => void actions.popInMovie()}
+          onPopOut={toggleMovieWindow}
           onLoadedMetadata={() => actions.handleMetadata('movie')}
           onTimeUpdate={() => actions.handleTimeUpdate('movie')}
           onVideoError={(video) => actions.handleVideoError('movie', video)}
@@ -422,17 +432,18 @@ export function WatchAlongView({
               {syncState}
             </span>
             <button
-              className="icon-button"
+              className={`icon-button movie-window-control ${movieWindowActive ? 'movie-window-control-active' : ''}`}
               type="button"
-              title={pipControlLabel}
-              aria-label={pipControlLabel}
+              title={movieWindowControlLabel}
+              aria-label={movieWindowControlLabel}
+              aria-pressed={movieWindowActive}
               disabled={!hasMedia}
-              onClick={() => {
-                if (movieWindowActive) void actions.popInMovie()
-                else actions.togglePipVisibility()
-              }}
+              onClick={toggleMovieWindow}
             >
-              <PictureInPicture2 size={18} aria-hidden />
+              {movieWindowActive
+                ? <PictureInPicture2 size={18} aria-hidden />
+                : <ExternalLink size={18} aria-hidden />}
+              <span>{movieWindowControlLabel}</span>
             </button>
             <button
               className="icon-button"
@@ -549,8 +560,8 @@ export function WatchAlongView({
                         disabled={!activeSession?.moviePath || !activeSession.reactionPath || Boolean(autoSync.runningSessionId)}
                         onClick={() => void actions.detectSyncAgain()}
                       >
-                        {autoSync.runningSessionId ? <Loader2 size={14} aria-hidden className="spin" /> : <RefreshCw size={14} aria-hidden />}
-                        {autoSync.runningSessionId ? autoSync.progress.message : 'Find Sync Again'}
+                        {activeAutoSyncRunning ? <Loader2 size={14} aria-hidden className="spin" /> : <RefreshCw size={14} aria-hidden />}
+                        {findSyncAgainLabel}
                       </button>
                       <div className="source-rate-control" role="group" aria-label="Reactor source">
                         <span>Reactor source</span>
@@ -607,7 +618,7 @@ export function WatchAlongView({
             </button>
           </div>
 
-          <div className="control-meta" aria-label="Volume controls">
+          <div className="control-meta" role="group" aria-label="Playback tools">
             <div className="volume-bank">
               <StreamVolume
                 label="Reaction"
@@ -626,6 +637,22 @@ export function WatchAlongView({
                 onMute={actions.toggleMovieMute}
               />
             </div>
+            <button
+              className="secondary-button find-sync-button"
+              type="button"
+              title={autoSyncBusy && !activeAutoSyncRunning
+                ? 'Another sync analysis is already running'
+                : 'Analyze the movie and reaction again'}
+              disabled={!session.moviePath || !session.reactionPath || Boolean(autoSync.runningSessionId)}
+              onClick={() => void actions.detectSyncAgain()}
+            >
+              {activeAutoSyncRunning
+                ? <Loader2 size={16} aria-hidden className="spin" />
+                : <RefreshCw size={16} aria-hidden />}
+              <span aria-live="polite">
+                {findSyncAgainLabel}
+              </span>
+            </button>
           </div>
           {error && (
             <div className="error-banner">
@@ -648,7 +675,17 @@ export function WatchAlongView({
           expandedSection={expandedPanelSection}
           onExpandedSection={setExpandedPanelSection}
           onClose={actions.closeCommandPanel}
-          onSyncSetup={actions.syncNow}
+          onSyncSetup={() => {
+            actions.closeCommandPanel()
+            actions.syncNow()
+          }}
+          onFindSyncAgain={() => void actions.detectSyncAgain()}
+          onNudgeOffset={(deltaSeconds) => void actions.nudgeOffset(deltaSeconds)}
+          onReactorSource={(source) => void actions.setReactorSource(source)}
+          onMovieRateCorrection={(rate) => void actions.setMovieRateCorrection(rate)}
+          autoSyncBusy={autoSyncBusy}
+          autoSyncRunning={activeAutoSyncRunning}
+          autoSyncProgressMessage={autoSync.progress.message}
           onSwapReaction={() => void actions.openImportWizard({ mode: 'swap-reaction', sessionId: activeSession?.id ?? null })}
           onCloseSession={() => void actions.navigateToLibrary()}
           onSwitchSession={(sessionId) => void actions.switchSession(sessionId)}

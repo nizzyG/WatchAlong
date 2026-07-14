@@ -94,6 +94,7 @@ Watch the reaction in a picture-in-picture window over the movie. Prefer a secon
 | `R` | Mute or unmute the reaction |
 | `M` | Mute or unmute the movie |
 | `P` | Toggle picture-in-picture visibility |
+| `Alt+Enter` | Enter or exit fullscreen |
 | `[` / `]` | Nudge the sync offset by −0.1s / +0.1s |
 | `Ctrl+Shift+P` | Open the Command Panel |
 

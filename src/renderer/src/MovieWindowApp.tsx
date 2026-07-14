@@ -7,9 +7,8 @@ import type {
   RemoteMediaState
 } from '@shared/types'
 import {
-  hasPlaybackShortcutModifier,
-  isInteractiveShortcutTarget,
-  isRepeatedToggleShortcut
+  isFullscreenShortcut,
+  isInteractiveShortcutTarget
 } from './keyboardShortcuts'
 
 const mediaEvents: RemoteMediaEventType[] = [
@@ -119,13 +118,12 @@ export function MovieWindowApp(): JSX.Element {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (
-        event.code !== 'KeyF'
-        || hasPlaybackShortcutModifier(event)
+        !isFullscreenShortcut(event)
         || isInteractiveShortcutTarget(event.target)
-        || isRepeatedToggleShortcut(event)
       ) return
 
       event.preventDefault()
+      if (event.repeat) return
       toggleFullscreen()
     }
 

@@ -1,11 +1,41 @@
-import { Check, ChevronDown, Clapperboard, Clock3, Coffee, Download, ExternalLink, LayoutGrid, Library as LibraryIcon, List, Lock, Plus, RefreshCw, Settings, SlidersHorizontal, X } from 'lucide-react'
+import {
+  Activity,
+  Check,
+  ChevronDown,
+  Clapperboard,
+  Clock3,
+  Coffee,
+  Download,
+  ExternalLink,
+  Gauge,
+  LayoutGrid,
+  Library as LibraryIcon,
+  List,
+  Loader2,
+  Lock,
+  Minus,
+  Plus,
+  RefreshCw,
+  Settings,
+  ShieldCheck,
+  SlidersHorizontal,
+  X
+} from 'lucide-react'
 import { useState, type ReactNode } from 'react'
-import type { AppPreferences, DownloadProgressEvent, LibrarySession, SavedPatreonSessionStatus, SessionLibrary } from '@shared/types'
+import type {
+  AppPreferences,
+  DownloadProgressEvent,
+  LibrarySession,
+  ReactorSource,
+  SavedPatreonSessionStatus,
+  SessionLibrary
+} from '@shared/types'
 import { LibrarySessionCard } from './LibraryHome'
 import { ReactionSourceIcon, reactionSourceLabel } from './ReactionSource'
-import { fileName, formatTime } from './appFormat'
+import { fileName, formatFps, formatRatePercent, formatTime, signedSeconds } from './appFormat'
 import { DownloadProgress } from './DownloadProgress'
 import { keyboardShortcutHelpGroups } from '../keyboardShortcuts'
+import { manualMovieSourceRates, reactorSourceOptions } from '../hooks/playerTiming'
 
 export type CommandPanelSection = 'now-playing' | 'library' | 'downloads' | 'preferences' | 'help'
 
@@ -25,6 +55,10 @@ interface CommandPanelProps {
   onExpandedSection(section: CommandPanelSection): void
   onClose(): void
   onSyncSetup(): void
+  onFindSyncAgain(): void
+  onNudgeOffset(deltaSeconds: number): void
+  onReactorSource(source: ReactorSource): void
+  onMovieRateCorrection(rate: number): void
   onSwapReaction(): void
   onCloseSession(): void
   onSwitchSession(sessionId: string): void
@@ -36,6 +70,9 @@ interface CommandPanelProps {
   onChooseDownloadDirectory(): void
   onForgetPatreon(): void
   onShowWizard(): void
+  autoSyncBusy: boolean
+  autoSyncRunning: boolean
+  autoSyncProgressMessage: string
 }
 
 export function CommandPanel({
@@ -50,6 +87,10 @@ export function CommandPanel({
   onExpandedSection,
   onClose,
   onSyncSetup,
+  onFindSyncAgain,
+  onNudgeOffset,
+  onReactorSource,
+  onMovieRateCorrection,
   onSwapReaction,
   onCloseSession,
   onSwitchSession,
@@ -60,7 +101,10 @@ export function CommandPanel({
   onPreference,
   onChooseDownloadDirectory,
   onForgetPatreon,
-  onShowWizard
+  onShowWizard,
+  autoSyncBusy,
+  autoSyncRunning,
+  autoSyncProgressMessage
 }: CommandPanelProps): JSX.Element {
   const progress = reactionDuration > 0 ? Math.min(100, Math.max(0, (position / reactionDuration) * 100)) : 0
   const [showPatreonLearnMore, setShowPatreonLearnMore] = useState(false)
@@ -93,6 +137,20 @@ export function CommandPanel({
         </header>
 
         {activeSession && (
+          <SessionTimingPanel
+            session={activeSession}
+            autoSyncBusy={autoSyncBusy}
+            autoSyncRunning={autoSyncRunning}
+            autoSyncProgressMessage={autoSyncProgressMessage}
+            onFindSyncAgain={onFindSyncAgain}
+            onSyncSetup={onSyncSetup}
+            onNudgeOffset={onNudgeOffset}
+            onReactorSource={onReactorSource}
+            onMovieRateCorrection={onMovieRateCorrection}
+          />
+        )}
+
+        {activeSession && (
           <CommandPanelSection
             id="now-playing"
             icon={<Clapperboard size={17} aria-hidden />}
@@ -110,10 +168,6 @@ export function CommandPanel({
               <ReadOnlyProgress value={progress} label={`${formatTime(position)} of ${formatTime(reactionDuration)}`} />
             </div>
             <div className="panel-action-grid">
-              <button className="secondary-button" type="button" onClick={onSyncSetup}>
-                <SlidersHorizontal size={16} aria-hidden />
-                Sync Setup
-              </button>
               <button className="secondary-button" type="button" onClick={onSwapReaction}>
                 <RefreshCw size={16} aria-hidden />
                 Swap Reaction
@@ -322,6 +376,225 @@ export function CommandPanel({
       </aside>
     </div>
   )
+}
+
+function SessionTimingPanel({
+  session,
+  autoSyncBusy,
+  autoSyncRunning,
+  autoSyncProgressMessage,
+  onFindSyncAgain,
+  onSyncSetup,
+  onNudgeOffset,
+  onReactorSource,
+  onMovieRateCorrection
+}: {
+  session: LibrarySession
+  autoSyncBusy: boolean
+  autoSyncRunning: boolean
+  autoSyncProgressMessage: string
+  onFindSyncAgain(): void
+  onSyncSetup(): void
+  onNudgeOffset(deltaSeconds: number): void
+  onReactorSource(source: ReactorSource): void
+  onMovieRateCorrection(rate: number): void
+}): JSX.Element {
+  const automatic = session.timingOrigin === 'automatic'
+  const confidence = formatConfidence(session.autoSyncConfidence, automatic)
+  const analyzedAt = formatAnalyzedAt(session.autoSyncAnalyzedAt)
+  const canAnalyze = Boolean(session.moviePath && session.reactionPath)
+  const timingLabel = autoSyncRunning ? 'Analyzing sync' : automatic ? 'Automatically synced' : 'Manual timing'
+  const timingDescription = autoSyncRunning
+    ? autoSyncProgressMessage
+    : automatic
+      ? 'WatchAlong measured this session locally and applied the result.'
+      : 'This session is using timing adjusted by hand.'
+
+  return (
+    <section
+      className={`panel-sync-overview panel-sync-${autoSyncRunning ? 'running' : session.timingOrigin}`}
+      aria-labelledby="command-panel-timing-heading"
+      data-timing-origin={session.timingOrigin}
+    >
+      <header className="panel-sync-status" aria-live="polite">
+        <span className="panel-sync-status-icon" aria-hidden>
+          {autoSyncRunning
+            ? <Loader2 size={22} className="spin" />
+            : automatic
+              ? <ShieldCheck size={22} />
+              : <SlidersHorizontal size={22} />}
+        </span>
+        <div>
+          <small>Session timing</small>
+          <h3 id="command-panel-timing-heading">{timingLabel}</h3>
+          <span>{timingDescription}</span>
+        </div>
+      </header>
+
+      <dl className="panel-sync-facts">
+        <div>
+          <Gauge size={17} aria-hidden />
+          <dt>Confidence</dt>
+          <dd>
+            <strong>{confidence.value}</strong>
+            <small>{confidence.label}</small>
+          </dd>
+        </div>
+        <div>
+          <Clock3 size={17} aria-hidden />
+          <dt>Last analyzed</dt>
+          <dd>
+            {session.autoSyncAnalyzedAt
+              ? <time dateTime={session.autoSyncAnalyzedAt} title={session.autoSyncAnalyzedAt}>{analyzedAt}</time>
+              : <strong>Not yet</strong>}
+            <small>{session.autoSyncAnalyzedAt ? 'On this device' : 'No automatic analysis'}</small>
+          </dd>
+        </div>
+        <div>
+          <Activity size={17} aria-hidden />
+          <dt>Sync engine</dt>
+          <dd>
+            <strong>
+              {automatic && session.autoSyncAlgorithmVersion !== null
+                ? `Algorithm v${session.autoSyncAlgorithmVersion}`
+                : automatic ? 'Automatic' : 'Manual'}
+            </strong>
+            <small>{automatic ? 'Local audio analysis' : 'Manual alignment'}</small>
+          </dd>
+        </div>
+      </dl>
+
+      <button
+        className="primary-button panel-find-sync-button"
+        type="button"
+        disabled={!canAnalyze || autoSyncBusy}
+        title={!canAnalyze
+          ? 'Add both a movie and reaction before finding sync'
+          : autoSyncBusy && !autoSyncRunning ? 'Another sync analysis is already running' : undefined}
+        onClick={onFindSyncAgain}
+      >
+        {autoSyncRunning ? <Loader2 size={17} aria-hidden className="spin" /> : <RefreshCw size={17} aria-hidden />}
+        <span>
+          <strong>{autoSyncRunning ? autoSyncProgressMessage : 'Find Sync Again'}</strong>
+          {!autoSyncRunning && <small>Re-analyze this session locally</small>}
+        </span>
+      </button>
+
+      <details className="panel-manual-timing">
+        <summary>
+          <SlidersHorizontal size={17} aria-hidden />
+          <span>
+            <strong>Manual timing fallback</strong>
+            <small>Fine offset and frame-rate controls</small>
+          </span>
+          <ChevronDown size={16} aria-hidden />
+        </summary>
+        <div className="panel-manual-timing-body">
+          <p>Use these controls only when automatic sync needs a hand.</p>
+
+          <div className="panel-offset-control" role="group" aria-label="Manual timing offset">
+            <span>
+              <strong>Timing offset</strong>
+              <small>Fine-tune in 0.1 second steps</small>
+            </span>
+            <button
+              className="mini-button"
+              type="button"
+              aria-label="Decrease timing offset by 0.1 seconds"
+              disabled={autoSyncBusy}
+              onClick={() => onNudgeOffset(-0.1)}
+            >
+              <Minus size={14} aria-hidden />
+            </button>
+            <output aria-live="polite">{signedSeconds(session.offsetSeconds)}</output>
+            <button
+              className="mini-button"
+              type="button"
+              aria-label="Increase timing offset by 0.1 seconds"
+              disabled={autoSyncBusy}
+              onClick={() => onNudgeOffset(0.1)}
+            >
+              <Plus size={14} aria-hidden />
+            </button>
+          </div>
+
+          <div className="panel-frame-rate-control" role="group" aria-label="Reaction frame rate">
+            <span>
+              <strong>Reaction frame rate</strong>
+              <small>Choose the format used by the reactor’s copy</small>
+            </span>
+            <div>
+              {reactorSourceOptions.map((option) => (
+                <button
+                  key={option.source}
+                  className={option.source === session.reactorSource ? 'segment-active' : ''}
+                  type="button"
+                  aria-pressed={option.source === session.reactorSource}
+                  disabled={autoSyncBusy}
+                  title={option.label}
+                  onClick={() => onReactorSource(option.source)}
+                >
+                  {option.summary}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {session.detectedMovieFps === null ? (
+            <div className="panel-frame-rate-control" role="group" aria-label="Manual movie rate">
+              <span>
+                <strong>Movie timing correction</strong>
+                <small>Fallback when the movie frame rate cannot be detected</small>
+              </span>
+              <div>
+                {manualMovieSourceRates.map((option) => (
+                  <button
+                    key={option.label}
+                    className={Math.abs(session.movieRateCorrection - option.rate) < 0.00001 ? 'segment-active' : ''}
+                    type="button"
+                    aria-pressed={Math.abs(session.movieRateCorrection - option.rate) < 0.00001}
+                    disabled={autoSyncBusy}
+                    onClick={() => onMovieRateCorrection(option.rate)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="panel-detected-rate">
+              Movie detected at <strong>{formatFps(session.detectedMovieFps)} fps</strong>
+              <span>Timing correction {formatRatePercent(session.movieRateCorrection)}</span>
+            </p>
+          )}
+
+          <button className="secondary-button panel-open-manual-sync" type="button" disabled={autoSyncBusy} onClick={onSyncSetup}>
+            <SlidersHorizontal size={16} aria-hidden />
+            Open full manual alignment
+          </button>
+        </div>
+      </details>
+    </section>
+  )
+}
+
+function formatConfidence(confidence: number | null, automatic: boolean): { value: string; label: string } {
+  if (!automatic) return { value: 'Not scored', label: 'Manual timing' }
+  if (confidence === null || !Number.isFinite(confidence)) {
+    return { value: 'Not reported', label: 'Confidence unavailable' }
+  }
+
+  const percent = Math.round(Math.min(1, Math.max(0, confidence)) * 100)
+  if (percent >= 85) return { value: `${percent}%`, label: 'High confidence' }
+  if (percent >= 65) return { value: `${percent}%`, label: 'Moderate confidence' }
+  return { value: `${percent}%`, label: 'Low confidence — check timing' }
+}
+
+function formatAnalyzedAt(value: string | null): string {
+  if (!value) return 'Not yet'
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return 'Unknown date'
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }
 
 function CommandPanelSection({

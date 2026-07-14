@@ -14,6 +14,7 @@ import { getActiveSubtitleCue, hasSubtitleContentBeyondHeader, parseSubtitleText
 import {
   hasPlaybackShortcutModifier,
   isCommandPanelShortcut,
+  isFullscreenShortcut,
   isInteractiveShortcutTarget,
   isRepeatedToggleShortcut
 } from '../keyboardShortcuts'
@@ -559,11 +560,18 @@ export function useWatchAlongController({
       if (
         appView !== 'player'
         || isInteractiveShortcutTarget(event.target)
-        || hasPlaybackShortcutModifier(event)
-        || isRepeatedToggleShortcut(event)
       ) {
         return
       }
+
+      if (isFullscreenShortcut(event)) {
+        event.preventDefault()
+        if (event.repeat) return
+        toggleFullscreen()
+        return
+      }
+
+      if (hasPlaybackShortcutModifier(event) || isRepeatedToggleShortcut(event)) return
 
       if (event.code === 'KeyR') {
         event.preventDefault()
@@ -576,10 +584,6 @@ export function useWatchAlongController({
       } else if (event.code === 'KeyP') {
         event.preventDefault()
         togglePipVisibility()
-        return
-      } else if (event.code === 'KeyF') {
-        event.preventDefault()
-        toggleFullscreen()
         return
       }
 
@@ -753,7 +757,7 @@ export function useWatchAlongController({
     toggleSetupPreview, setIndependentSetupTime, nudgeSetupTime, togglePlayPause, seekBy, seekTo,
     syncNow, openSubtitle, toggleFullscreen, toggleReactionFullscreen, toggleCommandPanel,
     setReactionVolume, setMovieVolume, toggleReactionMute, toggleMovieMute, setPlaybackRate,
-    detectSyncAgain, setReactorSource, setMovieRateCorrection, clearSubtitle, closeCommandPanel,
+    detectSyncAgain, nudgeOffset, setReactorSource, setMovieRateCorrection, clearSubtitle, closeCommandPanel,
     attachDownloadedReaction, updatePreference, chooseDownloadDirectory, forgetPatreonSession,
     cancelRenameSession, confirmRenameSession, cancelDeleteSession, confirmDeleteSession,
     useManualSyncDuringRollIn, startWelcomeImport

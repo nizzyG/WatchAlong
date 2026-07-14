@@ -53,7 +53,7 @@ MKV is a container — the video and audio streams inside might use codecs Chrom
 | `R` | Toggle reaction mute |
 | `M` | Toggle movie mute |
 | `P` | Toggle PiP visibility |
-| `F` | Enter / exit fullscreen |
+| `Alt+Enter` | Enter / exit fullscreen (including the popped-out movie window) |
 | `[` / `]` | Nudge sync offset by −0.1s / +0.1s |
 | `Ctrl+Shift+P` | Open / close the Command Panel from the library or player |
 | `↑` / `↓` / `Tab` / `Shift+Tab` / `Enter` / `Esc` | Navigate inside the Command Panel without leaving it |

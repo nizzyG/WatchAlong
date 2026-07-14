@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   hasPlaybackShortcutModifier,
   isCommandPanelShortcut,
+  isFullscreenShortcut,
   isInteractiveShortcutTarget,
   isRepeatedToggleShortcut,
   keyboardShortcutHelpGroups
@@ -27,6 +28,24 @@ describe('keyboard shortcuts', () => {
     }))).toBe(false)
   })
 
+  it('matches only the exact Alt+Enter fullscreen chord', () => {
+    expect(isFullscreenShortcut(new KeyboardEvent('keydown', {
+      code: 'Enter',
+      altKey: true
+    }))).toBe(true)
+    expect(isFullscreenShortcut(new KeyboardEvent('keydown', {
+      code: 'KeyF'
+    }))).toBe(false)
+
+    for (const modifier of ['ctrlKey', 'shiftKey', 'metaKey'] as const) {
+      expect(isFullscreenShortcut(new KeyboardEvent('keydown', {
+        code: 'Enter',
+        altKey: true,
+        [modifier]: true
+      }))).toBe(false)
+    }
+  })
+
   it('recognizes every modifier that should suppress a playback key', () => {
     for (const modifier of ['ctrlKey', 'shiftKey', 'altKey', 'metaKey'] as const) {
       expect(hasPlaybackShortcutModifier(new KeyboardEvent('keydown', {
@@ -38,10 +57,15 @@ describe('keyboard shortcuts', () => {
   })
 
   it('suppresses key-repeat for toggles but keeps repeatable seek and sync keys', () => {
-    for (const code of ['Space', 'KeyR', 'KeyM', 'KeyP', 'KeyF']) {
+    for (const code of ['Space', 'KeyR', 'KeyM', 'KeyP']) {
       expect(isRepeatedToggleShortcut(new KeyboardEvent('keydown', { code, repeat: true }))).toBe(true)
     }
-    for (const code of ['ArrowLeft', 'ArrowRight', 'BracketLeft', 'BracketRight']) {
+    expect(isRepeatedToggleShortcut(new KeyboardEvent('keydown', {
+      code: 'Enter',
+      altKey: true,
+      repeat: true
+    }))).toBe(true)
+    for (const code of ['ArrowLeft', 'ArrowRight', 'BracketLeft', 'BracketRight', 'Enter', 'KeyF']) {
       expect(isRepeatedToggleShortcut(new KeyboardEvent('keydown', { code, repeat: true }))).toBe(false)
     }
   })
@@ -84,5 +108,10 @@ describe('keyboard shortcuts', () => {
       'Use the focused control',
       'Close the Command Panel'
     ])
+
+    expect(keyboardShortcutHelpGroups
+      .flatMap((group) => group.items)
+      .find((item) => item.label === 'Enter or exit fullscreen')?.keys
+    ).toEqual(['Alt', 'Enter'])
   })
 })

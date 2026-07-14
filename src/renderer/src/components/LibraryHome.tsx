@@ -13,7 +13,6 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import type { LibraryViewPreference, SessionLibrary } from '@shared/types'
 import type { MoviePosterActionResult } from '../moviePosterActions'
-import { ContinueWatchingShelf } from './ContinueWatchingShelf'
 import { LibraryEmptyState } from './LibraryEmptyState'
 import { LibrarySortControl } from './LibrarySortControl'
 import { MovieLibraryView } from './MovieLibraryView'
@@ -160,8 +159,6 @@ export function LibraryHome({
       )}
 
       <div className="library-browser">
-        {hasSessions && <ContinueWatchingShelf sessions={library.sessions} onOpenSession={onOpenSession} />}
-
         <LibrarySortControl mode={mode} sort={sort} onSortChange={changeSort} />
 
         {!hasSessions && <LibraryEmptyState mode={mode} onNew={onNew} />}

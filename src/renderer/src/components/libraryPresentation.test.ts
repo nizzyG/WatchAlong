@@ -2,14 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { createDefaultSession } from '@shared/session'
 import type { LibrarySession } from '@shared/types'
 import {
-  continueWatchingSessions,
   deriveMovieIdentity,
   deriveReactorIdentity,
   groupSessionsByMovie,
   groupSessionsByReactor,
   humanizeMediaName,
   pairingDisplayTitle,
-  sessionProgressPercent,
   sortPairings,
   splitPairingTitle
 } from './libraryPresentation'
@@ -180,32 +178,6 @@ describe('library presentation', () => {
       .toEqual(['newest', 'middle', 'oldest'])
     expect(groupSessionsByReactor([oldest, newest, middle], 'alphabetical').map((group) => group.label))
       .toEqual(['Alpha Reactor', 'Beta Reactor', 'Zeta Reactor'])
-  })
-
-  it('surfaces only playable unfinished sessions for Continue Watching by latest activity', () => {
-    const mostRecent = makeSession('recent', {
-      lastReactionTimeSeconds: 2700,
-      reactionDurationSeconds: 7200,
-      updatedAt: '2026-07-14T14:00:00.000Z'
-    })
-    const earlier = makeSession('earlier', {
-      lastReactionTimeSeconds: 600,
-      reactionDurationSeconds: null,
-      updatedAt: '2026-07-14T13:00:00.000Z'
-    })
-    const justStarted = makeSession('just-started', {
-      lastReactionTimeSeconds: 1,
-      reactionDurationSeconds: 7200,
-      updatedAt: '2026-07-14T12:00:00.000Z'
-    })
-    const untouched = makeSession('untouched', { lastReactionTimeSeconds: 0, reactionDurationSeconds: 7200 })
-    const completed = makeSession('completed', { lastReactionTimeSeconds: 6900, reactionDurationSeconds: 7200 })
-    const incomplete = makeSession('incomplete', { lastReactionTimeSeconds: 1200, reactionPath: null })
-
-    expect(continueWatchingSessions([untouched, justStarted, earlier, completed, incomplete, mostRecent]).map((session) => session.id))
-      .toEqual(['recent', 'earlier', 'just-started'])
-    expect(sessionProgressPercent(mostRecent)).toBe(37.5)
-    expect(sessionProgressPercent(earlier)).toBeNull()
   })
 
   it('turns media filenames into readable labels without guessing at release metadata', () => {

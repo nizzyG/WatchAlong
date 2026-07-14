@@ -301,6 +301,12 @@ function createApi(
   }
 }
 
+function popOutFromOverlay(): void {
+  fireEvent.click(
+    within(screen.getByLabelText('Movie picture in picture')).getByRole('button', { name: 'Pop out movie' })
+  )
+}
+
 describe('App', () => {
   let playMock: ReturnType<typeof vi.fn>
   let pauseMock: ReturnType<typeof vi.fn>
@@ -545,7 +551,7 @@ describe('App', () => {
     fireEvent.keyDown(window, { code: 'KeyR' })
     fireEvent.keyDown(window, { code: 'KeyM' })
     fireEvent.keyDown(window, { code: 'KeyP' })
-    fireEvent.keyDown(window, { code: 'KeyF' })
+    fireEvent.keyDown(window, { code: 'Enter', altKey: true })
 
     await waitFor(() => expect(api.saveActiveSession).toHaveBeenCalledWith({ isReactionMuted: true }))
     await waitFor(() => expect(api.saveActiveSession).toHaveBeenCalledWith({ isMovieMuted: true }))
@@ -569,6 +575,7 @@ describe('App', () => {
     vi.mocked(api.saveActiveSession).mockClear()
 
     fireEvent.keyDown(screen.getByLabelText('Reaction timeline'), { code: 'KeyR' })
+    fireEvent.keyDown(screen.getByLabelText('Reaction timeline'), { code: 'Enter', altKey: true })
     fireEvent.keyDown(screen.getByLabelText('Fullscreen'), { code: 'Space' })
     fireEvent.keyDown(window, { code: 'KeyR', ctrlKey: true })
 
@@ -580,9 +587,10 @@ describe('App', () => {
 
     expect(api.saveActiveSession).not.toHaveBeenCalled()
     expect(playMock).not.toHaveBeenCalled()
+    expect(fullscreenTargets).toHaveLength(0)
   })
 
-  it('toggles player fullscreen with F', async () => {
+  it('toggles player fullscreen with Alt+Enter and leaves unmodified F unused', async () => {
     const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
     window.watchAlong = api
 
@@ -590,11 +598,18 @@ describe('App', () => {
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
 
     fireEvent.keyDown(window, { code: 'KeyF' })
+    expect(fullscreenTargets).toHaveLength(0)
+
+    fireEvent.keyDown(window, { code: 'Enter', altKey: true })
     expect(fullscreenTargets).toEqual([document.documentElement])
     expect(document.fullscreenElement).toBe(document.documentElement)
     expect(screen.getByLabelText('Exit fullscreen')).toHaveAttribute('aria-pressed', 'true')
 
-    fireEvent.keyDown(window, { code: 'KeyF' })
+    fireEvent.keyDown(window, { code: 'Enter', altKey: true, repeat: true })
+    fireEvent.keyDown(window, { code: 'Enter', altKey: true, shiftKey: true })
+    expect(document.exitFullscreen).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(window, { code: 'Enter', altKey: true })
     await waitFor(() => expect(document.exitFullscreen).toHaveBeenCalledOnce())
     expect(document.fullscreenElement).toBeNull()
     expect(screen.getByLabelText('Fullscreen')).toHaveAttribute('aria-pressed', 'false')
@@ -713,7 +728,7 @@ describe('App', () => {
     expect(remote.getByLabelText('Play')).toBeInTheDocument()
     expect(remote.getByLabelText('Back 5 seconds')).toBeInTheDocument()
     expect(remote.getByLabelText('Forward 5 seconds')).toBeInTheDocument()
-    expect(remote.getByLabelText('Hide movie')).toBeInTheDocument()
+    expect(remote.getByLabelText('Pop out movie')).toBeInTheDocument()
     expect(remote.getByLabelText('Reaction volume')).toBeInTheDocument()
     expect(remote.getByLabelText('Movie volume')).toBeInTheDocument()
     expect(remote.getByLabelText('Fullscreen')).toBeInTheDocument()
@@ -883,7 +898,7 @@ describe('App', () => {
     )
   })
 
-  it('shows a compact PiP placeholder while popped out and pops back in from it', async () => {
+  it('removes the local PiP while detached and brings the movie back from the primary control', async () => {
     const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
     api.closeMovieWindow = vi.fn(async () => ({
       geometry: { x: 40, y: 50, width: 360, height: 210 },
@@ -897,23 +912,27 @@ describe('App', () => {
     fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
 
-    fireEvent.click(screen.getByLabelText('Pop out movie to separate window'))
+    popOutFromOverlay()
 
     await waitFor(() =>
       expect(api.openMovieWindow).toHaveBeenCalledWith(expect.objectContaining({
         sessionId: 's1',
+        geometry: firstSession.overlay,
         geometryMode: 'overlay'
       }))
     )
     await waitFor(() => expect(document.querySelector('video.pip-video')).not.toBeInTheDocument())
-    expect(screen.getByLabelText('Movie picture in picture')).toHaveClass('pip-popped-out')
-    expect(screen.getByRole('button', { name: 'Pop movie back in' })).toHaveTextContent('Movie is popped out.')
+    expect(screen.queryByLabelText('Movie picture in picture')).not.toBeInTheDocument()
+    expect(document.querySelector('.pip-popped-out')).not.toBeInTheDocument()
+    const bringBack = within(screen.getByLabelText('Playback controls')).getByRole('button', { name: 'Bring movie back' })
+    expect(bringBack).toHaveTextContent('Bring movie back')
+    expect(bringBack).toHaveAttribute('aria-pressed', 'true')
     expect(api.saveMovieWindowState).toHaveBeenCalledWith(
       's1',
       expect.objectContaining({ isMoviePoppedOut: true })
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Pop movie back in' }))
+    fireEvent.click(bringBack)
 
     await waitFor(() =>
       expect(api.saveMovieWindowState).toHaveBeenCalledWith('s1', expect.objectContaining({
@@ -921,6 +940,51 @@ describe('App', () => {
         overlay: { x: 12, y: 18, width: 360, height: 210 }
       }))
     )
+    expect(await screen.findByLabelText('Movie picture in picture')).toBeInTheDocument()
+    expect(within(screen.getByLabelText('Playback controls')).getByRole('button', { name: 'Pop out movie' }))
+      .toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('uses the same overlay-relative placement from the primary and PiP pop-out controls', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+
+    fireEvent.click(
+      within(screen.getByLabelText('Playback controls')).getByRole('button', { name: 'Pop out movie' })
+    )
+
+    await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 's1',
+      geometry: firstSession.overlay,
+      geometryMode: 'overlay'
+    })))
+    expect(screen.queryByLabelText('Movie picture in picture')).not.toBeInTheDocument()
+  })
+
+  it('makes the embedded movie visible when a hidden PiP completes the pop-out cycle', async () => {
+    const hiddenSession = { ...firstSession, isPipHidden: true }
+    const api = createApi(
+      createLibrary('s1', [hiddenSession, secondSession]),
+      { ...defaultPreferences, openLibraryOnLaunch: false }
+    )
+    window.watchAlong = api
+
+    render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.click(
+      within(screen.getByLabelText('Playback controls')).getByRole('button', { name: 'Pop out movie' })
+    )
+
+    await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalledWith(expect.objectContaining({
+      geometry: hiddenSession.overlay,
+      geometryMode: 'overlay'
+    })))
+    await waitFor(() => expect(api.saveActiveSession).toHaveBeenCalledWith({ isPipHidden: false }))
   })
 
   it('coalesces duplicate pop-out clicks and discards an open that finishes after a session switch', async () => {
@@ -936,7 +1000,7 @@ describe('App', () => {
     fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
 
-    const popOut = screen.getByLabelText('Pop out movie to separate window')
+    const popOut = within(screen.getByLabelText('Movie picture in picture')).getByRole('button', { name: 'Pop out movie' })
     fireEvent.click(popOut)
     fireEvent.click(popOut)
     await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalledTimes(1))
@@ -968,7 +1032,7 @@ describe('App', () => {
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
     fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
-    fireEvent.click(screen.getByLabelText('Pop out movie to separate window'))
+    popOutFromOverlay()
     await waitFor(() => expect(api.saveMovieWindowState).toHaveBeenCalledWith(
       's1',
       expect.objectContaining({ isMoviePoppedOut: true })
@@ -1158,14 +1222,18 @@ describe('App', () => {
 
     render(<App />)
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    const playbackTools = screen.getByRole('group', { name: 'Playback tools' })
+    const primarySyncAction = within(playbackTools).getByRole('button', { name: 'Find Sync Again' })
+    expect(primarySyncAction).toBeVisible()
+
     fireEvent.click(screen.getByText('Timing'))
     expect(screen.getByText('Automatically measured')).toBeInTheDocument()
     expect(screen.getAllByText(/94% confidence/)).toHaveLength(2)
 
-    fireEvent.click(screen.getByRole('button', { name: /Find Sync Again/i }))
+    fireEvent.click(primarySyncAction)
     await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1', 'recheck'))
     act(() => api.emitAutoSyncProgress({ sessionId: 's1', phase: 'scanning', percent: 45, message: 'Checking moments…' }))
-    expect(screen.getByRole('button', { name: /Checking moments/i })).toBeDisabled()
+    expect(within(playbackTools).getByRole('button', { name: /Checking moments/i })).toBeDisabled()
     act(() => api.emitAutoSyncComplete({
       sessionId: 's1', outcome: 'confident', message: 'Ready.', offsetSeconds: -20,
       movieRateCorrection: 1, confidence: 0.96, anchorCount: 6
@@ -1179,8 +1247,8 @@ describe('App', () => {
 
     render(<App />)
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
-    fireEvent.click(screen.getByText('Timing'))
-    fireEvent.click(screen.getByRole('button', { name: /Find Sync Again/i }))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Playback tools' }))
+      .getByRole('button', { name: 'Find Sync Again' }))
     await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1', 'recheck'))
 
     await api.setActiveSession('s2')
@@ -1265,7 +1333,7 @@ describe('App', () => {
     fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
 
-    fireEvent.click(screen.getByLabelText('Pop out movie to separate window'))
+    popOutFromOverlay()
 
     await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalled())
     const [request] = vi.mocked(api.openMovieWindow).mock.calls[0]
@@ -1338,7 +1406,7 @@ describe('App', () => {
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
     fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
-    fireEvent.click(screen.getByLabelText('Pop out movie to separate window'))
+    popOutFromOverlay()
     await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalled())
     await waitFor(() => expect(document.querySelector('video.pip-video')).not.toBeInTheDocument())
 
@@ -1364,7 +1432,7 @@ describe('App', () => {
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
     fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
-    fireEvent.click(screen.getByLabelText('Pop out movie to separate window'))
+    popOutFromOverlay()
     await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalled())
     await waitFor(() => expect(document.querySelector('video.pip-video')).not.toBeInTheDocument())
     vi.mocked(api.closeMovieWindow).mockClear()
@@ -1409,7 +1477,7 @@ describe('App', () => {
     await waitFor(() => expect(playMock).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.getByLabelText('Pause')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByLabelText('Pop out movie to separate window'))
+    popOutFromOverlay()
     await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalled())
     await waitFor(() =>
       expect(api.sendMovieMediaCommand).toHaveBeenCalledWith(expect.objectContaining({ type: 'setCurrentTime' }))
@@ -1440,14 +1508,14 @@ describe('App', () => {
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
     fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
-    fireEvent.click(screen.getByLabelText('Pop out movie to separate window'))
+    popOutFromOverlay()
     await waitFor(() => expect(document.querySelector('video.pip-video')).not.toBeInTheDocument())
 
     act(() => api.emitMovieWindowClosed({ reason: 'unresponsive' }))
 
     expect(
       await screen.findByText(
-        'The movie window stopped responding. It has been moved back to the main window. You can pop it out again from the PiP toolbar.'
+        'The movie window stopped responding, so the movie has been brought back into the player.'
       )
     ).toBeInTheDocument()
     expect(await screen.findByLabelText('Movie picture in picture')).toBeInTheDocument()
@@ -1465,13 +1533,29 @@ describe('App', () => {
     const panel = await screen.findByRole('dialog', { name: 'WatchAlong Command Panel' })
     expect(panel).toHaveAttribute('aria-modal', 'true')
     await waitFor(() => expect(screen.getByLabelText('Close Command Panel')).toHaveFocus())
-    const panelControls = panel.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]'
-    )
+    const panelControls = Array.from(panel.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, a[href], [tabindex="0"]'
+    )).filter((element) => {
+      const closedDetails = element.closest<HTMLDetailsElement>('details:not([open])')
+      return !closedDetails || (element.tagName === 'SUMMARY' && element.parentElement === closedDetails)
+    })
     fireEvent.keyDown(window, { code: 'Tab', shiftKey: true })
-    expect(panelControls.item(panelControls.length - 1)).toHaveFocus()
+    expect(panelControls.at(-1)).toHaveFocus()
     fireEvent.keyDown(window, { code: 'Tab' })
-    expect(panelControls.item(0)).toHaveFocus()
+    expect(panelControls[0]).toHaveFocus()
+
+    const manualTimingSummary = within(panel).getByText('Manual timing fallback').closest('summary') as HTMLElement
+    const manualTimingIndex = panelControls.indexOf(manualTimingSummary)
+    expect(manualTimingIndex).toBeGreaterThan(0)
+    panelControls[manualTimingIndex - 1].focus()
+    fireEvent.keyDown(window, { code: 'Tab' })
+    expect(manualTimingSummary).toHaveFocus()
+    const enterEvent = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })
+    manualTimingSummary.dispatchEvent(enterEvent)
+    expect(enterEvent.defaultPrevented).toBe(false)
+    fireEvent.click(manualTimingSummary)
+    expect(manualTimingSummary.parentElement).toHaveAttribute('open')
+
     fireEvent.click(screen.getByRole('button', { name: /Preferences/i }))
     fireEvent.click(screen.getByRole('checkbox', { name: /Open Library on launch/i }))
 
@@ -1485,6 +1569,7 @@ describe('App', () => {
         expect(screen.getByText(shortcut.label)).toBeInTheDocument()
       }
     }
+    expect(screen.getByLabelText('Alt plus Enter')).toBeInTheDocument()
     const openMock = vi.spyOn(window, 'open').mockImplementation(() => null)
     const supportButton = screen.getByRole('button', { name: /Support the developer on Ko-fi/i })
 
@@ -1497,6 +1582,52 @@ describe('App', () => {
     fireEvent.keyDown(window, { code: 'Escape' })
     await waitFor(() => expect(screen.queryByLabelText('WatchAlong Command Panel')).not.toBeInTheDocument())
     await waitFor(() => expect(screen.getByLabelText('Command Panel')).toHaveFocus())
+  })
+
+  it('closes the Command Panel when handing off to full manual alignment', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    const panel = await screen.findByRole('dialog', { name: 'WatchAlong Command Panel' })
+    fireEvent.click(within(panel).getByText('Manual timing fallback'))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Open full manual alignment' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'WatchAlong Command Panel' })).not.toBeInTheDocument())
+    expect(screen.getByLabelText('Sync setup')).toBeInTheDocument()
+  })
+
+  it('closes the Command Panel when a re-analysis needs manual review', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    const panel = await screen.findByRole('dialog', { name: 'WatchAlong Command Panel' })
+    fireEvent.click(within(panel).getByRole('button', { name: /Find Sync Again/i }))
+    await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1', 'recheck'))
+
+    act(() => api.emitAutoSyncComplete({
+      sessionId: 's1',
+      outcome: 'partial',
+      message: 'Please check the timing.',
+      offsetSeconds: -20,
+      movieRateCorrection: 1,
+      confidence: 0.62,
+      anchorCount: 3
+    }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'WatchAlong Command Panel' })).not.toBeInTheDocument())
+    expect(screen.getByLabelText('Sync setup')).toBeInTheDocument()
   })
 
   it('dismisses Playback settings for a keyboard-opened panel and does not resurrect it after returning from the library', async () => {
@@ -1528,7 +1659,7 @@ describe('App', () => {
     render(<App />)
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
 
-    fireEvent.keyDown(window, { code: 'KeyF' })
+    fireEvent.keyDown(window, { code: 'Enter', altKey: true })
     fireEvent.keyDown(window, { code: 'KeyR' })
     expect(fullscreenTargets).toHaveLength(0)
     expect(api.saveActiveSession).not.toHaveBeenCalled()

@@ -17,7 +17,7 @@ const MOVIE_WINDOW_TRANSITION_MS = 220
 const MOVIE_WINDOW_GEOMETRY_SAVE_MS = 600
 const MOVIE_WINDOW_COMMAND_TIMEOUT_ERROR = 'Movie window stopped responding.'
 const MOVIE_WINDOW_UNRESPONSIVE_MESSAGE =
-  'The movie window stopped responding. It has been moved back to the main window. You can pop it out again from the PiP toolbar.'
+  'The movie window stopped responding, so the movie has been brought back into the player.'
 
 interface UseMovieWindowOptions {
   playback: PlaybackHook
@@ -249,6 +249,10 @@ export function useMovieWindow({
         setMovieWindowActive(false)
         await persistMovieWindowState(initiatingSessionId, { isMoviePoppedOut: false })
         return
+      }
+
+      if (initiatingSession.isPipHidden) {
+        await persistRef.current({ isPipHidden: false })
       }
 
       buildController(remoteAdapter)?.loadSession(reactionTime)

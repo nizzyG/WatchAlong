@@ -335,174 +335,6 @@
   box-shadow: 0 7px 16px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
-/* The first thing a returning viewer needs: recent, unfinished sessions. */
-
-.continue-watching {
-  display: grid;
-  gap: 17px;
-  min-width: 0;
-  padding: clamp(20px, 2.4vw, 30px);
-  overflow: hidden;
-  border: 1px solid rgba(244, 234, 214, 0.17);
-  border-radius: 22px;
-  background:
-    radial-gradient(circle at 8% 0%, rgba(239, 198, 108, 0.13), transparent 33%),
-    linear-gradient(145deg, rgba(48, 43, 34, 0.72), rgba(22, 20, 16, 0.68));
-  box-shadow: 0 24px 58px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(18px) saturate(1.04);
-}
-
-.continue-watching-header h2,
-.continue-watching-header p {
-  margin: 0;
-}
-
-.continue-watching-header h2 {
-  color: var(--wa-paper);
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(25px, 2.2vw, 32px);
-  font-weight: 600;
-  letter-spacing: -0.025em;
-}
-
-.continue-watching-header p {
-  margin-top: 4px;
-  color: var(--wa-muted);
-  font-size: 14px;
-}
-
-.continue-watching-track {
-  display: grid;
-  grid-auto-columns: minmax(300px, 380px);
-  grid-auto-flow: column;
-  gap: 16px;
-  min-width: 0;
-  padding: 3px 3px 10px;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-  scrollbar-color: rgba(199, 197, 189, 0.4) transparent;
-  scroll-snap-type: inline proximity;
-}
-
-.continue-watching-card {
-  min-width: 0;
-  scroll-snap-align: start;
-}
-
-.continue-watching-card button {
-  display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
-  width: 100%;
-  min-height: 156px;
-  overflow: hidden;
-  border: 1px solid rgba(199, 197, 189, 0.2);
-  border-radius: 16px;
-  color: var(--wa-paper);
-  text-align: left;
-  background: rgba(12, 11, 9, 0.46);
-  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.28);
-  cursor: pointer;
-  transition: border-color 170ms ease, background 170ms ease, box-shadow 170ms ease, transform 170ms ease;
-}
-
-.continue-watching-card button:hover {
-  border-color: rgba(199, 197, 189, 0.5);
-  background: rgba(48, 43, 34, 0.82);
-  box-shadow: 0 22px 44px rgba(0, 0, 0, 0.38);
-  transform: translateY(-2px);
-}
-
-.continue-watching-card button:focus-visible {
-  outline: 3px solid var(--wa-green);
-  outline-offset: -3px;
-}
-
-.continue-watching-art {
-  width: 104px;
-  height: 156px;
-  overflow: hidden;
-}
-
-.continue-watching-art .movie-poster-card {
-  width: 104px;
-}
-
-.continue-watching-art .movie-poster-frame {
-  border: 0;
-  border-right: 1px solid rgba(244, 234, 214, 0.16);
-  border-radius: 0;
-  box-shadow: none;
-}
-
-.continue-watching-copy {
-  display: grid;
-  grid-template-rows: auto minmax(0, auto) auto auto 1fr;
-  align-content: center;
-  min-width: 0;
-  padding: 17px 18px 15px;
-}
-
-.continue-watching-reactor {
-  overflow: hidden;
-  color: var(--wa-amber);
-  font-size: 12px;
-  font-weight: 720;
-  letter-spacing: 0.02em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.continue-watching-copy strong {
-  display: -webkit-box;
-  overflow: hidden;
-  margin-top: 5px;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.12;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.continue-watching-time {
-  margin-top: 7px;
-  color: var(--wa-muted);
-  font-size: 12px;
-}
-
-.continue-watching-progress {
-  display: block;
-  height: 5px;
-  margin-top: 12px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(199, 197, 189, 0.18);
-}
-
-.continue-watching-progress > span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--wa-green);
-}
-
-.continue-watching-action {
-  display: inline-flex;
-  align-items: center;
-  align-self: end;
-  gap: 7px;
-  margin-top: 12px;
-  color: var(--wa-paper-dim);
-  font-size: 13px;
-  font-weight: 720;
-}
-
-.continue-watching-card button:hover .continue-watching-action {
-  color: var(--wa-green);
-}
-
 .library-empty-state {
   display: grid;
   place-items: center;
@@ -1542,8 +1374,6 @@
 @media (forced-colors: active) {
   .library-home,
   .library-home-header,
-  .continue-watching,
-  .continue-watching-card button,
   .reactor-shelf,
   .library-card,
   .movie-poster-fallback {
@@ -1553,13 +1383,11 @@
   .library-mode-switch button[aria-pressed='true'],
   .library-layout-switch button[aria-pressed='true'],
   .library-sort-control button[aria-pressed='true'],
-  .continue-watching-progress > span,
   .library-card-progress span {
     background: Highlight;
   }
 
   .library-card-main:focus-visible,
-  .continue-watching-card button:focus-visible,
   .library-sort-control button:focus-visible,
   .library-card-menu-button:focus-visible {
     outline: 3px solid Highlight;

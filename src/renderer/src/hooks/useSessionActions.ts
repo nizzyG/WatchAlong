@@ -22,6 +22,15 @@ import type { SubtitlesHook } from './useSubtitles'
 import type { useAutoSync } from './useAutoSync'
 
 const VIEW_FADE_MS = 300
+const COMMAND_PANEL_FOCUSABLE_SELECTOR = [
+  '.command-panel button:not(:disabled)',
+  '.command-panel input:not(:disabled)',
+  '.command-panel select:not(:disabled)',
+  '.command-panel textarea:not(:disabled)',
+  '.command-panel summary',
+  '.command-panel a[href]',
+  '.command-panel [tabindex="0"]'
+].join(', ')
 
 interface UseSessionActionsOptions {
   playback: PlaybackHook
@@ -372,8 +381,8 @@ export function useSessionActions({
 
   const movePanelFocus = (delta: number): void => {
     const focusable = Array.from(document.querySelectorAll<HTMLElement>(
-      '.command-panel button:not(:disabled), .command-panel input:not(:disabled), .command-panel select:not(:disabled), .command-panel textarea:not(:disabled), .command-panel a[href], .command-panel [tabindex="0"]'
-    ))
+      COMMAND_PANEL_FOCUSABLE_SELECTOR
+    )).filter(isVisibleCommandPanelControl)
     if (focusable.length === 0) return
     const currentIndex = document.activeElement instanceof HTMLElement ? focusable.indexOf(document.activeElement) : -1
     const nextIndex = currentIndex === -1 ? 0 : (currentIndex + delta + focusable.length) % focusable.length
@@ -604,4 +613,12 @@ export function useSessionActions({
 
 function normalizeReactorDraft(value: string): string {
   return value.normalize('NFKC').toLocaleLowerCase()
+}
+
+function isVisibleCommandPanelControl(element: HTMLElement): boolean {
+  const closedDetails = element.closest<HTMLDetailsElement>('details:not([open])')
+  if (!closedDetails) return true
+  return element instanceof HTMLElement
+    && element.tagName === 'SUMMARY'
+    && element.parentElement === closedDetails
 }

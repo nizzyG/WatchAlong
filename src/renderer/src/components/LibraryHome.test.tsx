@@ -230,34 +230,6 @@ describe('LibraryHome', () => {
     })
   })
 
-  it('surfaces unfinished playback in Continue Watching and resumes it with one click', () => {
-    const resumable = session('alien', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia')
-    resumable.lastReactionTimeSeconds = 45
-    resumable.reactionDurationSeconds = 120
-    resumable.updatedAt = '2026-07-14T15:00:00.000Z'
-    const completed = session('done', 'Anchorman — VKnights', 'Anchorman.mkv', 'vknights - VKnights')
-    completed.lastReactionTimeSeconds = 119
-    completed.reactionDurationSeconds = 120
-    const untouched = session('new', 'Aliens — VKunia', 'Aliens.mkv', 'vkunia - VKunia')
-    untouched.lastReactionTimeSeconds = 0
-    const library: SessionLibrary = {
-      version: 5,
-      activeSessionId: resumable.id,
-      sessions: [untouched, completed, resumable]
-    }
-    const onOpenSession = vi.fn()
-
-    renderLibrary(onOpenSession, { library })
-
-    expect(screen.getByRole('heading', { name: 'Continue Watching' })).toBeInTheDocument()
-    expect(screen.getByText('0:45 of 2:00')).toBeInTheDocument()
-    expect(screen.getByRole('progressbar', { name: 'Alien: 38% watched' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Continue Anchorman/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Continue Aliens/ })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue Alien with VKunia' }))
-    expect(onOpenSession).toHaveBeenCalledWith('alien')
-  })
-
   it('provides a welcoming empty state for every organization view', () => {
     const onNew = vi.fn()
     const library: SessionLibrary = { version: 5, activeSessionId: null, sessions: [] }

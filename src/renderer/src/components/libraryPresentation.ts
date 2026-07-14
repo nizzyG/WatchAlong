@@ -163,22 +163,6 @@ export function groupSessionsByReactor(
   return groupSessions(sessions, deriveReactorIdentity, deriveMovieIdentity, sort)
 }
 
-export function continueWatchingSessions(sessions: LibrarySession[]): LibrarySession[] {
-  return sessions
-    .filter(isContinueWatchingCandidate)
-    .sort((left, right) => {
-      const activityDifference = safeTimestamp(right.updatedAt) - safeTimestamp(left.updatedAt)
-      return activityDifference || labelCollator.compare(pairingDisplayTitle(left), pairingDisplayTitle(right)) || left.id.localeCompare(right.id)
-    })
-}
-
-export function sessionProgressPercent(session: LibrarySession): number | null {
-  const duration = session.reactionDurationSeconds
-  const position = session.lastReactionTimeSeconds
-  if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0 || !Number.isFinite(position)) return null
-  return Math.min(100, Math.max(0, (position / duration) * 100))
-}
-
 export function humanizeMediaName(pathOrName: string): string {
   const baseName = pathOrName.split(/[\\/]/).at(-1) ?? pathOrName
   const withoutExtension = stripMediaExtension(baseName)
@@ -236,14 +220,6 @@ function compareSessions(
 
 function newestCreatedAt(group: LibraryGroup): number {
   return group.sessions.reduce((newest, session) => Math.max(newest, safeTimestamp(session.createdAt)), 0)
-}
-
-function isContinueWatchingCandidate(session: LibrarySession): boolean {
-  const position = session.lastReactionTimeSeconds
-  if (!session.moviePath || !session.reactionPath || !Number.isFinite(position) || position <= 0) return false
-
-  const progress = sessionProgressPercent(session)
-  return progress === null || progress < 95
 }
 
 function derivePatreonIdentity(reactionPath: string): LibraryIdentity | null {
