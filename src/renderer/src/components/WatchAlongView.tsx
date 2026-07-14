@@ -235,6 +235,7 @@ export function WatchAlongView({
         <LibraryHome
           library={library}
           view={preferences.libraryView}
+          onViewChange={(view) => void actions.updatePreference('libraryView', view)}
           onNew={() => void actions.openImportWizard({ mode: 'new' })}
           onOpenSession={(sessionId) => void actions.switchSession(sessionId)}
           onChoosePoster={actions.chooseMoviePoster}

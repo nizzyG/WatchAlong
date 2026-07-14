@@ -20,6 +20,7 @@ export function ReactorAvatar({
     setAttempt(0)
     return () => {
       if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = null
     }
   }, [session.id, session.updatedAt])
 
@@ -28,16 +29,17 @@ export function ReactorAvatar({
 
   const retryImage = (): void => {
     if (retryTimerRef.current !== null) return
+    setImageFailed(true)
     const retryDelays = [1_500, 4_000, 8_000]
     const delay = retryDelays[attempt]
     if (delay === undefined) {
-      setImageFailed(true)
       return
     }
 
     retryTimerRef.current = window.setTimeout(() => {
       retryTimerRef.current = null
       setAttempt((current) => current + 1)
+      setImageFailed(false)
     }, delay)
   }
 

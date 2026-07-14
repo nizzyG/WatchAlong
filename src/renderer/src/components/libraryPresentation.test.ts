@@ -154,6 +154,62 @@ describe('library presentation', () => {
     expect(humanizeMediaName('C:\\Movies\\A.Goofy_Movie.mkv')).toBe('A Goofy Movie')
     expect(humanizeMediaName('Reaction Title [AbC-123xyz].mp4')).toBe('Reaction Title')
   })
+
+  it('uses a matching organized movie folder as the cleaner display title', () => {
+    const organized = makeSession('organized', {
+      title: 'A Goofy Movie 1995 720p BluRay x264 — Reactor',
+      moviePath: 'C:\\Movies\\A Goofy Movie (1995)\\A.Goofy.Movie.1995.720p.BluRay.x264.mkv'
+    })
+    const collection = makeSession('collection', {
+      title: 'Alien — Reactor',
+      moviePath: 'C:\\Movies\\Sci-Fi Collection\\Alien.mkv'
+    })
+    const noisyFolder = makeSession('noisy-folder', {
+      title: 'A Goofy Movie — Reactor',
+      moviePath: 'C:\\Movies\\A Goofy Movie (1995) [BluRay] [720p] [YTS.AM]\\A.Goofy.Movie.1995.720p.BluRay.x264-[YTS.AM].mp4'
+    })
+    const parentheticalMetadata = makeSession('parenthetical-metadata', {
+      title: 'V for Vendetta — Reactor',
+      moviePath: 'C:\\Movies\\V for Vendetta (2005) (1080p BluRay x265 HEVC 10bit Tigole)\\V for Vendetta (2005) (1080p BluRay x265 10bit Tigole).mkv'
+    })
+
+    expect(deriveMovieIdentity(organized).label).toBe('A Goofy Movie (1995)')
+    expect(deriveMovieIdentity(collection).label).toBe('Alien')
+    expect(deriveMovieIdentity(noisyFolder).label).toBe('A Goofy Movie (1995)')
+    expect(deriveMovieIdentity(parentheticalMetadata).label).toBe('V for Vendetta (2005)')
+  })
+
+  it('does not mistake title prefixes or collection folders for the movie title', () => {
+    const titlePrefix = makeSession('title-prefix', {
+      title: 'Aliens — Reactor',
+      moviePath: 'C:\\Movies\\Alien\\Aliens.1986.1080p.mkv'
+    })
+    const sequelInCollection = makeSession('sequel-in-collection', {
+      title: 'Dune Part Two — Reactor',
+      moviePath: 'C:\\Movies\\Dune\\Dune.Part.Two.2024.2160p.mkv'
+    })
+
+    expect(deriveMovieIdentity(titlePrefix).label).toBe('Aliens')
+    expect(deriveMovieIdentity(sequelInCollection).label).toBe('Dune Part Two')
+  })
+
+  it('does not erase numeric sequel titles that extend a shorter folder name', () => {
+    const numericSequel = makeSession('numeric-sequel', {
+      title: 'Blade Runner 2049 — Reactor',
+      moviePath: 'C:\\Movies\\Blade Runner\\Blade.Runner.2049.2017.2160p.BluRay.mkv'
+    })
+
+    expect(deriveMovieIdentity(numericSequel).label).toBe('Blade Runner 2049')
+  })
+
+  it('removes release tags from a movie file when its parent is a broader collection', () => {
+    const episode = makeSession('episode', {
+      title: 'Custom session title',
+      moviePath: 'C:\\Movies\\Game.of.Thrones.S03.720p.BluRay.x264\\Game.of.Thrones.S03E06.720p.BluRay.450MB.Group.mkv'
+    })
+
+    expect(deriveMovieIdentity(episode).label).toBe('Game of Thrones S03E06')
+  })
 })
 
 function makeSession(id: string, patch: Partial<LibrarySession> = {}): LibrarySession {

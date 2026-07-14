@@ -306,6 +306,7 @@ describe('App', () => {
   let fullscreenTargets: Element[]
 
   beforeEach(() => {
+    window.localStorage.clear()
     playMock = vi.fn(async () => undefined)
     pauseMock = vi.fn()
     fullscreenTargets = []
@@ -376,6 +377,24 @@ describe('App', () => {
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
 
     await waitFor(() => expect(reaction.currentTime).toBe(37.5))
+  })
+
+  it('changes and persists the library layout from the library header', async () => {
+    const api = createApi()
+    window.watchAlong = api
+
+    render(<App />)
+
+    const library = await screen.findByLabelText('WatchAlong Library')
+    expect(library).toHaveClass('library-home-grid')
+
+    fireEvent.click(screen.getByRole('button', { name: 'List' }))
+    await waitFor(() => expect(api.setPreference).toHaveBeenCalledWith('libraryView', 'list'))
+    await waitFor(() => expect(library).toHaveClass('library-home-list'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Posters' }))
+    await waitFor(() => expect(api.setPreference).toHaveBeenLastCalledWith('libraryView', 'grid'))
+    await waitFor(() => expect(library).toHaveClass('library-home-grid'))
   })
 
   it('restores a previously saved reaction position when opening a session from the library', async () => {
@@ -1262,7 +1281,7 @@ describe('App', () => {
 
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
     fireEvent.click(screen.getAllByRole('button', { name: /More actions for/ })[0])
-    fireEvent.click(screen.getByRole('button', { name: /Rename/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Rename/i }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Renamed session' } })
     fireEvent.change(screen.getByLabelText(/Reactor \(optional\)/i), { target: { value: 'Cinema Therapy' } })
     fireEvent.click(screen.getByRole('button', { name: /^Save$/i }))
@@ -1272,7 +1291,7 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Cinema Therapy' })).toBeInTheDocument()
 
     fireEvent.click(screen.getAllByRole('button', { name: /More actions for/ })[0])
-    fireEvent.click(screen.getByRole('button', { name: /Delete/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Delete/i }))
     fireEvent.click(screen.getByRole('button', { name: /^Delete$/i }))
 
     await waitFor(() => expect(api.deleteSession).toHaveBeenCalledWith('s1'))
@@ -1287,12 +1306,12 @@ describe('App', () => {
 
     const actions = screen.getByRole('button', { name: /More actions for/ })
     fireEvent.click(actions)
-    fireEvent.click(screen.getByRole('button', { name: 'Choose poster…' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Choose poster…' }))
     await waitFor(() => expect(api.chooseMoviePoster).toHaveBeenCalledWith('s1'))
     expect(await screen.findByRole('status')).toHaveTextContent('Poster selected for this movie.')
 
     fireEvent.click(actions)
-    fireEvent.click(await screen.findByRole('button', { name: 'Use automatic poster' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Use automatic poster' }))
     await waitFor(() => expect(api.clearMoviePoster).toHaveBeenCalledWith('s1'))
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Automatic local poster restored.'))
   })
@@ -1306,7 +1325,7 @@ describe('App', () => {
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /More actions for/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Choose poster…' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Choose poster…' }))
     await waitFor(() => expect(api.chooseMoviePoster).toHaveBeenCalledWith('s1'))
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -1321,7 +1340,7 @@ describe('App', () => {
     render(<App />)
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /More actions for/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Choose poster…' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Choose poster…' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'WatchAlong couldn’t save that poster. Your current movie art is unchanged.'
@@ -1340,7 +1359,7 @@ describe('App', () => {
     render(<App />)
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /More actions for/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Use automatic poster' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Use automatic poster' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'WatchAlong couldn’t restore automatic poster art. Your current movie art is unchanged.'
@@ -1361,7 +1380,7 @@ describe('App', () => {
     render(<App />)
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /More actions for/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Rename/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Rename/i }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'My custom title' } })
     fireEvent.click(screen.getByRole('button', { name: /^Save$/i }))
 

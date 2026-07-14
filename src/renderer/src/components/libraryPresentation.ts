@@ -48,9 +48,10 @@ export function deriveMovieIdentity(session: LibrarySession): LibraryIdentity {
   if (session.moviePath) {
     const pathKey = normalizePath(session.moviePath)
     const generatedTitle = splitPairingTitle(session.title)
+    const organizedFolderTitle = movieFolderTitle(session.moviePath)
     return {
       key: `path:${pathKey}`,
-      label: generatedTitle?.movie ?? humanizeMediaName(session.moviePath),
+      label: organizedFolderTitle ?? generatedTitle?.movie ?? movieFileTitle(session.moviePath),
       known: true
     }
   }
@@ -250,6 +251,107 @@ function cleanLabel(value: string): string {
 
 function stripMediaExtension(value: string): string {
   return value.replace(/\.(?:mp4|m4v|mov|webm|mkv|avi|ogv|ogg)$/i, '')
+}
+
+function movieFolderTitle(moviePath: string): string | null {
+  const segments = moviePath.split(/[\\/]/).filter(Boolean)
+  const folderName = segments.at(-2)
+  if (!folderName) return null
+
+  const folderTitle = cleanMovieFolderTitle(folderName)
+  const fileTitle = humanizeMediaName(moviePath)
+  const folderKey = titleComparisonKey(folderTitle)
+  const fileKey = titleComparisonKey(fileTitle)
+  if (folderKey.length < 4 || (fileKey !== folderKey && !fileKey.startsWith(`${folderKey} `))) return null
+
+  const remainder = fileKey.slice(folderKey.length).trim()
+  if (remainder && !isReleaseMetadataSequence(remainder)) return null
+
+  return folderTitle
+}
+
+function movieFileTitle(moviePath: string): string {
+  const originalTitle = humanizeMediaName(moviePath)
+  const metadataStart = originalTitle.search(/[\s([_-](?:\d{3,4}p|4k|8k|uhd|hdr\d*|bluray|brrip|bdrip|web(?:\s|-)?dl|webrip|hdtv|dvd(?:rip)?|remux|x26[45]|h26[45]|hevc|av1|10bit)\b/i)
+  if (metadataStart < 0) return originalTitle
+
+  const cleanTitle = originalTitle
+    .slice(0, metadataStart)
+    .replace(/[\s([_{-]+$/u, '')
+    .replace(/\s((?:18|19|20)\d{2})$/u, ' ($1)')
+    .trim()
+  return cleanTitle || originalTitle
+}
+
+function isReleaseMetadataSequence(value: string): boolean {
+  const tokens = value.split(' ').filter(Boolean)
+  let releaseYearCount = 0
+  let sawNonYearMetadata = false
+  let sawReleaseGroup = false
+
+  return tokens.length > 0 && tokens.every((token) => {
+    if (/^\d{4}$/.test(token)) {
+      if (sawReleaseGroup || !isPlausibleReleaseYear(token)) return false
+      releaseYearCount += 1
+      return releaseYearCount === 1
+    }
+
+    if (isNonYearReleaseMetadataToken(token)) {
+      if (sawReleaseGroup) return false
+      sawNonYearMetadata = true
+      return true
+    }
+
+    if (!sawNonYearMetadata || !/^[\p{L}\p{N}-]{1,24}$/u.test(token)) return false
+    sawReleaseGroup = true
+    return true
+  })
+}
+
+function cleanMovieFolderTitle(folderName: string): string {
+  let title = humanizeMediaName(folderName)
+  const bracketSuffix = title.match(/((?:\s*\[[^\]]+\])+?)\s*$/u)
+  if (bracketSuffix?.index !== undefined) {
+    const groups = [...bracketSuffix[1].matchAll(/\[([^\]]+)\]/gu)].map((match) => cleanLabel(match[1]))
+    if (groups.some(containsNonYearReleaseMetadata)) {
+      const releaseYears = groups.filter(isPlausibleReleaseYear)
+      title = title.slice(0, bracketSuffix.index).trim()
+      if (releaseYears.length === 1 && !titleComparisonKey(title).endsWith(releaseYears[0])) {
+        title = `${title} (${releaseYears[0]})`
+      }
+    }
+  }
+
+  while (true) {
+    const trailingGroup = title.match(/\s*\(([^()]*)\)\s*$/u)
+    if (!trailingGroup?.index || !containsNonYearReleaseMetadata(trailingGroup[1])) break
+    title = title.slice(0, trailingGroup.index).trim()
+  }
+
+  return cleanLabel(title) || humanizeMediaName(folderName)
+}
+
+function containsNonYearReleaseMetadata(value: string): boolean {
+  return titleComparisonKey(value).split(' ').some(isNonYearReleaseMetadataToken)
+}
+
+function isNonYearReleaseMetadataToken(token: string): boolean {
+  return /^(?:\d{3,4}p|4k|8k|uhd|hdr\d*|dv|sdr|blu|bluray|brrip|bdrip|web|dl|webrip|hdtv|dvd|dvdrip|remux|rip|x26[45]|h26[45]|hevc|av1|10bit|proper|repack|aac\d*|ac3|eac3|ddp?\d*|dts|truehd|atmos)$/i.test(token)
+}
+
+function isPlausibleReleaseYear(value: string): boolean {
+  if (!/^\d{4}$/.test(value)) return false
+  const year = Number(value)
+  return year >= 1888 && year <= new Date().getUTCFullYear() + 1
+}
+
+function titleComparisonKey(value: string): string {
+  return value
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function safeTimestamp(value: string): number {

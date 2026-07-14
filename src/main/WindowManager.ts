@@ -103,7 +103,7 @@ export class WindowManager {
       height: 780,
       minWidth: 960,
       minHeight: 560,
-      backgroundColor: '#05070a',
+      backgroundColor: '#0c0b09',
       title: APP_NAME,
       webPreferences: secureRendererWebPreferences(join(__dirname, '../preload/index.js'))
     })
@@ -189,7 +189,7 @@ export class WindowManager {
       parent: this.mainWindow,
       modal: true,
       title: 'Choose Your Movie',
-      backgroundColor: '#05070a',
+      backgroundColor: '#0c0b09',
       webPreferences: secureRendererWebPreferences(join(__dirname, '../preload/index.js'))
     })
   
@@ -389,7 +389,7 @@ export class WindowManager {
       alwaysOnTop: true,
       show: false,
       title: refreshedSource.session.title,
-      backgroundColor: '#05070a',
+      backgroundColor: '#0c0b09',
       webPreferences: secureRendererWebPreferences(join(__dirname, '../preload/index.js'))
     })
     this.movieWindow = targetWindow

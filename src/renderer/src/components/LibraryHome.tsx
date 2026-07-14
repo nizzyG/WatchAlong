@@ -1,26 +1,29 @@
-import { Check, Clapperboard, Film, LayoutGrid, Library as LibraryIcon, Plus, TriangleAlert, UsersRound } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import {
+  Check,
+  Clapperboard,
+  Film,
+  Grid2X2,
+  LayoutGrid,
+  Library as LibraryIcon,
+  Plus,
+  Rows3,
+  TriangleAlert,
+  UsersRound
+} from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import type { LibraryViewPreference, SessionLibrary } from '@shared/types'
 import type { MoviePosterActionResult } from '../moviePosterActions'
-import { LibrarySessionCard } from './LibrarySessionCard'
-import { MoviePoster } from './MoviePoster'
-import { ReactorAvatar } from './ReactorAvatar'
-import {
-  deriveMovieIdentity,
-  deriveReactorIdentity,
-  groupSessionsByMovie,
-  groupSessionsByReactor,
-  pairingDisplayTitle,
-  sortPairings,
-  type LibraryGroup,
-  type LibraryMode
-} from './libraryPresentation'
+import { MovieLibraryView } from './MovieLibraryView'
+import { PairingLibraryView } from './PairingLibraryView'
+import { ReactorLibraryView } from './ReactorLibraryView'
+import { groupSessionsByMovie, type LibraryMode } from './libraryPresentation'
 
 export { LibrarySessionCard } from './LibrarySessionCard'
 
 interface LibraryHomeProps {
   library: SessionLibrary
   view: LibraryViewPreference
+  onViewChange(view: LibraryViewPreference): void
   onNew(): void
   onOpenSession(sessionId: string): void
   onChoosePoster(sessionId: string): Promise<MoviePosterActionResult>
@@ -32,6 +35,7 @@ interface LibraryHomeProps {
 export function LibraryHome({
   library,
   view,
+  onViewChange,
   onNew,
   onOpenSession,
   onChoosePoster,
@@ -42,7 +46,7 @@ export function LibraryHome({
   const hasSessions = library.sessions.length > 0
   const [mode, setMode] = useState<LibraryMode>(readSavedLibraryMode)
   const [posterNotice, setPosterNotice] = useState<PosterNotice | null>(null)
-  const sessions = sortPairings(library.sessions)
+  const movieCount = useMemo(() => groupSessionsByMovie(library.sessions).length, [library.sessions])
 
   const runPosterAction = async (
     action: () => Promise<MoviePosterActionResult>
@@ -81,18 +85,17 @@ export function LibraryHome({
 
   return (
     <section
-      className={`library-home library-home-${view} library-mode-${mode} ${posterNotice ? 'library-home-has-poster-notice' : ''}`}
+      className={`library-home library-home-${view} library-mode-${mode}`}
       aria-label="WatchAlong Library"
     >
       <header className="library-home-header">
         <div className="library-home-brand">
           <span className="library-home-mark" aria-hidden>
-            <Film size={18} />
+            <Film size={24} />
           </span>
           <div>
-            <p className="library-home-kicker">Your local film shelf</p>
             <h1>WatchAlong</h1>
-            <p className="library-home-deck">Your films. Their reactions. Kept on your drive.</p>
+            {hasSessions && <p>{librarySummary(movieCount, library.sessions.length)}</p>}
           </div>
         </div>
         {hasSessions && (
@@ -101,6 +104,10 @@ export function LibraryHome({
               <LibraryModeButton active={mode === 'pairings'} icon={<LayoutGrid size={16} />} label="Pairings" onClick={() => setMode('pairings')} />
               <LibraryModeButton active={mode === 'reactors'} icon={<UsersRound size={16} />} label="By Reactor" onClick={() => setMode('reactors')} />
               <LibraryModeButton active={mode === 'movies'} icon={<Clapperboard size={16} />} label="By Movie" onClick={() => setMode('movies')} />
+            </div>
+            <div className="library-layout-switch" role="group" aria-label="Library layout">
+              <LibraryModeButton active={view === 'grid'} icon={<Grid2X2 size={16} />} label="Posters" onClick={() => onViewChange('grid')} />
+              <LibraryModeButton active={view === 'list'} icon={<Rows3 size={17} />} label="List" onClick={() => onViewChange('list')} />
             </div>
             <button className="primary-button" type="button" onClick={onNew}>
               <Plus size={18} aria-hidden />
@@ -122,67 +129,57 @@ export function LibraryHome({
         </div>
       )}
 
-      {!hasSessions && (
-        <div className="library-empty-state">
-          <div className="library-empty-icon">
-            <LibraryIcon size={42} aria-hidden />
+      <div className="library-browser">
+        {!hasSessions && (
+          <div className="library-empty-state">
+            <div className="library-empty-icon">
+              <LibraryIcon size={42} aria-hidden />
+            </div>
+            <h2>Pair a film with a creator you support</h2>
+            <p>Choose your movie and reaction. WatchAlong keeps both files and every setting on this computer.</p>
+            <button className="primary-button" type="button" onClick={onNew}>
+              <Plus size={18} aria-hidden />
+              Make Your First Pairing
+            </button>
           </div>
-          <p className="library-empty-kicker">An empty shelf is a beginning.</p>
-          <h2>Pair a film with a creator you support</h2>
-          <p>Choose your movie and reaction. WatchAlong keeps both files and every setting on this computer.</p>
-          <button className="primary-button" type="button" onClick={onNew}>
-            <Plus size={18} aria-hidden />
-            Make Your First Pairing
-          </button>
-          <p className="library-ownership-line">No account. No telemetry. No rented library.</p>
-        </div>
-      )}
+        )}
 
-      {hasSessions && mode === 'pairings' && (
-        <div className="library-session-grid">
-          {sessions.map((session) => (
-            <LibrarySessionCard
-              key={session.id}
-              session={session}
-              compact={view === 'list'}
-              primaryLabel={pairingDisplayTitle(session)}
-              artwork="reactor"
-              reactorLabel={deriveReactorIdentity(session).label}
-              onOpen={() => onOpenSession(session.id)}
-              onChoosePoster={session.moviePath ? () => choosePoster(session.id) : undefined}
-              onClearPoster={session.moviePath ? () => clearPoster(session.id) : undefined}
-              onRename={() => onRename(session.id)}
-              onDelete={() => onDelete(session.id)}
-            />
-          ))}
-        </div>
-      )}
+        {hasSessions && mode === 'pairings' && (
+          <PairingLibraryView
+            sessions={library.sessions}
+            compact={view === 'list'}
+            onOpenSession={onOpenSession}
+            onChoosePoster={choosePoster}
+            onClearPoster={clearPoster}
+            onRename={onRename}
+            onDelete={onDelete}
+          />
+        )}
 
-      {hasSessions && mode === 'reactors' && (
-        <GroupedLibrary
-          groups={groupSessionsByReactor(library.sessions)}
-          kind="reactor"
-          compact={view === 'list'}
-          onOpenSession={onOpenSession}
-          onChoosePoster={choosePoster}
-          onClearPoster={clearPoster}
-          onRename={onRename}
-          onDelete={onDelete}
-        />
-      )}
+        {hasSessions && mode === 'reactors' && (
+          <ReactorLibraryView
+            sessions={library.sessions}
+            compact={view === 'list'}
+            onOpenSession={onOpenSession}
+            onChoosePoster={choosePoster}
+            onClearPoster={clearPoster}
+            onRename={onRename}
+            onDelete={onDelete}
+          />
+        )}
 
-      {hasSessions && mode === 'movies' && (
-        <GroupedLibrary
-          groups={groupSessionsByMovie(library.sessions)}
-          kind="movie"
-          compact={view === 'list'}
-          onOpenSession={onOpenSession}
-          onChoosePoster={choosePoster}
-          onClearPoster={clearPoster}
-          onRename={onRename}
-          onDelete={onDelete}
-        />
-      )}
+        {hasSessions && mode === 'movies' && (
+          <MovieLibraryView
+            sessions={library.sessions}
+            compact={view === 'list'}
+            onOpenSession={onOpenSession}
+            onChoosePoster={choosePoster}
+            onClearPoster={clearPoster}
+            onRename={onRename}
+            onDelete={onDelete}
+          />
+        )}
+      </div>
     </section>
   )
 }
@@ -206,74 +203,8 @@ function LibraryModeButton({
   )
 }
 
-function GroupedLibrary({
-  groups,
-  kind,
-  compact,
-  onOpenSession,
-  onChoosePoster,
-  onClearPoster,
-  onRename,
-  onDelete
-}: {
-  groups: LibraryGroup[]
-  kind: 'reactor' | 'movie'
-  compact: boolean
-  onOpenSession(sessionId: string): void
-  onChoosePoster(sessionId: string): void
-  onClearPoster(sessionId: string): void
-  onRename(sessionId: string): void
-  onDelete(sessionId: string): void
-}): JSX.Element {
-  return (
-    <div className="library-groups">
-      {groups.map((group, index) => {
-        const headingId = `library-${kind}-group-${index}`
-        const representative = group.sessions[0]
-        const posterRepresentative = group.sessions.find((session) => session.moviePosterPath) ?? representative
-        return (
-          <section className={`library-group library-group-${kind}`} aria-labelledby={headingId} key={group.key}>
-            <header className="library-group-header">
-              {kind === 'reactor'
-                ? <ReactorAvatar session={representative} label={group.label} size="group" />
-                : <MoviePoster session={posterRepresentative} title={group.label} size="group" />}
-              <div>
-                <p>{kind === 'reactor' ? 'Creator shelf' : 'Film shelf'}</p>
-                <h2 id={headingId}>{group.label}</h2>
-                <span>{pairingCount(group.sessions.length)}</span>
-              </div>
-            </header>
-            <div className="library-session-grid">
-              {group.sessions.map((session) => {
-                const reactor = deriveReactorIdentity(session)
-                const movie = deriveMovieIdentity(session)
-                return (
-                  <LibrarySessionCard
-                    key={session.id}
-                    session={session}
-                    compact={compact}
-                    primaryLabel={kind === 'reactor' ? movie.label : reactor.label}
-                    secondaryLabel={kind === 'reactor' ? reactor.label : movie.label}
-                    artwork={kind === 'movie' ? 'reactor' : 'movie'}
-                    reactorLabel={reactor.label}
-                    onOpen={() => onOpenSession(session.id)}
-                    onChoosePoster={session.moviePath ? () => onChoosePoster(session.id) : undefined}
-                    onClearPoster={session.moviePath ? () => onClearPoster(session.id) : undefined}
-                    onRename={() => onRename(session.id)}
-                    onDelete={() => onDelete(session.id)}
-                  />
-                )
-              })}
-            </div>
-          </section>
-        )
-      })}
-    </div>
-  )
-}
-
-function pairingCount(count: number): string {
-  return `${count} pairing${count === 1 ? '' : 's'}`
+function librarySummary(movieCount: number, pairingTotal: number): string {
+  return `${movieCount} ${movieCount === 1 ? 'movie' : 'movies'} · ${pairingTotal} ${pairingTotal === 1 ? 'pairing' : 'pairings'}`
 }
 
 interface PosterNotice {

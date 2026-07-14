@@ -4,6 +4,7 @@ import { App } from './App'
 import { MovieWindowApp } from './MovieWindowApp'
 import { WizardApp } from './WizardApp'
 import './styles.css'
+import './library.css'
 
 const view = new URLSearchParams(window.location.search).get('view')
 const Root = view === 'wizard' ? WizardApp : view === 'movie' ? MovieWindowApp : App
