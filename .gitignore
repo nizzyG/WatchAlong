@@ -36,3 +36,4 @@ docs/legal-rewrites-draft.md
 docs/release-note-template.md
 .obsidian/
 __pycache__/
+build/
