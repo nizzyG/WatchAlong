@@ -47,11 +47,8 @@
   --wa-success-ink: #dff8e8;
   --wa-wood-glow: rgba(222, 133, 59, 0.12);
   --wa-vignette: rgba(8, 2, 2, 0.52);
-  --wa-grain-light: rgba(255, 243, 219, 0.012);
-  --wa-grain-dark: rgba(31, 7, 5, 0.035);
-  --wa-wood-grain:
-    repeating-linear-gradient(88deg, transparent 0 17px, var(--wa-grain-light) 18px, transparent 20px 43px),
-    repeating-linear-gradient(92deg, transparent 0 47px, var(--wa-grain-dark) 49px, transparent 51px 96px);
+  --wa-wood-grain: url('./assets/wood-grain-mahogany.svg');
+  --wa-wood-figure: url('./assets/wood-figure-mahogany.svg');
   --wa-wood-sheen: linear-gradient(148deg, var(--wa-surface-highlight), transparent 38%, rgba(0, 0, 0, 0.08));
   color: var(--wa-paper);
   background: var(--wa-ink);
@@ -109,8 +106,8 @@
   --wa-success-ink: #315f45;
   --wa-wood-glow: rgba(255, 245, 215, 0.36);
   --wa-vignette: rgba(92, 59, 28, 0.2);
-  --wa-grain-light: rgba(255, 253, 239, 0.035);
-  --wa-grain-dark: rgba(103, 67, 31, 0.022);
+  --wa-wood-grain: url('./assets/wood-grain-oak.svg');
+  --wa-wood-figure: url('./assets/wood-figure-oak.svg');
   --wa-wood-sheen: linear-gradient(148deg, var(--wa-surface-highlight), transparent 40%, rgba(105, 67, 30, 0.035));
 }
 
@@ -3973,14 +3970,20 @@ body.wizard-body,
 }
 
 .app-shell {
-  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  background-image: var(--wa-wood-figure), var(--wa-wood-grain), var(--wa-wood-sheen);
+  background-position: center, 0 0, 0 0;
+  background-repeat: no-repeat, repeat, no-repeat;
+  background-size: cover, 960px 640px, auto;
 }
 
 .wizard-window,
 .onboarding-window {
   color: var(--wa-paper);
   background-color: var(--wa-ink);
-  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  background-image: var(--wa-wood-figure), var(--wa-wood-grain), var(--wa-wood-sheen);
+  background-position: center, 0 0, 0 0;
+  background-repeat: no-repeat, repeat, no-repeat;
+  background-size: cover, 960px 640px, auto;
   box-shadow: inset 0 0 0 1px var(--wa-shadow-inset);
 }
 
@@ -4247,8 +4250,12 @@ body.wizard-body,
   background-color: var(--wa-panel-glass-strong);
   background-image:
     radial-gradient(circle at 18% 2%, var(--wa-wood-glow), transparent 31%),
+    var(--wa-wood-figure),
     var(--wa-wood-grain),
     var(--wa-wood-sheen);
+  background-position: 0 0, center, 0 0, 0 0;
+  background-repeat: no-repeat, no-repeat, repeat, no-repeat;
+  background-size: auto, cover, 960px 640px, auto;
   box-shadow:
     -32px 0 80px var(--wa-shadow),
     inset 1px 0 0 var(--wa-surface-highlight);
@@ -4473,15 +4480,19 @@ body.wizard-body,
 }
 
 .cabinet-swatch-mahogany {
-  background:
-    repeating-linear-gradient(88deg, transparent 0 8px, rgba(255, 231, 201, 0.06) 9px, transparent 10px 18px),
+  background-image:
+    url('./assets/wood-grain-mahogany.svg'),
     linear-gradient(145deg, #54281f, #210e0d);
+  background-repeat: repeat, no-repeat;
+  background-size: 120px 80px, auto;
 }
 
 .cabinet-swatch-oak {
-  background:
-    repeating-linear-gradient(88deg, transparent 0 8px, rgba(103, 67, 31, 0.09) 9px, transparent 10px 18px),
+  background-image:
+    url('./assets/wood-grain-oak.svg'),
     linear-gradient(145deg, #f0ddb8, #c3a574);
+  background-repeat: repeat, no-repeat;
+  background-size: 120px 80px, auto;
 }
 
 @media (max-width: 380px) {

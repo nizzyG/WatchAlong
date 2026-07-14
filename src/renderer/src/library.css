@@ -1390,7 +1390,10 @@
 
 .library-home::before {
   opacity: 1;
-  background-image: var(--wa-wood-grain);
+  background-image: var(--wa-wood-figure), var(--wa-wood-grain);
+  background-position: center, 0 0;
+  background-repeat: no-repeat, repeat;
+  background-size: cover, 960px 640px;
   mix-blend-mode: normal;
 }
 
