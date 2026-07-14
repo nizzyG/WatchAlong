@@ -1,6 +1,8 @@
 # Disclaimer
 
-WatchAlong is a local media sync tool. I built it for a community of people who already pay their favorite reactors on Patreon and already own the movies they watch — the tool just removes the technical friction of keeping everything in sync. The advertised use-case respects everyone involved: creators get paid, movies stay owned, and nobody's data gets harvested.
+WatchAlong is a local media sync tool. I built it for a community of people who already pay their favorite reactors on Patreon and already own the movies they watch — the tool just removes the technical friction of keeping everything in sync. The use case respects everyone involved: creators get paid, movies stay owned, and nobody's data gets harvested.
+
+There are two ways to watch a movie today. You can rent access on a streaming service, where the movie stays until the license expires or the catalog rotates. Or you can own a copy — a DRM-free file on your drive that's yours. WatchAlong is built for people who chose ownership, and who also support the creators who make reaction content. The tool doesn't take a position on how you acquired your file. It takes a position on what it does with it: syncs it locally, with nothing leaving your machine unless you trigger it.
 
 That said, here's what you need to know.
 

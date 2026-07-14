@@ -91,115 +91,127 @@ Not in v1.0, however WatchAlong supports local files, Patreon posts, and YouTube
 
 ## Sync, Drift & Frame Rate
 
-### 16. I set the sync perfectly at the start, but by the end they're a few seconds apart. Why?
+### 16. How does automatic sync detection work?
 
-Almost certainly a frame-rate mismatch. Your movie file runs at one speed, the reactor's copy runs at another. Most streaming services and Blu-rays use 23.976 fps (a holdover from NTSC broadcast timing). PAL DVDs from Europe or Australia run at 25 fps — about 4% faster. Some newer streaming originals run at true 24.000 fps. Over a 2-hour movie, a 0.1% difference adds up to about 7 seconds of drift. A 4% difference is far more noticeable.
+After you load your movie and add a reaction, WatchAlong looks at the reaction video, finds the movie showing inside it, and matches several moments across the runtime. From those matches, it calculates two things at once: the sync point (where the reaction's clock starts relative to your movie) and the frame-rate drift (how fast the two clocks run away from each other). No countdown. No nudging. The app does the work and enters the player already synchronized.
 
-### 17. How do I fix frame-rate drift?
+This runs automatically after every new import. You can also re-run it any time from the Timing panel with the **Detect again** button.
 
-WatchAlong detects your movie's frame rate automatically using the bundled ffprobe tool. You just tell it what kind of source the reactor is watching from. Locate the "Timing" button near the bottom of the screen. Clicking that will bring up a dialog with three options:
+### 17. What happens when the app can't find the sync?
+
+Some pairings are harder than others. If the reactor's movie inset is too small, too obscured, or too heavily pixelated for the engine to match confidently, WatchAlong says so and steps aside. You fall back to the manual sync screen and line up the countdown yourself.
+
+The engine never applies a guess. When it isn't confident, it tells you, and you do it by hand. A sync tool that confidently lines you up wrong is worse than one that asks.
+
+### 18. How do I do a manual sync if auto-sync falls back?
+
+Both videos open paused in the Sync Setup screen. Play the reaction, listen for the reactor's countdown ("3... 2... 1... play!"), and click **Save Sync** at the exact moment the countdown ends. Use the `[` and `]` keys to nudge the offset by 0.1 seconds during the first minute. That's it — you never have to sync this pairing again.
+
+The [tutorial](tutorial.md) has screenshots of the full process.
+
+### 19. I set the sync perfectly at the start, but by the end they're a few seconds apart. Why?
+
+This is frame-rate drift, and it's the most common sync problem for full-length reactions. Your movie file runs at one speed, the reactor's copy runs at another. Most streaming services and Blu-rays use 23.976 fps (a holdover from NTSC broadcast timing). PAL DVDs from Europe or Australia run at 25 fps — about 4% faster. Some newer streaming originals run at true 24.000 fps. Over a 2-hour movie, a 0.1% difference adds up to about 7 seconds of drift. A 4% difference is far more noticeable.
+
+### 20. How does WatchAlong handle frame-rate drift?
+
+When auto-sync runs, it measures the drift directly from the two videos — no dropdown, no guessing what the reactor's source is. The measured correction is applied automatically.
+
+If you're doing a manual sync instead, you tell WatchAlong what kind of source the reactor is watching from. Locate the **Timing** button near the bottom of the screen. Clicking that will bring up a dialog with three options:
 
 | Option | When to use |
 | :--- | :--- |
-| **23.976 fps** *(most movies, Blu-ray, streaming)* | The reactor is watching on Netflix, Disney+, Amazon, Max, or a standard Blu-ray. This covers the vast majority of content. It's the default. |
-| **24.000 fps** *(select streaming originals)* | The reactor is watching specific newer originals — some Disney+ series (The Mandalorian, Loki), some Netflix originals. The exception, not the rule. |
+| **23.976 fps** *(most movies, Blu-ray, streaming)* | The reactor is watching on a standard streaming service or Blu-ray. This covers the vast majority of content. It's the default. |
+| **24.000 fps** *(select streaming originals)* | The reactor is watching specific newer originals — some Disney+ series, some Netflix originals. The exception, not the rule. |
 | **25.000 fps** *(PAL DVD, European broadcast)* | The reactor is watching a PAL DVD or broadcast from Europe, the UK, or Australia. |
 
-The computed correction appears below the dropdown. Set it once per session and you're done — WatchAlong handles the rest.
+Not sure which one? Leave it on the default and watch for 10-15 minutes. If the reaction creeps ahead or falls behind, try another option.
 
-Not sure which one? Leave it on the default (23.976 fps) and watch for 10-15 minutes. If the reaction creeps ahead or falls behind, try one of the other options — you shouldn't lose your sync point (and a few nudges with '[' and ']' will set you right again).
-
-### 18. I've heard reactors mention NTSC vs PAL. Same issue?
+### 21. I've heard reactors mention NTSC vs PAL. Same issue?
 
 Related. NTSC regions (North America, Japan) used ~24fps or ~30fps. PAL regions (Europe, Australia, much of Asia) used 25fps — about 4% faster. WatchAlong's rate correction handles any constant speed difference between sources.
 
-### 19. How do I do the initial sync?
-
-After loading your movie and downloading the reaction, both videos open paused in the Sync Setup screen. Play the reaction, listen for the reactor's countdown ("3... 2... 1... play!"), and click Save Sync at the exact moment the countdown ends. Use the `[` and `]` keys to nudge the offset by 0.1 seconds during the first minute. That's it — you never have to sync this pairing again.
-
-The [tutorial](tutorial.md#step-8-the-sync-setup-screen) has screenshots of the full process.
-
-### 20. Does sync hold if I pause and come back later?
+### 22. Does sync hold if I pause and come back later?
 
 Yes. After the initial sync, pausing stops both videos simultaneously. Resuming picks up from exactly the same point. Behind the scenes, WatchAlong continuously corrects for any accumulated timing differences — invisible to the viewer.
 
 ## Picture-in-Picture, Pop-Out & Interface
 
-### 21. How do I position the PiP?
+### 23. How do I position the PiP?
 
 Drag the overlay by its title bar. Resize from the lower-right corner. Release near a corner and it snaps there. Size and position are saved with your session.
 
-### 22. Can the PiP stay visible in fullscreen?
+### 24. Can the PiP stay visible in fullscreen?
 
 Yes. When the reaction video enters fullscreen, the movie PiP overlay stays on top where you positioned it.
 
-### 23. How does the pop-out movie window work?
+### 25. How does the pop-out movie window work?
 
 Click the pop-out icon in the PiP toolbar. The movie lifts out into its own window — drag it to a second monitor, resize independently, or fullscreen it. Pop it back in with the pop-in button or by closing the movie window. Sync stays frame-accurate across both windows.
 
-### 24. What's the Command Panel?
+### 26. What's the Command Panel?
 
 Press `Ctrl+Shift+P` (or click the gear icon) during playback. A translucent overlay slides in with: Now Playing, compact Library, active Downloads, Preferences, and Help. Navigate with arrow keys or click.
 
-### 25. I opened a session and got "file can't be found."
+### 27. I opened a session and got "file can't be found."
 
 The movie or reaction file was moved, renamed, or deleted since the session was created. WatchAlong shows which file is missing and offers a Locate button. Point it to the new location — you won't lose your sync offset.
 
 ## Privacy & Data
 
-### 26. What data does WatchAlong collect or send anywhere?
+### 28. What data does WatchAlong collect or send anywhere?
 
 None. No telemetry, no analytics, no crash reporter, no server. Your library, playback state, settings, and downloaded files stay on your device. The only network requests are ones you trigger: authenticating with Patreon, or downloading a reaction from YouTube or Patreon.
 
 For a full breakdown of what's stored and where, see [PRIVACY.md](PRIVACY.md).
 
-### 27. Where are sessions, settings, and downloads stored?
+### 29. Where are sessions, settings, and downloads stored?
 
 Sessions and preferences: JSON files in Electron's standard `userData` directory. Downloaded reactions: your system's Videos folder, in a `WatchAlong/Reactions` subfolder. You can change the download location from the Command Panel.
 
-### 28. If I uninstall, is anything left behind?
+### 30. If I uninstall, is anything left behind?
 
 Yes, intentionally. Sessions and downloaded reactions stay in the locations above — your library outlasts the app, like documents outlast a word processor. Delete the WatchAlong folders manually if you want to remove everything.
 
 ## Troubleshooting
 
-### 29. The app is stuck on a loading spinner.
+### 31. The app is stuck on a loading spinner.
 
 A rare startup issue from corrupted session or preference files. Restart the app — it should show a recovery screen with Retry and Open Library options.
 
-### 30. YouTube download failed.
+### 32. YouTube download failed.
 
 Common causes: age-restricted, region-blocked, or genuinely private (not unlisted). The error message in WatchAlong will say why.
 
-### 31. Downloaded Patreon reaction won't play or is corrupted.
+### 33. Downloaded Patreon reaction won't play or is corrupted.
 
 Some Patreon content uses DRM. The bundled patreon-dl tool skips DRM-protected files. Check if the reactor offers an alternative (private YouTube link, Google Drive).
 
-### 32. Why won't my movie file play?
+### 34. Why won't my movie file play?
 
 WatchAlong uses Chromium's media engine, which supports H.264, VP8, VP9, AV1 video and AAC, MP3, Opus, Vorbis audio. Files using H.265 (HEVC) or obscure MKV codecs may not play. Re-encoding through HandBrake to MP4 (H.264 + AAC) fixes it.
 
-### 33. The popped-out movie window stopped responding.
+### 35. The popped-out movie window stopped responding.
 
 WatchAlong detects unresponsive windows within a few seconds, closes the window, and returns the movie to the main window's PiP overlay. You can pop it back out whenever.
 
-### 34. macOS says WatchAlong can't be opened because it's from an unidentified developer.
+### 36. macOS says WatchAlong can't be opened because it's from an unidentified developer.
 
 This is normal for open-source apps that aren't notarized by Apple (notarization requires a paid Apple Developer account). Right-click the app and select Open. You only need to do this once.
 
 ## Community & Contributing
 
-### 35. How can I support WatchAlong?
+### 37. How can I support WatchAlong?
 
 It's free and open source. The best way to support it: support the reactors you love on Patreon.
 
 If you'd like to support the developer directly, you can [buy me a coffee on Ko-fi](https://ko-fi.com/watchalong).
 
-### 36. I found a bug or have an idea.
+### 38. I found a bug or have an idea.
 
 [Open an issue on GitHub](https://github.com/nizzyG/WatchAlong/issues). Describe what you were doing, what you expected, and what happened. Screenshots help.
 
-### 37. Will WatchAlong add support for other services or features?
+### 39. Will WatchAlong add support for other services or features?
 
 Bug fixes and quality-of-life improvements are the priority. Major features depend on community interest and available time. The roadmap lives on GitHub.
 

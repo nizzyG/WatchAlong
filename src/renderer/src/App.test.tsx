@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import type {
   AppPreferences,
+  AutoSyncCompleteCallback,
+  AutoSyncProgressCallback,
   LibrarySession,
   MovieWindowClosedEvent,
   MovieWindowLifecycleCallback,
@@ -38,6 +40,8 @@ function createApi(
   emitMovieWindowPopInRequest(): void
   emitMovieWindowClosed(event?: MovieWindowClosedEvent): void
   emitMainWindowCloseRequest(): void
+  emitAutoSyncProgress(event: Parameters<AutoSyncProgressCallback>[0]): void
+  emitAutoSyncComplete(event: Parameters<AutoSyncCompleteCallback>[0]): void
 } {
   let currentLibrary = library
   let currentPreferences = preferences
@@ -45,6 +49,8 @@ function createApi(
   let movieWindowPopInCallback: MovieWindowLifecycleCallback | null = null
   let movieWindowClosedCallback: MovieWindowLifecycleCallback | null = null
   let mainWindowCloseCallback: (() => void) | null = null
+  let autoSyncProgressCallback: AutoSyncProgressCallback | null = null
+  let autoSyncCompleteCallback: AutoSyncCompleteCallback | null = null
 
   const api = {
     openVideos: vi.fn(),
@@ -173,6 +179,16 @@ function createApi(
     startReactionDownload: vi.fn(async () => ({ jobId: 'job-1' })),
     cancelDownload: vi.fn(async () => undefined),
     onDownloadProgress: vi.fn(() => vi.fn()),
+    startSessionAutoSync: vi.fn(async () => ({ started: true })),
+    cancelSessionAutoSync: vi.fn(async () => undefined),
+    onAutoSyncProgress: vi.fn((callback: AutoSyncProgressCallback) => {
+      autoSyncProgressCallback = callback
+      return vi.fn()
+    }),
+    onAutoSyncComplete: vi.fn((callback: AutoSyncCompleteCallback) => {
+      autoSyncCompleteCallback = callback
+      return vi.fn()
+    }),
     openOnboardingWizard: vi.fn(async () => undefined),
     openImportWizard: vi.fn(async () => undefined),
     getImportWizardContext: vi.fn(async () => ({ mode: 'new' as const, sessionId: null, movie: null })),
@@ -200,12 +216,20 @@ function createApi(
     },
     emitMainWindowCloseRequest() {
       mainWindowCloseCallback?.()
+    },
+    emitAutoSyncProgress(event: Parameters<AutoSyncProgressCallback>[0]) {
+      autoSyncProgressCallback?.(event)
+    },
+    emitAutoSyncComplete(event: Parameters<AutoSyncCompleteCallback>[0]) {
+      autoSyncCompleteCallback?.(event)
     }
   }) as unknown as WatchAlongApi & {
     emitWizardLifecycle(event: Parameters<WizardLifecycleCallback>[0]): void
     emitMovieWindowPopInRequest(): void
     emitMovieWindowClosed(event?: MovieWindowClosedEvent): void
     emitMainWindowCloseRequest(): void
+    emitAutoSyncProgress(event: Parameters<AutoSyncProgressCallback>[0]): void
+    emitAutoSyncComplete(event: Parameters<AutoSyncCompleteCallback>[0]): void
   }
 }
 
@@ -561,6 +585,55 @@ describe('App', () => {
     expect(screen.queryByText(/Detected movie/i)).not.toBeInTheDocument()
   })
 
+  it('labels automatic timing plainly and can measure it again', async () => {
+    const session = createSession('s1', 'First', 0, {
+      timingOrigin: 'automatic',
+      autoSyncConfidence: 0.94,
+      autoSyncAnalyzedAt: '2026-07-13T12:00:00.000Z',
+      autoSyncAlgorithmVersion: 1,
+      detectedMovieFps: 24,
+      movieRateCorrection: 0.999
+    })
+    const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.click(screen.getByText('Timing'))
+    expect(screen.getByText('Automatically measured')).toBeInTheDocument()
+    expect(screen.getAllByText(/94% confidence/)).toHaveLength(2)
+
+    fireEvent.click(screen.getByRole('button', { name: /Find Sync Again/i }))
+    await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1'))
+    act(() => api.emitAutoSyncProgress({ sessionId: 's1', phase: 'scanning', percent: 45, message: 'Checking moments…' }))
+    expect(screen.getByRole('button', { name: /Checking moments/i })).toBeDisabled()
+    act(() => api.emitAutoSyncComplete({
+      sessionId: 's1', outcome: 'confident', message: 'Ready.', offsetSeconds: -20,
+      movieRateCorrection: 1, confidence: 0.96, anchorCount: 6
+    }))
+    await waitFor(() => expect(api.getLibrary).toHaveBeenCalledTimes(2))
+  })
+
+  it('does not open manual setup on a different session when a scan finishes', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.click(screen.getByText('Timing'))
+    fireEvent.click(screen.getByRole('button', { name: /Find Sync Again/i }))
+    await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1'))
+
+    await api.setActiveSession('s2')
+    act(() => api.emitAutoSyncComplete({
+      sessionId: 's1', outcome: 'partial', message: 'Please check the timing.',
+      offsetSeconds: -20, movieRateCorrection: 1, confidence: 0.62, anchorCount: 3
+    }))
+
+    await waitFor(() => expect(api.getLibrary).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText('Sync setup')).not.toBeInTheDocument()
+  })
+
   it('opens a popped-out movie with the selected playback multiplier', async () => {
     const session = createSession('s1', 'First', 0, { playbackRate: 1.5, movieRateCorrection: 1.001 })
     const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
@@ -613,7 +686,7 @@ describe('App', () => {
     await waitFor(() => expect(playMock.mock.calls.length).toBeGreaterThan(playCallsBeforeResume))
   })
 
-  it('refreshes media and enters sync setup after wizard completion without resuming playback', async () => {
+  it('refreshes media and enters sync setup when automatic sync needs review without resuming playback', async () => {
     const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
     window.watchAlong = api
 
@@ -626,7 +699,7 @@ describe('App', () => {
 
     act(() => api.emitWizardLifecycle({ type: 'opened' }))
     const playCallsBeforeCompletion = playMock.mock.calls.length
-    act(() => api.emitWizardLifecycle({ type: 'closed', outcome: 'completed' }))
+    act(() => api.emitWizardLifecycle({ type: 'closed', outcome: 'completed-needs-review' }))
 
     await waitFor(() => expect(api.getLibrary).toHaveBeenCalledTimes(2))
     expect(playMock.mock.calls.length).toBe(playCallsBeforeCompletion)
