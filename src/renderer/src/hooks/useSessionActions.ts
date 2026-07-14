@@ -10,6 +10,7 @@ import type {
 } from '@shared/types'
 import type { DownloadedReactionMetadata } from '../components/SmartReactionInput'
 import { buildSuggestedPairingTitle } from '../components/pairingTitle'
+import type { MoviePosterActionResult } from '../moviePosterActions'
 import { TimelineMapping } from '../sync/timeline'
 import type { VideoAdapter } from '../sync/SyncController'
 import type { DownloadsHook } from './useDownloads'
@@ -445,6 +446,28 @@ export function useSessionActions({
     await refreshMediaUrls(nextSession?.id ?? null)
   }
 
+  const chooseMoviePoster = async (sessionId: string): Promise<MoviePosterActionResult> => {
+    try {
+      const next = await window.watchAlong.chooseMoviePoster(sessionId)
+      if (!next) return { status: 'cancelled' }
+      commitLibrary(next)
+      return { status: 'chosen' }
+    } catch (error) {
+      console.error('Could not choose a movie poster.', error)
+      return { status: 'error', action: 'choose' }
+    }
+  }
+
+  const clearMoviePoster = async (sessionId: string): Promise<MoviePosterActionResult> => {
+    try {
+      commitLibrary(await window.watchAlong.clearMoviePoster(sessionId))
+      return { status: 'cleared' }
+    } catch (error) {
+      console.error('Could not restore automatic movie art.', error)
+      return { status: 'error', action: 'clear' }
+    }
+  }
+
   const requestRenameSession = (sessionId: string): void => {
     const current = library.sessions.find((item) => item.id === sessionId)
     setRenameTargetId(sessionId)
@@ -520,6 +543,8 @@ export function useSessionActions({
     openLocalReaction,
     handleDownloadedReaction,
     switchSession,
+    chooseMoviePoster,
+    clearMoviePoster,
     requestRenameSession,
     cancelRenameSession,
     confirmRenameSession,

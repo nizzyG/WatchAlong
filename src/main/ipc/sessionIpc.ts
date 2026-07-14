@@ -8,7 +8,7 @@ import { MediaPathGrantStore } from '../services/mediaPathGrants'
 import { readSubtitleFile } from '../services/subtitleFiles'
 import { SessionStore } from '../sessionStore'
 import { handleTrustedIpc } from './security'
-import { getMediaPath, getSenderWindow, selectSubtitle, selectVideo } from './utils'
+import { getMediaPath, getSenderWindow, selectMoviePoster, selectSubtitle, selectVideo } from './utils'
 
 const MAIN_RENDERER = ['main'] as const
 const APP_RENDERERS = ['main', 'wizard'] as const
@@ -65,6 +65,23 @@ export function registerSessionIpc(deps: {
   handleTrustedIpc(`${IPC_PREFIX}:delete-session`, MAIN_RENDERER, (_event, id: string) => sessionStore.deleteSession(id))
   handleTrustedIpc(`${IPC_PREFIX}:rename-session`, MAIN_RENDERER, (_event, id: string, title: string, reactorName?: string) =>
     sessionStore.renameSession(id, title, reactorName))
+  handleTrustedIpc(`${IPC_PREFIX}:choose-movie-poster`, MAIN_RENDERER, async (event, sessionId: unknown) => {
+    const session = isSafeSessionIdInput(sessionId) ? sessionStore.getSession(sessionId) : null
+    if (!session?.moviePath) return null
+
+    const parent = getSenderWindow(event, mainWindowGetter)
+    if (!parent) return null
+    const result = await selectMoviePoster(parent)
+    if (result.status === 'cancelled') return null
+    if (result.status === 'rejected') throw new Error(result.message)
+    return sessionStore.setMoviePosterPath(session.id, result.file.path)
+  })
+  handleTrustedIpc(`${IPC_PREFIX}:clear-movie-poster`, MAIN_RENDERER, (_event, sessionId: unknown) => {
+    const session = isSafeSessionIdInput(sessionId) ? sessionStore.getSession(sessionId) : null
+    return session?.moviePath
+      ? sessionStore.setMoviePosterPath(session.id, null)
+      : sessionStore.read()
+  })
 
   handleTrustedIpc(`${IPC_PREFIX}:get-media-url`, MAIN_RENDERER, (_event, role: MediaRole, sessionId: string) => {
     const session = sessionStore.getSession(sessionId)
@@ -116,6 +133,13 @@ export function registerSessionIpc(deps: {
     const path = sessionStore.getSession(sessionId)?.subtitlePath
     return path ? readSubtitleFile(path) : null
   })
+}
+
+function isSafeSessionIdInput(value: unknown): value is string {
+  return typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= 256 &&
+    !/[\\/\u0000-\u001f\u007f]/.test(value)
 }
 
 async function selectGrantedVideo(

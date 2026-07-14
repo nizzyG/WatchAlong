@@ -181,11 +181,11 @@ describe('WizardApp', () => {
     }))
     window.watchAlong.replaceSessionMedia = vi.fn(async () => ({
       status: 'conflict' as const,
-      library: { version: 4 as const, activeSessionId: 's1', sessions: [] },
+      library: { version: 5 as const, activeSessionId: 's1', sessions: [] },
       existingSessionId: 'existing'
     }))
     window.watchAlong.setActiveSession = vi.fn(async () => ({
-      version: 4 as const,
+      version: 5 as const,
       activeSessionId: 'existing',
       sessions: []
     }))
@@ -253,7 +253,7 @@ describe('WizardApp', () => {
     expect(window.watchAlong.finishOnboardingWizard).not.toHaveBeenCalled()
 
     await act(async () => {
-      finishSave?.({ version: 4, activeSessionId: 'session-1', sessions: [] })
+      finishSave?.({ version: 5, activeSessionId: 'session-1', sessions: [] })
     })
 
     await waitFor(() => expect(window.watchAlong.startSessionAutoSync).toHaveBeenCalledWith('session-1', 'initial'))
@@ -284,7 +284,7 @@ describe('WizardApp', () => {
     expect(window.watchAlong.startSessionAutoSync).not.toHaveBeenCalled()
 
     await act(async () => {
-      finishSave?.({ version: 4, activeSessionId: 'session-1', sessions: [] })
+      finishSave?.({ version: 5, activeSessionId: 'session-1', sessions: [] })
     })
     await waitFor(() => expect(window.watchAlong.finishOnboardingWizard).toHaveBeenCalledWith('completed-needs-review'))
     expect(window.watchAlong.startSessionAutoSync).not.toHaveBeenCalled()
@@ -305,18 +305,20 @@ function createApi(): WatchAlongApi {
     openVideos: vi.fn(),
     selectMovieFile: vi.fn(async () => firstMovie),
     selectReactionFile: vi.fn(async () => reaction),
+    chooseMoviePoster: vi.fn(async () => null),
+    clearMoviePoster: vi.fn(),
     createOrSwitchSessionFromPaths: vi.fn(async () => ({
-      version: 4 as const,
+      version: 5 as const,
       activeSessionId: 'session-1',
       sessions: []
     })),
     getLibrary: vi.fn(),
     getLibraryRecoveryStatus: vi.fn(async () => ({ available: false })),
     revealLibraryRecoveryFile: vi.fn(async () => false),
-    startFreshLibraryAfterRecovery: vi.fn(async () => ({ version: 4 as const, activeSessionId: null, sessions: [] })),
+    startFreshLibraryAfterRecovery: vi.fn(async () => ({ version: 5 as const, activeSessionId: null, sessions: [] })),
     saveActiveSession: vi.fn(),
     saveSessionPosition: vi.fn(async (sessionId: string, lastReactionTimeSeconds: number) => ({
-      version: 4 as const,
+      version: 5 as const,
       activeSessionId: sessionId,
       sessions: []
     })),
@@ -324,7 +326,7 @@ function createApi(): WatchAlongApi {
     replaceSessionMedia: vi.fn(async () => ({
       status: 'replaced' as const,
       library: {
-        version: 4 as const,
+        version: 5 as const,
         activeSessionId: 'session-1',
         sessions: []
       }

@@ -1,8 +1,10 @@
-import { Film, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import { ImagePlus, MoreHorizontal, Pencil, RotateCcw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import type { LibrarySession } from '@shared/types'
 import { ReactionSourceIcon, reactionSourceLabel } from './ReactionSource'
 import { fileName, formatRelativeTime } from './appFormat'
+import { deriveMovieIdentity } from './libraryPresentation'
+import { MoviePoster } from './MoviePoster'
 import { ReactorAvatar } from './ReactorAvatar'
 
 export function LibrarySessionCard({
@@ -13,6 +15,8 @@ export function LibrarySessionCard({
   artwork = 'movie',
   reactorLabel = 'Reactor not identified',
   onOpen,
+  onChoosePoster,
+  onClearPoster,
   onRename,
   onDelete
 }: {
@@ -23,14 +27,17 @@ export function LibrarySessionCard({
   artwork?: 'movie' | 'reactor'
   reactorLabel?: string
   onOpen(): void
+  onChoosePoster?(): void
+  onClearPoster?(): void
   onRename?(): void
   onDelete?(): void
 }): JSX.Element {
   const [actionsOpen, setActionsOpen] = useState(false)
   const duration = session.reactionDurationSeconds ?? 0
   const progress = duration > 0 ? Math.min(100, Math.max(0, (session.lastReactionTimeSeconds / duration) * 100)) : 0
-  const showActions = Boolean(onRename || onDelete)
+  const showActions = Boolean(onChoosePoster || onClearPoster || onRename || onDelete)
   const displayTitle = primaryLabel || session.title || fileName(session.moviePath ?? session.reactionPath ?? 'Untitled watchalong')
+  const movieTitle = deriveMovieIdentity(session).label
   const roundedProgress = Math.round(progress)
 
   return (
@@ -39,7 +46,7 @@ export function LibrarySessionCard({
         <span className="library-card-thumbnail" aria-hidden>
           {artwork === 'reactor'
             ? <ReactorAvatar session={session} label={reactorLabel} />
-            : <Film size={compact ? 24 : 38} />}
+            : <MoviePoster session={session} title={movieTitle} />}
         </span>
         <span className="library-card-copy">
           <strong>{displayTitle}</strong>
@@ -76,6 +83,30 @@ export function LibrarySessionCard({
                 }
               }}
             >
+              {onChoosePoster && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionsOpen(false)
+                    onChoosePoster()
+                  }}
+                >
+                  <ImagePlus size={14} aria-hidden />
+                  Choose poster…
+                </button>
+              )}
+              {session.moviePosterPath && onClearPoster && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionsOpen(false)
+                    onClearPoster()
+                  }}
+                >
+                  <RotateCcw size={14} aria-hidden />
+                  Use automatic poster
+                </button>
+              )}
               {onRename && (
                 <button
                   type="button"

@@ -37,6 +37,7 @@ export interface LibrarySession {
   reactionSource: ReactionSource
   reactionDurationSeconds: number | null
   moviePath: string | null
+  moviePosterPath: string | null
   subtitlePath: string | null
   offsetSeconds: number
   lastReactionTimeSeconds: number
@@ -63,7 +64,7 @@ export interface LibrarySession {
 export type SessionData = LibrarySession
 
 export interface SessionLibrary {
-  version: 4
+  version: 5
   activeSessionId: string | null
   sessions: LibrarySession[]
 }
@@ -371,6 +372,8 @@ export interface WatchAlongApi {
   setActiveSession(sessionId: string): Promise<SessionLibrary>
   deleteSession(sessionId: string): Promise<SessionLibrary>
   renameSession(sessionId: string, title: string, reactorName?: string): Promise<SessionLibrary>
+  chooseMoviePoster(sessionId: string): Promise<SessionLibrary | null>
+  clearMoviePoster(sessionId: string): Promise<SessionLibrary>
   openSubtitle(): Promise<SessionLibrary | null>
   clearSubtitle(): Promise<SessionLibrary>
   getSubtitleText(sessionId: string): Promise<string | null>

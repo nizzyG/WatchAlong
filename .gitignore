@@ -35,3 +35,4 @@ docs/reactor-outreach.md
 docs/legal-rewrites-draft.md
 docs/release-note-template.md
 .obsidian/
+__pycache__/

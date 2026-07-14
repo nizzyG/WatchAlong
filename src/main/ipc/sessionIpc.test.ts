@@ -8,6 +8,7 @@ import { MediaPathGrantStore } from '../services/mediaPathGrants'
 const ipcMocks = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
   selectVideo: vi.fn(),
+  selectMoviePoster: vi.fn(),
   showItemInFolder: vi.fn(),
   senderWindow: {}
 }))
@@ -28,6 +29,7 @@ vi.mock('./security', () => ({
 vi.mock('./utils', () => ({
   getMediaPath: vi.fn(() => null),
   getSenderWindow: vi.fn(() => ipcMocks.senderWindow),
+  selectMoviePoster: (...args: unknown[]) => ipcMocks.selectMoviePoster(...args),
   selectSubtitle: vi.fn(async () => null),
   selectVideo: (...args: unknown[]) => ipcMocks.selectVideo(...args)
 }))
@@ -38,6 +40,7 @@ describe('session media IPC capabilities', () => {
   let root: string
   let reactionPath: string
   let moviePath: string
+  let posterPath: string
   let arbitraryPath: string
   let boundPaths: Array<string | null>
   let sessionStore: ReturnType<typeof createSessionStore>
@@ -46,12 +49,14 @@ describe('session media IPC capabilities', () => {
   beforeEach(() => {
     ipcMocks.handlers.clear()
     ipcMocks.selectVideo.mockReset()
+    ipcMocks.selectMoviePoster.mockReset()
     ipcMocks.showItemInFolder.mockReset()
     root = mkdtempSync(join(tmpdir(), 'watchalong-session-ipc-'))
     reactionPath = join(root, 'reaction.mp4')
     moviePath = join(root, 'movie.mkv')
+    posterPath = join(root, 'poster.jpg')
     arbitraryPath = join(root, 'private.mp4')
-    for (const filePath of [reactionPath, moviePath, arbitraryPath]) {
+    for (const filePath of [reactionPath, moviePath, posterPath, arbitraryPath]) {
       writeFileSync(filePath, 'video')
     }
     boundPaths = []
@@ -143,6 +148,61 @@ describe('session media IPC capabilities', () => {
     )
   })
 
+  it('persists a picker-validated poster for the requested movie session', async () => {
+    sessionStore.getSession.mockReturnValue({ id: 'session-a', moviePath } as never)
+    ipcMocks.selectMoviePoster.mockResolvedValue({
+      status: 'selected',
+      file: { path: posterPath, name: 'poster.jpg' }
+    })
+    const choosePoster = getHandler(`${IPC_PREFIX}:choose-movie-poster`)
+
+    await expect(choosePoster({}, 'session-a')).resolves.toEqual({ ok: true })
+    expect(ipcMocks.selectMoviePoster).toHaveBeenCalledWith(ipcMocks.senderWindow)
+    expect(sessionStore.setMoviePosterPath).toHaveBeenCalledWith('session-a', posterPath)
+  })
+
+  it('does not mutate poster state when picking is cancelled or the session is invalid', async () => {
+    const choosePoster = getHandler(`${IPC_PREFIX}:choose-movie-poster`)
+    sessionStore.getSession.mockReturnValueOnce({ id: 'session-a', moviePath } as never)
+    ipcMocks.selectMoviePoster.mockResolvedValueOnce({ status: 'cancelled' })
+
+    await expect(choosePoster({}, 'session-a')).resolves.toBeNull()
+    await expect(choosePoster({}, 'missing-session')).resolves.toBeNull()
+    await expect(choosePoster({}, { id: 'session-a' })).resolves.toBeNull()
+    await expect(choosePoster({}, '')).resolves.toBeNull()
+    await expect(choosePoster({}, 'bad/session')).resolves.toBeNull()
+    await expect(choosePoster({}, 'x'.repeat(257))).resolves.toBeNull()
+    await expect(choosePoster({}, 'session\u0000id')).resolves.toBeNull()
+    expect(ipcMocks.selectMoviePoster).toHaveBeenCalledTimes(1)
+    expect(sessionStore.setMoviePosterPath).not.toHaveBeenCalled()
+  })
+
+  it('rejects a selected but unusable poster with an explainable error', async () => {
+    sessionStore.getSession.mockReturnValue({ id: 'session-a', moviePath } as never)
+    ipcMocks.selectMoviePoster.mockResolvedValue({
+      status: 'rejected',
+      reason: 'too-large',
+      message: 'That poster is larger than 64 MB. Choose a smaller image.'
+    })
+    const choosePoster = getHandler(`${IPC_PREFIX}:choose-movie-poster`)
+
+    await expect(choosePoster({}, 'session-a')).rejects.toThrow(/larger than 64 MB/)
+    expect(sessionStore.setMoviePosterPath).not.toHaveBeenCalled()
+  })
+
+  it('clears a manual poster only for a stored movie session', () => {
+    sessionStore.getSession
+      .mockReturnValueOnce({ id: 'session-a', moviePath } as never)
+      .mockReturnValueOnce(null)
+    const clearPoster = getHandler(`${IPC_PREFIX}:clear-movie-poster`)
+
+    expect(clearPoster({}, 'session-a')).toEqual({ ok: true })
+    expect(sessionStore.setMoviePosterPath).toHaveBeenCalledWith('session-a', null)
+    expect(clearPoster({}, 'missing-session')).toEqual({ version: 5, activeSessionId: null, sessions: [] })
+    expect(clearPoster({}, 'bad/session')).toEqual({ version: 5, activeSessionId: null, sessions: [] })
+    expect(sessionStore.setMoviePosterPath).toHaveBeenCalledTimes(1)
+  })
+
   it('does not return or grant unsupported files chosen through the picker', async () => {
     const textPath = join(root, 'notes.txt')
     writeFileSync(textPath, 'notes')
@@ -192,7 +252,7 @@ function getHandler(channel: string): (...args: unknown[]) => any {
 
 function createSessionStore() {
   return {
-    read: vi.fn(() => ({ version: 4, activeSessionId: null, sessions: [] })),
+    read: vi.fn(() => ({ version: 5, activeSessionId: null, sessions: [] })),
     updateActive: vi.fn(() => ({ ok: true })),
     updateSession: vi.fn(() => ({ ok: true })),
     saveSessionPosition: vi.fn(() => ({ ok: true })),
@@ -202,6 +262,7 @@ function createSessionStore() {
     setActiveSession: vi.fn(() => ({ ok: true })),
     deleteSession: vi.fn(() => ({ ok: true })),
     renameSession: vi.fn(() => ({ ok: true })),
+    setMoviePosterPath: vi.fn(() => ({ ok: true })),
     getSession: vi.fn(() => null),
     getActiveSession: vi.fn(() => null),
     getLatestRecoveryPath: vi.fn<() => string | null>(() => null),

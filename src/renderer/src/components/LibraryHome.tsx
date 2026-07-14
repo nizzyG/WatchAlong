@@ -1,7 +1,9 @@
-import { Clapperboard, Film, LayoutGrid, Library as LibraryIcon, Plus, UsersRound } from 'lucide-react'
+import { Check, Clapperboard, Film, LayoutGrid, Library as LibraryIcon, Plus, TriangleAlert, UsersRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { LibraryViewPreference, SessionLibrary } from '@shared/types'
+import type { MoviePosterActionResult } from '../moviePosterActions'
 import { LibrarySessionCard } from './LibrarySessionCard'
+import { MoviePoster } from './MoviePoster'
 import { ReactorAvatar } from './ReactorAvatar'
 import {
   deriveMovieIdentity,
@@ -21,14 +23,53 @@ interface LibraryHomeProps {
   view: LibraryViewPreference
   onNew(): void
   onOpenSession(sessionId: string): void
+  onChoosePoster(sessionId: string): Promise<MoviePosterActionResult>
+  onClearPoster(sessionId: string): Promise<MoviePosterActionResult>
   onRename(sessionId: string): void
   onDelete(sessionId: string): void
 }
 
-export function LibraryHome({ library, view, onNew, onOpenSession, onRename, onDelete }: LibraryHomeProps): JSX.Element {
+export function LibraryHome({
+  library,
+  view,
+  onNew,
+  onOpenSession,
+  onChoosePoster,
+  onClearPoster,
+  onRename,
+  onDelete
+}: LibraryHomeProps): JSX.Element {
   const hasSessions = library.sessions.length > 0
   const [mode, setMode] = useState<LibraryMode>(readSavedLibraryMode)
+  const [posterNotice, setPosterNotice] = useState<PosterNotice | null>(null)
   const sessions = sortPairings(library.sessions)
+
+  const runPosterAction = async (
+    action: () => Promise<MoviePosterActionResult>
+  ): Promise<void> => {
+    setPosterNotice(null)
+    try {
+      const result = await action()
+      const nextNotice = noticeForPosterResult(result)
+      if (nextNotice) setPosterNotice(nextNotice)
+    } catch {
+      // Action hooks normally convert IPC failures into a result. Keep this
+      // boundary defensive so a future implementation cannot leak a rejected
+      // library action into the renderer.
+      setPosterNotice({
+        kind: 'error',
+        message: 'WatchAlong couldn’t update that poster. Your current movie art is unchanged.'
+      })
+    }
+  }
+
+  const choosePoster = (sessionId: string): void => {
+    void runPosterAction(() => onChoosePoster(sessionId))
+  }
+
+  const clearPoster = (sessionId: string): void => {
+    void runPosterAction(() => onClearPoster(sessionId))
+  }
 
   useEffect(() => {
     try {
@@ -39,7 +80,10 @@ export function LibraryHome({ library, view, onNew, onOpenSession, onRename, onD
   }, [mode])
 
   return (
-    <section className={`library-home library-home-${view} library-mode-${mode}`} aria-label="WatchAlong Library">
+    <section
+      className={`library-home library-home-${view} library-mode-${mode} ${posterNotice ? 'library-home-has-poster-notice' : ''}`}
+      aria-label="WatchAlong Library"
+    >
       <header className="library-home-header">
         <div className="library-home-brand">
           <span className="library-home-mark" aria-hidden>
@@ -65,6 +109,18 @@ export function LibraryHome({ library, view, onNew, onOpenSession, onRename, onD
           </div>
         )}
       </header>
+
+      {posterNotice && (
+        <div
+          className={`library-poster-notice library-poster-notice-${posterNotice.kind}`}
+          role={posterNotice.kind === 'error' ? 'alert' : 'status'}
+        >
+          {posterNotice.kind === 'error'
+            ? <TriangleAlert size={16} aria-hidden />
+            : <Check size={16} aria-hidden />}
+          <span>{posterNotice.message}</span>
+        </div>
+      )}
 
       {!hasSessions && (
         <div className="library-empty-state">
@@ -93,6 +149,8 @@ export function LibraryHome({ library, view, onNew, onOpenSession, onRename, onD
               artwork="reactor"
               reactorLabel={deriveReactorIdentity(session).label}
               onOpen={() => onOpenSession(session.id)}
+              onChoosePoster={session.moviePath ? () => choosePoster(session.id) : undefined}
+              onClearPoster={session.moviePath ? () => clearPoster(session.id) : undefined}
               onRename={() => onRename(session.id)}
               onDelete={() => onDelete(session.id)}
             />
@@ -106,6 +164,8 @@ export function LibraryHome({ library, view, onNew, onOpenSession, onRename, onD
           kind="reactor"
           compact={view === 'list'}
           onOpenSession={onOpenSession}
+          onChoosePoster={choosePoster}
+          onClearPoster={clearPoster}
           onRename={onRename}
           onDelete={onDelete}
         />
@@ -117,6 +177,8 @@ export function LibraryHome({ library, view, onNew, onOpenSession, onRename, onD
           kind="movie"
           compact={view === 'list'}
           onOpenSession={onOpenSession}
+          onChoosePoster={choosePoster}
+          onClearPoster={clearPoster}
           onRename={onRename}
           onDelete={onDelete}
         />
@@ -149,6 +211,8 @@ function GroupedLibrary({
   kind,
   compact,
   onOpenSession,
+  onChoosePoster,
+  onClearPoster,
   onRename,
   onDelete
 }: {
@@ -156,6 +220,8 @@ function GroupedLibrary({
   kind: 'reactor' | 'movie'
   compact: boolean
   onOpenSession(sessionId: string): void
+  onChoosePoster(sessionId: string): void
+  onClearPoster(sessionId: string): void
   onRename(sessionId: string): void
   onDelete(sessionId: string): void
 }): JSX.Element {
@@ -164,12 +230,13 @@ function GroupedLibrary({
       {groups.map((group, index) => {
         const headingId = `library-${kind}-group-${index}`
         const representative = group.sessions[0]
+        const posterRepresentative = group.sessions.find((session) => session.moviePosterPath) ?? representative
         return (
-          <section className="library-group" aria-labelledby={headingId} key={group.key}>
+          <section className={`library-group library-group-${kind}`} aria-labelledby={headingId} key={group.key}>
             <header className="library-group-header">
               {kind === 'reactor'
                 ? <ReactorAvatar session={representative} label={group.label} size="group" />
-                : <span className="library-group-film-mark" aria-hidden><Film size={24} /></span>}
+                : <MoviePoster session={posterRepresentative} title={group.label} size="group" />}
               <div>
                 <p>{kind === 'reactor' ? 'Creator shelf' : 'Film shelf'}</p>
                 <h2 id={headingId}>{group.label}</h2>
@@ -190,6 +257,8 @@ function GroupedLibrary({
                     artwork={kind === 'movie' ? 'reactor' : 'movie'}
                     reactorLabel={reactor.label}
                     onOpen={() => onOpenSession(session.id)}
+                    onChoosePoster={session.moviePath ? () => onChoosePoster(session.id) : undefined}
+                    onClearPoster={session.moviePath ? () => onClearPoster(session.id) : undefined}
                     onRename={() => onRename(session.id)}
                     onDelete={() => onDelete(session.id)}
                   />
@@ -205,6 +274,26 @@ function GroupedLibrary({
 
 function pairingCount(count: number): string {
   return `${count} pairing${count === 1 ? '' : 's'}`
+}
+
+interface PosterNotice {
+  kind: 'success' | 'error'
+  message: string
+}
+
+function noticeForPosterResult(result: MoviePosterActionResult): PosterNotice | null {
+  switch (result.status) {
+    case 'chosen':
+      return { kind: 'success', message: 'Poster selected for this movie.' }
+    case 'cleared':
+      return { kind: 'success', message: 'Automatic local poster restored.' }
+    case 'error':
+      return result.action === 'choose'
+        ? { kind: 'error', message: 'WatchAlong couldn’t save that poster. Your current movie art is unchanged.' }
+        : { kind: 'error', message: 'WatchAlong couldn’t restore automatic poster art. Your current movie art is unchanged.' }
+    case 'cancelled':
+      return null
+  }
 }
 
 function readSavedLibraryMode(): LibraryMode {

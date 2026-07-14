@@ -1,11 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, posix, win32 } from 'node:path'
 import {
   createDefaultLibrary,
   createSessionFromMedia,
   createSessionFromPaths,
   findMatchingSession,
   getActiveSession,
+  mediaPathIdentity,
   normalizeLibrary,
   normalizeSession,
   sanitizeReactorName,
@@ -85,6 +86,19 @@ export class SessionStore {
           updatedAt: now.toISOString()
         })
       : existing
+    const createdSession = updatedExisting
+      ? null
+      : {
+          ...createSessionFromPaths(
+            reactionPath,
+            moviePath,
+            now,
+            reactionSource,
+            suggestedTitle,
+            reactorName
+          ),
+          moviePosterPath: findMoviePosterPath(library.sessions, moviePath)
+        }
     const next = updatedExisting
       ? {
           ...library,
@@ -94,14 +108,7 @@ export class SessionStore {
       : {
           ...library,
           activeSessionId: null,
-          sessions: [...library.sessions, createSessionFromPaths(
-            reactionPath,
-            moviePath,
-            now,
-            reactionSource,
-            suggestedTitle,
-            reactorName
-          )]
+          sessions: [...library.sessions, createdSession!]
         }
 
     if (!updatedExisting) {
@@ -124,7 +131,7 @@ export class SessionStore {
     const now = new Date()
 
     if (!active || (active.reactionPath && active.moviePath)) {
-      const draft = createSessionFromMedia(
+      const baseDraft = createSessionFromMedia(
         {
           [pathKey]: filePath,
           ...(role === 'reaction'
@@ -133,6 +140,9 @@ export class SessionStore {
         },
         now
       )
+      const draft = role === 'movie'
+        ? { ...baseDraft, moviePosterPath: findMoviePosterPath(library.sessions, filePath) }
+        : baseDraft
       return this.writeAndReturn({
         ...library,
         activeSessionId: draft.id,
@@ -145,7 +155,12 @@ export class SessionStore {
       [pathKey]: filePath,
       ...(role === 'reaction' ? { reactionSource } : {}),
       ...reactorIdentityAfterReactionChange(active, role, reactorName),
-      ...(role === 'movie' ? { detectedMovieFps: null } : {}),
+      ...(role === 'movie'
+        ? {
+            detectedMovieFps: null,
+            moviePosterPath: moviePosterPathAfterMovieChange(library.sessions, active, filePath)
+          }
+        : {}),
       ...resetAutoSyncMetadata,
       title: completedDraftTitle(active, role, suggestedTitle) ?? (
         role === 'movie' && active.titleOrigin === 'generated' ? basenameForTitle(filePath) : active.title
@@ -165,10 +180,20 @@ export class SessionStore {
       }
     }
 
+    const updatedSessions = library.sessions.map((session) => (session.id === active.id ? nextSession : session))
+    const sessions = role === 'movie' && nextSession.moviePosterPath
+      ? applyMoviePosterToPath(
+          updatedSessions,
+          nextSession.moviePath,
+          nextSession.moviePosterPath,
+          nextSession.updatedAt
+        )
+      : updatedSessions
+
     return this.writeAndReturn({
       ...library,
       activeSessionId: active.id,
-      sessions: library.sessions.map((session) => (session.id === active.id ? nextSession : session))
+      sessions
     })
   }
 
@@ -187,16 +212,20 @@ export class SessionStore {
     }
 
     const now = new Date()
+    const updatedAt = now.toISOString()
+    const nextMoviePosterPath = role === 'movie'
+      ? moviePosterPathAfterMovieChange(library.sessions, target, filePath)
+      : target.moviePosterPath
     const nextSession = normalizeSession({
       ...target,
       ...(role === 'movie'
-        ? { moviePath: filePath, detectedMovieFps: null }
+        ? { moviePath: filePath, moviePosterPath: nextMoviePosterPath, detectedMovieFps: null }
         : { reactionPath: filePath, reactionSource }),
       ...reactorIdentityAfterReactionChange(target, role, reactorName),
       title: completedDraftTitle(target, role, suggestedTitle) ?? target.title,
       ...resetAutoSyncMetadata,
       createdAt: target.createdAt,
-      updatedAt: now.toISOString()
+      updatedAt
     })
 
     if (nextSession.reactionPath && nextSession.moviePath) {
@@ -209,12 +238,22 @@ export class SessionStore {
       }
     }
 
+    const replacedSessions = library.sessions.map((session) => (session.id === sessionId ? nextSession : session))
+    const sessions = role === 'movie' && nextSession.moviePosterPath
+      ? applyMoviePosterToPath(
+          replacedSessions,
+          nextSession.moviePath,
+          nextSession.moviePosterPath,
+          updatedAt
+        )
+      : replacedSessions
+
     return {
       status: 'replaced',
       library: this.writeAndReturn({
         ...library,
         activeSessionId: sessionId,
-        sessions: library.sessions.map((session) => (session.id === sessionId ? nextSession : session))
+        sessions
       })
     }
   }
@@ -296,6 +335,29 @@ export class SessionStore {
               : session.movieWindowGeometry,
             createdAt: session.createdAt,
             updatedAt: now.toISOString()
+          })
+        : session
+    )
+
+    return this.writeAndReturn({ ...library, sessions })
+  }
+
+  setMoviePosterPath(sessionId: string, moviePosterPath: string | null): SessionLibrary {
+    const library = this.read()
+    const target = library.sessions.find((session) => session.id === sessionId)
+    const targetMovieIdentity = mediaPathIdentity(target?.moviePath ?? null)
+    if (!target || !targetMovieIdentity) {
+      return library
+    }
+
+    const updatedAt = new Date().toISOString()
+    const sessions = library.sessions.map((session) =>
+      mediaPathIdentity(session.moviePath) === targetMovieIdentity
+        ? normalizeSession({
+            ...session,
+            moviePosterPath,
+            createdAt: session.createdAt,
+            updatedAt
           })
         : session
     )
@@ -516,7 +578,11 @@ function isDirectSessionShape(value: unknown): value is Record<string, unknown> 
 
 function isPersistedSessionShape(value: unknown): boolean {
   if (!isRecord(value)) return false
-  if (!isNullableStringProperty(value, 'reactionPath') || !isNullableStringProperty(value, 'moviePath')) {
+  if (
+    !isNullableStringProperty(value, 'reactionPath') ||
+    !isNullableStringProperty(value, 'moviePath') ||
+    !isNullableStringProperty(value, 'moviePosterPath')
+  ) {
     return false
   }
   return (typeof value.id === 'string' && value.id.length > 0) ||
@@ -564,6 +630,68 @@ function isManualTimingPatch(patch: Partial<LibrarySession>): boolean {
 
 function basenameForTitle(filePath: string): string {
   return filePath.split(/[\\/]/).at(-1) ?? filePath
+}
+
+function findMoviePosterPath(
+  sessions: readonly LibrarySession[],
+  moviePath: string | null
+): string | null {
+  const movieIdentity = mediaPathIdentity(moviePath)
+  if (!movieIdentity) return null
+
+  return sessions.find((session) =>
+    mediaPathIdentity(session.moviePath) === movieIdentity && session.moviePosterPath
+  )?.moviePosterPath ?? null
+}
+
+function moviePosterPathAfterMovieChange(
+  sessions: readonly LibrarySession[],
+  session: LibrarySession,
+  nextMoviePath: string
+): string | null {
+  const destinationPoster = findMoviePosterPath(sessions, nextMoviePath)
+  if (destinationPoster) return destinationPoster
+
+  // Movie replacement is currently the missing-file relocation workflow. An
+  // identical platform-aware leaf name is the strongest evidence available
+  // locally that the user found the same file in a new directory. A different
+  // name may be another movie, so carrying its old art would be misleading.
+  const currentFileName = movieFileNameIdentity(session.moviePath)
+  return session.moviePosterPath && currentFileName !== null && currentFileName === movieFileNameIdentity(nextMoviePath)
+    ? session.moviePosterPath
+    : null
+}
+
+function movieFileNameIdentity(filePath: string | null): string | null {
+  const pathIdentity = mediaPathIdentity(filePath)
+  if (!filePath || !pathIdentity) return null
+
+  const isWindowsPath = pathIdentity.startsWith('win:')
+  const fileName = (isWindowsPath ? win32 : posix).basename(filePath)
+  if (!fileName || fileName === '.' || fileName === '..') return null
+
+  return `${isWindowsPath ? 'win' : 'posix'}:${isWindowsPath ? fileName.toLowerCase() : fileName}`
+}
+
+function applyMoviePosterToPath(
+  sessions: readonly LibrarySession[],
+  moviePath: string | null,
+  moviePosterPath: string,
+  updatedAt: string
+): LibrarySession[] {
+  const movieIdentity = mediaPathIdentity(moviePath)
+  if (!movieIdentity) return [...sessions]
+
+  return sessions.map((session) =>
+    mediaPathIdentity(session.moviePath) === movieIdentity && session.moviePosterPath !== moviePosterPath
+      ? normalizeSession({
+          ...session,
+          moviePosterPath,
+          createdAt: session.createdAt,
+          updatedAt
+        })
+      : session
+  )
 }
 
 function completedDraftTitle(

@@ -671,7 +671,8 @@ export function useWatchAlongController({
     openStartupLibrary, startWelcomeImport, locateMissingMedia, updatePreference,
     chooseDownloadDirectory, forgetPatreonSession, useManualSyncDuringRollIn,
     attachDownloadedReaction, closeCommandPanel, toggleCommandPanel, movePanelFocus,
-    openLocalReaction, handleDownloadedReaction, switchSession, requestRenameSession,
+    openLocalReaction, handleDownloadedReaction, switchSession, chooseMoviePoster, clearMoviePoster,
+    requestRenameSession,
     cancelRenameSession, confirmRenameSession, requestDeleteSession, cancelDeleteSession,
     confirmDeleteSession, openSubtitle, clearSubtitle
   } = useSessionActions({
@@ -703,7 +704,8 @@ export function useWatchAlongController({
 
   const actions: WatchAlongViewActions = {
     loadInitialState, revealLibraryRecoveryFile, startFreshLibraryAfterRecovery,
-    openStartupLibrary, openImportWizard, switchSession, requestRenameSession,
+    openStartupLibrary, openImportWizard, switchSession, chooseMoviePoster, clearMoviePoster,
+    requestRenameSession,
     requestDeleteSession, openLocalReaction, handleDownloadedReaction, navigateToLibrary,
     locateMissingMedia, updateOverlay, commitOverlay, persist, popOutMovie, popInMovie,
     handleMetadata, handleTimeUpdate, handleVideoError, cancelSyncSetup, saveSyncSetup,

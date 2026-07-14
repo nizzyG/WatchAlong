@@ -348,7 +348,7 @@ input:disabled {
   top: 38px;
   right: 0;
   display: grid;
-  min-width: 132px;
+  min-width: 180px;
   padding: 6px;
   border: 1px solid rgba(207, 224, 239, 0.16);
   border-radius: 8px;
@@ -2809,6 +2809,46 @@ summary:focus-visible,
   border-top: 5px solid var(--wa-green);
 }
 
+.library-home-has-poster-notice {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  row-gap: 12px;
+}
+
+.library-poster-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid var(--wa-rule);
+  border-radius: 2px;
+  color: var(--wa-paper);
+  background: var(--wa-panel);
+  box-shadow: 2px 2px 0 rgba(8, 7, 5, 0.48);
+  font-size: 13px;
+}
+
+.library-poster-notice svg {
+  flex: 0 0 auto;
+}
+
+.library-poster-notice-success {
+  border-color: var(--wa-green-dark);
+}
+
+.library-poster-notice-success svg {
+  color: var(--wa-green);
+}
+
+.library-poster-notice-error {
+  border-color: #78483e;
+  background: #3c211d;
+}
+
+.library-poster-notice-error svg {
+  color: #f4d4cb;
+}
+
 .library-home::after {
   position: absolute;
   right: 16px;
@@ -2963,6 +3003,75 @@ summary:focus-visible,
   border-bottom: 1px solid var(--wa-rule-soft);
 }
 
+.movie-poster {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  aspect-ratio: 2 / 3;
+  border: 1px solid var(--wa-brass);
+  border-radius: 1px;
+  color: var(--wa-paper);
+  background: var(--wa-ink-deep);
+  box-shadow: 3px 3px 0 rgba(8, 7, 5, 0.62);
+}
+
+.movie-poster-card {
+  width: 72px;
+}
+
+.movie-poster-group {
+  width: 94px;
+  box-shadow: 4px 4px 0 #51432d;
+}
+
+.movie-poster-fallback,
+.movie-poster img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.movie-poster-fallback {
+  display: grid;
+  place-items: center;
+  padding: 10px 8px;
+  background:
+    linear-gradient(155deg, rgba(142, 226, 177, 0.12), transparent 48%),
+    linear-gradient(20deg, rgba(198, 164, 98, 0.11), transparent 55%),
+    #30291f;
+}
+
+.movie-poster-title {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--wa-paper);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.18;
+  text-align: center;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+}
+
+.movie-poster-group .movie-poster-fallback {
+  padding: 13px 10px;
+}
+
+.movie-poster-group .movie-poster-title {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.movie-poster img {
+  z-index: 2;
+  object-fit: cover;
+}
+
 .library-card-thumbnail::before,
 .library-card-thumbnail::after {
   position: absolute;
@@ -3065,6 +3174,19 @@ summary:focus-visible,
   width: 42px;
   height: 42px;
   border-width: 2px;
+}
+
+.library-card-compact .movie-poster-card {
+  width: 34px;
+}
+
+.library-card-compact .movie-poster-card .movie-poster-fallback {
+  padding: 5px 3px;
+}
+
+.library-card-compact .movie-poster-card .movie-poster-title {
+  font-size: 7px;
+  -webkit-line-clamp: 5;
 }
 
 .reactor-avatar {
@@ -3173,13 +3295,17 @@ summary:focus-visible,
   background: var(--wa-panel);
 }
 
+.library-group-movie .library-group-header {
+  min-height: 166px;
+}
+
 .library-group-header > div {
   min-width: 0;
 }
 
 .library-group-header p,
 .library-group-header h2,
-.library-group-header span {
+.library-group-header > div > span {
   margin: 0;
 }
 
@@ -3191,21 +3317,9 @@ summary:focus-visible,
   white-space: nowrap;
 }
 
-.library-group-header span {
+.library-group-header > div > span {
   color: var(--wa-muted);
   font-size: 12px;
-}
-
-.library-group-film-mark {
-  display: grid;
-  flex: 0 0 66px;
-  place-items: center;
-  width: 66px;
-  height: 66px;
-  border: 1px solid var(--wa-brass);
-  color: var(--wa-brass);
-  background: var(--wa-ink-deep);
-  box-shadow: 3px 3px 0 #51432d;
 }
 
 .library-group .library-session-grid {
@@ -3704,6 +3818,14 @@ summary:focus-visible,
 
   .library-mode-switch button {
     padding: 0 9px;
+  }
+
+  .movie-poster-group {
+    width: 82px;
+  }
+
+  .library-group-movie .library-group-header {
+    min-height: 148px;
   }
 }
 

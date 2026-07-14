@@ -39,6 +39,7 @@ import type { PlaybackHook } from '../hooks/usePlayback'
 import type { SessionHook } from '../hooks/useSession'
 import type { useAutoSync } from '../hooks/useAutoSync'
 import { manualMovieSourceRates, playbackRates, reactorSourceOptions } from '../hooks/playerTiming'
+import type { MoviePosterActionResult } from '../moviePosterActions'
 
 const MOVIE_WINDOW_UNRESPONSIVE_MESSAGE =
   'The movie window stopped responding. It has been moved back to the main window. You can pop it out again from the PiP toolbar.'
@@ -50,6 +51,8 @@ export interface WatchAlongViewActions {
   openStartupLibrary: () => Promise<void>
   openImportWizard: (options?: ImportWizardLaunchOptions) => Promise<void>
   switchSession: (sessionId: string) => Promise<void>
+  chooseMoviePoster: (sessionId: string) => Promise<MoviePosterActionResult>
+  clearMoviePoster: (sessionId: string) => Promise<MoviePosterActionResult>
   requestRenameSession: (sessionId: string) => void
   requestDeleteSession: (sessionId: string, returnToLibrary?: boolean) => void
   openLocalReaction: () => Promise<void>
@@ -234,6 +237,8 @@ export function WatchAlongView({
           view={preferences.libraryView}
           onNew={() => void actions.openImportWizard({ mode: 'new' })}
           onOpenSession={(sessionId) => void actions.switchSession(sessionId)}
+          onChoosePoster={actions.chooseMoviePoster}
+          onClearPoster={actions.clearMoviePoster}
           onRename={actions.requestRenameSession}
           onDelete={(sessionId) => actions.requestDeleteSession(sessionId)}
         />

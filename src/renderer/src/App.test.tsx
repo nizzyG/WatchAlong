@@ -22,7 +22,7 @@ const secondSession = createSession('s2', 'Second', 20)
 
 function createLibrary(activeSessionId: string | null = 's1', sessions: LibrarySession[] = [firstSession, secondSession]): SessionLibrary {
   return {
-    version: 4,
+    version: 5,
     activeSessionId,
     sessions
   }
@@ -166,6 +166,29 @@ function createApi(
           ? { ...session, title, reactorName: reactorName?.trim() || null, reactorNameOrigin: 'custom' as const }
           : session))
       }
+      return currentLibrary
+    }),
+    chooseMoviePoster: vi.fn(async (sessionId: string) => {
+      const target = currentLibrary.sessions.find((session) => session.id === sessionId)
+      if (!target?.moviePath) return null
+      currentLibrary = {
+        ...currentLibrary,
+        sessions: currentLibrary.sessions.map((session) => session.moviePath === target.moviePath
+          ? { ...session, moviePosterPath: 'C:\\Posters\\chosen.jpg', updatedAt: '2026-07-14T18:00:00.000Z' }
+          : session)
+      }
+      return currentLibrary
+    }),
+    clearMoviePoster: vi.fn(async (sessionId: string) => {
+      const target = currentLibrary.sessions.find((session) => session.id === sessionId)
+      currentLibrary = target?.moviePath
+        ? {
+            ...currentLibrary,
+            sessions: currentLibrary.sessions.map((session) => session.moviePath === target.moviePath
+              ? { ...session, moviePosterPath: null, updatedAt: '2026-07-14T18:01:00.000Z' }
+              : session)
+          }
+        : currentLibrary
       return currentLibrary
     }),
     openSubtitle: vi.fn(),
@@ -1255,6 +1278,77 @@ describe('App', () => {
     await waitFor(() => expect(api.deleteSession).toHaveBeenCalledWith('s1'))
   })
 
+  it('chooses and clears a local movie poster from a library card', async () => {
+    const api = createApi(createLibrary('s1', [firstSession]))
+    window.watchAlong = api
+
+    render(<App />)
+    expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
+
+    const actions = screen.getByRole('button', { name: /More actions for/ })
+    fireEvent.click(actions)
+    fireEvent.click(screen.getByRole('button', { name: 'Choose poster…' }))
+    await waitFor(() => expect(api.chooseMoviePoster).toHaveBeenCalledWith('s1'))
+    expect(await screen.findByRole('status')).toHaveTextContent('Poster selected for this movie.')
+
+    fireEvent.click(actions)
+    fireEvent.click(await screen.findByRole('button', { name: 'Use automatic poster' }))
+    await waitFor(() => expect(api.clearMoviePoster).toHaveBeenCalledWith('s1'))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Automatic local poster restored.'))
+  })
+
+  it('keeps a cancelled movie poster picker quiet', async () => {
+    const api = createApi(createLibrary('s1', [firstSession]))
+    api.chooseMoviePoster = vi.fn(async () => null)
+    window.watchAlong = api
+
+    render(<App />)
+    expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /More actions for/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Choose poster…' }))
+    await waitFor(() => expect(api.chooseMoviePoster).toHaveBeenCalledWith('s1'))
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('shows a library alert when choosing a movie poster fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const api = createApi(createLibrary('s1', [firstSession]))
+    api.chooseMoviePoster = vi.fn(async () => { throw new Error('disk unavailable') })
+    window.watchAlong = api
+
+    render(<App />)
+    expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /More actions for/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Choose poster…' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'WatchAlong couldn’t save that poster. Your current movie art is unchanged.'
+    )
+    expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+
+  it('shows a library alert when restoring automatic poster art fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const manualSession = createSession('s1', 'First', 0, { moviePosterPath: 'C:\\Posters\\chosen.jpg' })
+    const api = createApi(createLibrary('s1', [manualSession]))
+    api.clearMoviePoster = vi.fn(async () => { throw new Error('disk unavailable') })
+    window.watchAlong = api
+
+    render(<App />)
+    expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /More actions for/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use automatic poster' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'WatchAlong couldn’t restore automatic poster art. Your current movie art is unchanged.'
+    )
+    expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+
   it('submits an unchanged downloaded reactor name during a title-only rename', async () => {
     const session = createSession('s1', 'Movie — Downloaded Name', 0, {
       titleOrigin: 'generated',
@@ -1328,6 +1422,7 @@ function createSession(
     reactionSource: 'local',
     reactionDurationSeconds: 120,
     moviePath: `C:\\Videos\\${id}-movie.mp4`,
+    moviePosterPath: null,
     subtitlePath: null,
     offsetSeconds: 0,
     lastReactionTimeSeconds,

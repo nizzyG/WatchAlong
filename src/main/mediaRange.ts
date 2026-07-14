@@ -10,7 +10,8 @@ export interface ByteRange {
 export function createMediaResponse(
   filePath: string,
   rangeHeader: string | null,
-  maxBytes?: number
+  maxBytes?: number,
+  cacheControl?: string
 ): Response {
   const descriptor = openSync(filePath, constants.O_RDONLY | constants.O_NONBLOCK)
   let streamOwnsDescriptor = false
@@ -24,7 +25,8 @@ export function createMediaResponse(
     const baseHeaders = {
       'Accept-Ranges': 'bytes',
       'Content-Type': contentType,
-      'X-Content-Type-Options': 'nosniff'
+      'X-Content-Type-Options': 'nosniff',
+      ...(cacheControl ? { 'Cache-Control': cacheControl } : {})
     }
 
     if (maxBytes !== undefined && fileSize > maxBytes) {

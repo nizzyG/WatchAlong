@@ -18,6 +18,7 @@ describe('session helpers', () => {
     expect(session.overlay.width).toBe(320)
     expect(session.overlay.height).toBe(180)
     expect(session.reactionPath).toBeNull()
+    expect(session.moviePosterPath).toBeNull()
     expect(session.titleOrigin).toBe('generated')
     expect(session.reactorName).toBeNull()
     expect(session.reactorNameOrigin).toBe('metadata')
@@ -104,7 +105,7 @@ describe('session helpers', () => {
       lastReactionTimeSeconds: 90
     })
 
-    expect(library.version).toBe(4)
+    expect(library.version).toBe(5)
     expect(library.sessions).toHaveLength(1)
     expect(library.activeSessionId).toBe(library.sessions[0].id)
     expect(library.sessions[0]).toMatchObject({
@@ -113,6 +114,7 @@ describe('session helpers', () => {
       movieVolume: 0.4,
       offsetSeconds: 12.5,
       lastReactionTimeSeconds: 90,
+      moviePosterPath: null,
       reactorName: null,
       reactorNameOrigin: 'metadata',
       timingOrigin: 'manual',
@@ -120,6 +122,31 @@ describe('session helpers', () => {
       autoSyncAnalyzedAt: null,
       autoSyncAlgorithmVersion: null
     })
+  })
+
+  it('migrates version 4 sessions without poster data and preserves a saved poster path', () => {
+    const migrated = normalizeLibrary({
+      version: 4,
+      activeSessionId: 'legacy-session',
+      sessions: [{
+        id: 'legacy-session',
+        reactionPath: 'C:\\Reactions\\Legacy.mp4',
+        moviePath: 'C:\\Movies\\Legacy.mp4'
+      }]
+    })
+    const withPoster = normalizeSession({
+      id: 'poster-session',
+      reactionPath: 'C:\\Reactions\\Poster.mp4',
+      moviePath: 'C:\\Movies\\Poster.mp4',
+      moviePosterPath: 'C:\\Movies\\poster.jpg'
+    })
+
+    expect(migrated).toMatchObject({
+      version: 5,
+      activeSessionId: 'legacy-session',
+      sessions: [{ moviePosterPath: null }]
+    })
+    expect(withPoster.moviePosterPath).toBe('C:\\Movies\\poster.jpg')
   })
 
   it('deduplicates and finds sessions by media pair', () => {

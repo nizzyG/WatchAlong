@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { posix, win32 } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -15,6 +15,7 @@ import {
   registerMediaProtocol,
   resolveReactorAvatarPath
 } from './mediaProtocol'
+import { MAX_MOVIE_POSTER_BYTES } from './services/moviePosterFiles'
 
 const tempDirs: string[] = []
 
@@ -49,12 +50,17 @@ describe('media protocol routing', () => {
       sessionId: 'session one',
       role: 'reactor-avatar'
     })
+    expect(parseMediaRequest('watchalong://media/session%20one/movie-poster?updated=1')).toEqual({
+      sessionId: 'session one',
+      role: 'movie-poster'
+    })
   })
 
   it.each([
     'https://media/session-1/reactor-avatar',
     'watchalong://elsewhere/session-1/reactor-avatar',
     'watchalong://media/session-1/avatar',
+    'watchalong://media/session-1/movie-poster/extra',
     'watchalong://media/session-1/reactor-avatar/extra',
     'watchalong://media/session-1/../reactor-avatar',
     'watchalong://media/%2e%2e/reactor-avatar',
@@ -95,6 +101,85 @@ describe('media protocol routing', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('Content-Type')).toBe('image/png')
     expect(await response.text()).toBe('avatar-bytes')
+  })
+
+  it('serves an on-demand convention poster without putting its path in the URL', async () => {
+    const tempDir = mkdtempSync(posix.join(tmpdir().replace(/\\/g, '/'), 'watchalong-poster-route-'))
+    tempDirs.push(tempDir)
+    const moviePath = posix.join(tempDir, 'Tombstone (1993)', 'Tombstone (1993).mkv')
+    const posterPath = posix.join(posix.dirname(moviePath), 'poster.jpg')
+    mkdirSync(posix.dirname(moviePath), { recursive: true })
+    writeFileSync(moviePath, 'video')
+    writeFileSync(posterPath, 'poster-bytes')
+
+    const session = {
+      id: 'session-poster',
+      updatedAt: '2026-07-14T12:00:00.000Z',
+      moviePath,
+      moviePosterPath: null
+    } as LibrarySession
+    const sessionStore = {
+      getSession: (sessionId: string) => sessionId === session.id ? session : null
+    } as unknown as SessionStore
+    const url = createSessionMediaUrl(session, 'movie-poster')
+
+    expect(url).not.toContain(tempDir)
+    expect(url).not.toContain('poster.jpg')
+    registerMediaProtocol(sessionStore)
+    const handler = electronMock.handle.mock.calls[0][1] as (request: Request) => Promise<Response>
+    const response = await handler(new Request(url))
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toBe('image/jpeg')
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+    expect(await response.text()).toBe('poster-bytes')
+  })
+
+  it('does not cache a missing poster placeholder decision', async () => {
+    const session = {
+      id: 'missing-poster',
+      moviePath: '/media/Movies/Missing/Missing.mkv',
+      moviePosterPath: null
+    } as LibrarySession
+    const sessionStore = {
+      getSession: (sessionId: string) => sessionId === session.id ? session : null
+    } as unknown as SessionStore
+
+    registerMediaProtocol(sessionStore)
+    const handler = electronMock.handle.mock.calls[0][1] as (request: Request) => Promise<Response>
+    const response = await handler(new Request('watchalong://media/missing-poster/movie-poster'))
+
+    expect(response.status).toBe(404)
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
+  })
+
+  it('refuses an oversized poster at the fixed route', async () => {
+    const tempDir = mkdtempSync(posix.join(tmpdir().replace(/\\/g, '/'), 'watchalong-poster-cap-'))
+    tempDirs.push(tempDir)
+    const moviePath = posix.join(tempDir, 'Movie', 'Movie.mkv')
+    const posterPath = posix.join(posix.dirname(moviePath), 'poster.jpg')
+    mkdirSync(posix.dirname(moviePath), { recursive: true })
+    writeFileSync(moviePath, 'video')
+    writeFileSync(posterPath, '')
+    truncateSync(posterPath, MAX_MOVIE_POSTER_BYTES + 1)
+
+    const session = {
+      id: 'oversized-poster',
+      moviePath,
+      moviePosterPath: null
+    } as LibrarySession
+    const sessionStore = {
+      getSession: (sessionId: string) => sessionId === session.id ? session : null
+    } as unknown as SessionStore
+
+    registerMediaProtocol(sessionStore)
+    const handler = electronMock.handle.mock.calls[0][1] as (request: Request) => Promise<Response>
+    const response = await handler(new Request('watchalong://media/oversized-poster/movie-poster'))
+
+    expect(response.status).toBe(404)
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
   })
 })
 

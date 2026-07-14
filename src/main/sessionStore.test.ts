@@ -49,6 +49,35 @@ describe('SessionStore media drafts', () => {
     }
   })
 
+  it('inherits exact-movie art for a new draft, preserves it across a same-name relocation, and clears it for another movie', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
+    try {
+      const store = new SessionStore(join(dir, 'library.json'), join(dir, 'session.json'))
+      const original = store.createOrSwitchSession(
+        'C:\\Reactions\\Film.mp4',
+        'C:\\Movies\\Film\\Film.mkv'
+      )
+      store.setMoviePosterPath(original.activeSessionId!, 'C:\\Art\\Film.jpg')
+
+      const inherited = store.setSessionMedia('movie', 'c:\\movies\\film\\film.mkv')
+      const draftId = inherited.activeSessionId!
+      expect(inherited.sessions.find((session) => session.id === draftId)).toMatchObject({
+        moviePath: 'c:\\movies\\film\\film.mkv',
+        reactionPath: null,
+        moviePosterPath: 'C:\\Art\\Film.jpg'
+      })
+
+      const relocated = store.setSessionMedia('movie', 'D:\\Archive\\FILM.MKV')
+      expect(relocated.sessions.find((session) => session.id === draftId)?.moviePosterPath)
+        .toBe('C:\\Art\\Film.jpg')
+
+      const changedMovie = store.setSessionMedia('movie', 'D:\\Archive\\Heat.mkv')
+      expect(changedMovie.sessions.find((session) => session.id === draftId)?.moviePosterPath).toBeNull()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('replaces media on an existing complete session without creating a draft', () => {
     const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
     try {
@@ -68,6 +97,51 @@ describe('SessionStore media drafts', () => {
         reactionPath: 'C:\\Reactions\\Second.mp4',
         reactionSource: 'youtube'
       })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps art for a same-name movie relocation, adopts destination art, and clears stale art for another movie', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
+    try {
+      const store = new SessionStore(join(dir, 'library.json'), join(dir, 'session.json'))
+      const source = store.createOrSwitchSession(
+        'C:\\Reactions\\Tombstone.mp4',
+        'C:\\Missing\\Tombstone.mkv'
+      )
+      const sourceId = source.activeSessionId!
+      store.setMoviePosterPath(sourceId, 'C:\\Art\\Tombstone.jpg')
+
+      const relocated = store.replaceSessionMedia(
+        sourceId,
+        'movie',
+        'D:\\Restored\\TOMBSTONE.MKV'
+      ).library
+      expect(relocated.sessions.find((session) => session.id === sourceId)?.moviePosterPath)
+        .toBe('C:\\Art\\Tombstone.jpg')
+
+      const destination = store.createOrSwitchSession(
+        'C:\\Reactions\\Heat.mp4',
+        'D:\\Movies\\Heat.mkv'
+      )
+      const destinationId = destination.activeSessionId!
+      store.setMoviePosterPath(destinationId, 'D:\\Art\\Heat.png')
+
+      const adopted = store.replaceSessionMedia(sourceId, 'movie', 'd:\\movies\\heat.mkv').library
+      expect(adopted.sessions.find((session) => session.id === sourceId)?.moviePosterPath)
+        .toBe('D:\\Art\\Heat.png')
+      expect(adopted.sessions.find((session) => session.id === destinationId)?.moviePosterPath)
+        .toBe('D:\\Art\\Heat.png')
+
+      const changedMovie = store.replaceSessionMedia(
+        sourceId,
+        'movie',
+        'D:\\Movies\\Collateral.mkv'
+      ).library
+      expect(changedMovie.sessions.find((session) => session.id === sourceId)?.moviePosterPath).toBeNull()
+      expect(changedMovie.sessions.find((session) => session.id === destinationId)?.moviePosterPath)
+        .toBe('D:\\Art\\Heat.png')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -367,6 +441,101 @@ describe('SessionStore media drafts', () => {
     }
   })
 
+  it('applies and clears a manual poster across every pairing for the same movie', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
+    try {
+      const store = new SessionStore(join(dir, 'library.json'), join(dir, 'session.json'))
+      const first = store.createOrSwitchSession(
+        'C:\\Reactions\\First.mp4',
+        'C:\\Movies\\Film.mp4'
+      )
+      const firstId = first.activeSessionId!
+      const second = store.createOrSwitchSession(
+        'C:\\Reactions\\Second.mp4',
+        'c:\\movies\\film.mp4'
+      )
+      const secondId = second.activeSessionId!
+      const other = store.createOrSwitchSession(
+        'C:\\Reactions\\Other.mp4',
+        'C:\\Movies\\Other.mp4'
+      )
+      const otherId = other.activeSessionId!
+
+      const selected = store.setMoviePosterPath(firstId, 'C:\\Artwork\\Film poster.jpg')
+
+      expect(selected.sessions.find((session) => session.id === firstId)?.moviePosterPath)
+        .toBe('C:\\Artwork\\Film poster.jpg')
+      expect(selected.sessions.find((session) => session.id === secondId)?.moviePosterPath)
+        .toBe('C:\\Artwork\\Film poster.jpg')
+      expect(selected.sessions.find((session) => session.id === otherId)?.moviePosterPath).toBeNull()
+
+      const cleared = store.setMoviePosterPath(secondId, null)
+      expect(cleared.sessions.find((session) => session.id === firstId)?.moviePosterPath).toBeNull()
+      expect(cleared.sessions.find((session) => session.id === secondId)?.moviePosterPath).toBeNull()
+      expect(cleared.sessions.find((session) => session.id === otherId)?.moviePosterPath).toBeNull()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('inherits a manual poster when createOrSwitchSession creates a future complete pairing for that movie', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
+    try {
+      const store = new SessionStore(join(dir, 'library.json'), join(dir, 'session.json'))
+      const original = store.createOrSwitchSession(
+        'C:\\Reactions\\First.mp4',
+        'C:\\Movies\\Film.mp4'
+      )
+      store.setMoviePosterPath(original.activeSessionId!, 'C:\\Artwork\\Film poster.jpg')
+
+      const futurePairing = store.createOrSwitchSession(
+        'C:\\Reactions\\Later.mp4',
+        'c:\\movies\\film.mp4'
+      )
+
+      expect(futurePairing.sessions.find((session) => session.id === futurePairing.activeSessionId))
+        .toMatchObject({
+          reactionPath: 'C:\\Reactions\\Later.mp4',
+          moviePath: 'c:\\movies\\film.mp4',
+          moviePosterPath: 'C:\\Artwork\\Film poster.jpg'
+        })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('normalizes a version 4 library to version 5 and persists poster data on the next update', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
+    try {
+      const libraryPath = join(dir, 'library.json')
+      writeFileSync(libraryPath, JSON.stringify({
+        version: 4,
+        activeSessionId: 'legacy-session',
+        sessions: [{
+          id: 'legacy-session',
+          reactionPath: 'C:\\Reactions\\Legacy.mp4',
+          moviePath: 'C:\\Movies\\Legacy.mp4'
+        }]
+      }), 'utf8')
+      const store = new SessionStore(libraryPath, join(dir, 'session.json'))
+
+      const migrated = store.read()
+      expect(migrated).toMatchObject({
+        version: 5,
+        activeSessionId: 'legacy-session',
+        sessions: [{ id: 'legacy-session', moviePosterPath: null }]
+      })
+
+      store.setMoviePosterPath('legacy-session', 'C:\\Movies\\poster.png')
+      expect(JSON.parse(readFileSync(libraryPath, 'utf8'))).toMatchObject({
+        version: 5,
+        sessions: [{ id: 'legacy-session', moviePosterPath: 'C:\\Movies\\poster.png' }]
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('restores the latest good backup and quarantines a corrupt library', () => {
     const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
     try {
@@ -379,7 +548,7 @@ describe('SessionStore media drafts', () => {
       const recovered = store.read()
 
       expect(recovered.sessions).toHaveLength(2)
-      expect(JSON.parse(readFileSync(libraryPath, 'utf8'))).toMatchObject({ version: 4 })
+      expect(JSON.parse(readFileSync(libraryPath, 'utf8'))).toMatchObject({ version: 5 })
       const quarantine = readdirSync(dir).find((name) => name.startsWith('library.json.corrupt-'))
       expect(quarantine).toBeTruthy()
       expect(readFileSync(join(dir, quarantine!), 'utf8')).toBe('{"sessions": [')
@@ -393,6 +562,7 @@ describe('SessionStore media drafts', () => {
     'null',
     '{"sessions":"bad"}',
     '{"sessions":["bad"]}',
+    '{"sessions":[{"id":"bad-poster","reactionPath":"reaction.mp4","moviePath":"movie.mp4","moviePosterPath":42}]}',
     '{"reactionPath":123,"moviePath":456}'
   ])(
     'recovers from parseable JSON with an invalid library shape: %s',

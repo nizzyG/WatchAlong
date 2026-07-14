@@ -6,8 +6,9 @@ import { APP_NAME, MEDIA_SCHEME } from './constants'
 import { createMediaResponse } from './mediaRange'
 import { SessionStore } from './sessionStore'
 import { getMediaPath } from './ipc/utils'
+import { MAX_MOVIE_POSTER_BYTES, resolveMoviePosterPath } from './services/moviePosterFiles'
 
-export type MediaRequestRole = MediaRole | 'reactor-avatar'
+export type MediaRequestRole = MediaRole | 'reactor-avatar' | 'movie-poster'
 
 export interface MediaRequest {
   sessionId: string
@@ -31,18 +32,23 @@ export function registerMediaProtocol(sessionStore: SessionStore): void {
     const mediaRequest = parseMediaRequest(request.url)
     if (!mediaRequest) return new Response(`Invalid ${APP_NAME} media URL`, { status: 404 })
     const session = sessionStore.getSession(mediaRequest.sessionId)
-    const path = mediaRequest.role === 'reactor-avatar'
-      ? resolveReactorAvatarPath(session)
-      : getMediaPath(session, mediaRequest.role)
-    if (!path) return new Response('Media file is missing', { status: 404 })
+    const path = await resolveMediaRequestPath(session, mediaRequest.role)
+    if (!path) return mediaErrorResponse('Media file is missing', 404, mediaRequest.role)
     try {
+      const maxBytes = mediaRequest.role === 'reactor-avatar'
+        ? MAX_AVATAR_BYTES
+        : mediaRequest.role === 'movie-poster' ? MAX_MOVIE_POSTER_BYTES : undefined
       return createMediaResponse(
         path,
         request.headers.get('range'),
-        mediaRequest.role === 'reactor-avatar' ? MAX_AVATAR_BYTES : undefined
+        maxBytes,
+        mediaRequest.role === 'movie-poster' ? 'no-store' : undefined
       )
     }
-    catch (error) { console.error(error); return new Response('Could not read media file', { status: 500 }) }
+    catch (error) {
+      console.error(error)
+      return mediaErrorResponse('Could not read media file', 500, mediaRequest.role)
+    }
   })
 }
 
@@ -60,7 +66,7 @@ export function parseMediaRequest(rawUrl: string): MediaRequest | null {
       return null
     }
 
-    const match = /^\/([^/]+)\/(reaction|movie|reactor-avatar)$/.exec(url.pathname)
+    const match = /^\/([^/]+)\/(reaction|movie|reactor-avatar|movie-poster)$/.exec(url.pathname)
     if (!match) {
       return null
     }
@@ -74,6 +80,26 @@ export function parseMediaRequest(rawUrl: string): MediaRequest | null {
   } catch {
     return null
   }
+}
+
+async function resolveMediaRequestPath(
+  session: LibrarySession | null,
+  role: MediaRequestRole
+): Promise<string | null> {
+  switch (role) {
+    case 'reactor-avatar': return resolveReactorAvatarPath(session)
+    case 'movie-poster': return resolveMoviePosterPath(session)
+    default: return getMediaPath(session, role)
+  }
+}
+
+function mediaErrorResponse(message: string, status: number, role: MediaRequestRole): Response {
+  return new Response(message, {
+    status,
+    headers: role === 'movie-poster'
+      ? { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }
+      : undefined
+  })
 }
 
 /**

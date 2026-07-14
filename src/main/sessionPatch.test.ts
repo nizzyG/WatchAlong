@@ -12,6 +12,7 @@ describe('renderer session patch allowlist', () => {
       id: 'replacement-id',
       title: 'Injected title',
       moviePath: 'C:\\Users\\user\\private.txt',
+      moviePosterPath: 'C:\\Users\\user\\private.jpg',
       reactionPath: 'C:\\Users\\user\\private.txt',
       subtitlePath: 'C:\\Users\\user\\private.txt',
       timingOrigin: 'automatic',

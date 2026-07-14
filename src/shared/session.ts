@@ -1,6 +1,6 @@
 import type { LibrarySession, OverlayGeometry, PlaybackRate, ReactionSource, ReactorNameOrigin, ReactorSource, SessionLibrary, SessionData, SessionTitleOrigin } from './types'
 
-export const SESSION_LIBRARY_VERSION = 4
+export const SESSION_LIBRARY_VERSION = 5
 
 export const DEFAULT_OVERLAY: OverlayGeometry = {
   x: 24,
@@ -28,6 +28,7 @@ export function createDefaultSession(now = new Date(), patch: Partial<LibrarySes
     reactionSource: normalizeReactionSource(patch.reactionSource),
     reactionDurationSeconds: nullableFinite(patch.reactionDurationSeconds),
     moviePath,
+    moviePosterPath: stringOrNull(patch.moviePosterPath),
     subtitlePath: stringOrNull(patch.subtitlePath),
     offsetSeconds: finiteOr(patch.offsetSeconds, 0),
     lastReactionTimeSeconds: Math.max(0, finiteOr(patch.lastReactionTimeSeconds, 0)),
@@ -96,6 +97,7 @@ export function normalizeSession(value: unknown, now = new Date()): SessionData 
     reactionSource: normalizeReactionSource(source?.reactionSource),
     reactionDurationSeconds: nullableFinite(source?.reactionDurationSeconds),
     moviePath,
+    moviePosterPath: stringOrNull(source?.moviePosterPath),
     subtitlePath: stringOrNull(source?.subtitlePath),
     offsetSeconds: finiteOr(source?.offsetSeconds, fallback.offsetSeconds),
     lastReactionTimeSeconds: Math.max(0, finiteOr(source?.lastReactionTimeSeconds, fallback.lastReactionTimeSeconds)),
