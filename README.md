@@ -2,33 +2,27 @@
 
 **You own the movie. You support the creator. WatchAlong handles the rest.**
 
-If you love watching reactors experience your favorite films for the first time, you know the routine. You support them on Patreon. They post the full-length watch-along. And then you juggle two media players, pause one while the other buffers, and wonder why everything drifted apart by the credits.
+You know the routine. You support a creator on Patreon, they post the full-length watch-along, and you sync it with your own copy of the movie. Two media players, one paused while the other buffers, and somehow everything drifts apart by the credits.
 
-WatchAlong replaces that routine with one app. Load your movie. Download the reaction. The app finds the sync point, measures the drift, and keeps both videos locked together through pauses, seeks, and restarts. Come back tomorrow and pick up right where you left off.
-
-## Why WatchAlong exists
-
-There are two ways to watch a movie today. You can rent access to it on a streaming service — access that disappears when the license expires, when the service raises its price, or when the catalog rotates. Or you can own a copy: a DRM-free purchase, a personal backup of a disc you bought. The first option is convenient until it isn't. The second option is yours.
-
-WatchAlong is built for people who chose the second option, and who also support the creators who make reaction content. The app works with local movie files you're authorized to use, paired with full-length reactions from creators you pay on Patreon. No streaming service in the middle. No license that can expire. Your movie stays your movie. The creator stays paid.
+WatchAlong replaces that with one app. Load your movie. Add the reaction. The app finds the sync point, measures the drift, and keeps both videos locked together through pauses, seeks, and restarts. Come back tomorrow and pick up right where you left off.
 
 ## What it does
 
-- **Finds the sync for you.** WatchAlong looks at the reaction video, finds the movie inside it, and lines everything up automatically. No countdown. No nudging. No guessing.
-- **Fixes frame-rate drift automatically.** Your movie and the reactor's copy might run at slightly different speeds — 23.976, 24, or 25 frames per second. Over two hours, that gap becomes seconds. WatchAlong measures the difference and corrects it.
-- **Keeps both videos locked.** Pause, seek, close the app, come back next week. The sync holds. Drift correction runs continuously and invisibly.
-- **Picture-in-picture or pop-out.** Watch the movie with the reactor in a draggable overlay. Prefer a second screen? Pop the movie out into its own window.
-- **Download reactions directly.** Paste a link and connect your Patreon account. WatchAlong grabs the reaction for you. No browser extensions, no external tools.
-- **Your library, remembered.** Every pairing you create is saved. Sessions, sync offsets, PiP positions, playback position — everything comes back.
-- **Subtitles.** Load SRT or VTT subtitle files. They display over the movie.
-- **Keyboard shortcuts for everything.** Space to play or pause. Arrows to skip. R and M for mute. Ctrl+Shift+P for the command panel. Full list in the [FAQ](FAQ.md).
+- **Finds the sync for you.** WatchAlong looks at the reaction, finds the movie inside it, and lines everything up automatically. No countdown. No nudging.
+- **Fixes frame-rate drift automatically.** Your movie and the creator's copy might run at slightly different speeds. Over two hours, that gap becomes seconds. WatchAlong measures the difference and corrects it.
+- **Keeps both videos locked.** Pause, seek, close the app, come back next week. The sync holds.
+- **Picture-in-picture or pop-out.** Watch the movie with the reactor in a draggable overlay, or pop the movie out to a second screen.
+- **Add reactions any way they're hosted.** Paste a Patreon post URL, an unlisted YouTube link, or a Google Drive link. WatchAlong grabs the full-length reaction for you.
+- **Your library, remembered.** Every pairing is saved. Sync, position, PiP layout — everything comes back.
+- **Subtitles.** Load SRT or VTT files. They display over the movie.
+- **Keyboard shortcuts for everything.** Space to play or pause. Arrows to skip. R and M for mute. Full list in the [FAQ](FAQ.md).
 
 ## Our principles
 
-- **Creators get paid.** Full-length reactions live behind a Patreon subscription. WatchAlong doesn't bypass that. You need an active subscription to download. The only people who use the download feature are people already supporting the creator.
-- **You own your media.** The app works with DRM-free local files you're authorized to use — DRM-free purchases, or any file you have the right to play. No streaming service in the middle.
-- **Everything stays local.** Your library, your sessions, your downloads, your settings — all on your drive. No telemetry. No analytics. No WatchAlong account. No WatchAlong server. The only network requests are ones you trigger: signing into Patreon or downloading a reaction.
-- **Free and open source.** Now and always. MIT license. No paid features, no ads, no data sale.
+- **Creators get paid.** WatchAlong doesn't bypass Patreon. You need an active subscription to download a creator's full-length reactions. The only people who use this app are people already supporting the creator.
+- **You own your media.** The app works with DRM-free local files you're authorized to use. No streaming service in the middle. No license that can expire.
+- **Everything stays local.** Your library, your sessions, your downloads, your settings — all on your drive. No telemetry. No analytics. No account. No server. The only network requests are the ones you trigger.
+- **Free and open source.** MIT license. No paid features, no ads, no data sale. Now and always.
 
 ## Getting started
 
@@ -43,9 +37,9 @@ First time? There's a [step-by-step tutorial with screenshots](tutorial.md).
 
 ## How auto-sync works (and when it asks for help)
 
-WatchAlong looks at the reaction video, finds the movie showing inside it, and matches several moments across the runtime. From those matches, it calculates both the sync point and the frame-rate drift in one step.
+WatchAlong looks at the reaction, finds the movie showing inside it, and matches several moments across the runtime. From those matches, it calculates both the sync point and the frame-rate drift in one step.
 
-The engine is confident on most pairings — the reactor's movie is visible, even blurred, and the app finds it. When it isn't confident, it says so and steps aside. You fall back to the manual sync screen, line up the countdown yourself, and pick up the frame-rate selector. No guess is ever applied silently. A sync tool that confidently lines you up wrong is worse than one that asks you to do it yourself.
+The engine is confident on most pairings. When it isn't, it says so and steps aside. You fall back to the manual sync screen, line up the countdown yourself, and pick up the frame-rate selector. No guess is ever applied silently. A sync tool that confidently lines you up wrong is worse than one that asks you to do it yourself.
 
 ## Platform notes
 
