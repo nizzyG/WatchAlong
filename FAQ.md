@@ -1,6 +1,6 @@
 # Frequently Asked Questions
 
-Looking for setup help? Start with the [README](README.md) or the [step-by-step tutorial](tutorial.md).
+Looking for setup help? Start with the [README](README.md).
 
 ## Philosophy, Legality & Creator Support
 
@@ -75,7 +75,7 @@ Choose **Sign in with browser** to open Patreon securely inside WatchAlong. The 
 
 ### 12. What if automatic Patreon extraction fails?
 
-Choose **Sign in with browser** instead. Firefox cookie extraction and the in-app Patreon sign-in are the two supported connection paths. After a successful download, WatchAlong can securely save the session so you can skip this step next time. See the [tutorial](tutorial.md#step-5-connect-to-patreon) for the walkthrough.
+Choose **Sign in with browser** instead. Firefox cookie extraction and the in-app Patreon sign-in are the two supported connection paths. After a successful download, WatchAlong can securely save the session so you can skip this step next time.
 
 ### 13. Which browsers work for Patreon extraction?
 
@@ -108,8 +108,6 @@ The engine never applies a guess. When it isn't confident, it tells you, and you
 ### 18. How do I do a manual sync if auto-sync falls back?
 
 Both videos open paused in the Sync Setup screen. Play the reaction, listen for the reactor's countdown ("3... 2... 1... play!"), and click **Save Sync** at the exact moment the countdown ends. Use the `[` and `]` keys to nudge the offset by 0.1 seconds during the first minute. That's it — you never have to sync this pairing again.
-
-The [tutorial](tutorial.md) has screenshots of the full process.
 
 ### 19. I set the sync perfectly at the start, but by the end they're a few seconds apart. Why?
 

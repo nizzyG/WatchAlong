@@ -33,8 +33,6 @@ WatchAlong replaces that with one app. Load your movie. Add the reaction. The ap
 3. Launch and click **+ New WatchAlong**.
 4. Follow the wizard to load your movie and add a reaction.
 
-First time? There's a [step-by-step tutorial with screenshots](tutorial.md).
-
 ## How auto-sync works (and when it asks for help)
 
 WatchAlong looks at the reaction, finds the movie showing inside it, and matches several moments across the runtime. From those matches, it calculates both the sync point and the frame-rate drift in one step.
