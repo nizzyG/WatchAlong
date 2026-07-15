@@ -2,9 +2,11 @@
 
 **You own the movie. You support the creator. WatchAlong handles the rest.**
 
-You know the routine. You support a creator on Patreon, they post the full-length watch-along, and you sync it with your own copy of the movie. Two media players, one paused while the other buffers, and somehow everything drifts apart by the credits.
+You support a creator on Patreon. They post the full-length watch-along — the complete reaction, start to finish, there for the people who pay them. You own the movie. You want to watch them together. And right now, that means two media players, one paused while the other buffers, and a sync that drifts apart by the credits.
 
-WatchAlong replaces that with one app. Load your movie. Add the reaction. The app finds the sync point, measures the drift, and keeps both videos locked together through pauses, seeks, and restarts. Come back tomorrow and pick up right where you left off.
+WatchAlong replaces that. Load your movie. Add the reaction. The app finds the sync point, measures the drift, and keeps both videos locked together through pauses, seeks, and restarts. Come back tomorrow and pick up exactly where you left off.
+
+The creator made the content. You paid for it. WatchAlong makes it effortless to enjoy.
 
 ## What it does
 
@@ -12,14 +14,15 @@ WatchAlong replaces that with one app. Load your movie. Add the reaction. The ap
 - **Fixes frame-rate drift automatically.** Your movie and the creator's copy might run at slightly different speeds. Over two hours, that gap becomes seconds. WatchAlong measures the difference and corrects it.
 - **Keeps both videos locked.** Pause, seek, close the app, come back next week. The sync holds.
 - **Picture-in-picture or pop-out.** Watch the movie with the reactor in a draggable overlay, or pop the movie out to a second screen.
-- **Download reactions directly.** Paste a Patreon post URL or a YouTube link and WatchAlong grabs the full-length reaction for you.
-- **Your library, remembered.** Every pairing is saved. Sync, position, PiP layout — everything comes back.
+- **Download reactions directly.** Paste a Patreon post URL, an unlisted YouTube link, or add a local file. WatchAlong grabs the creator's full-length reaction for you.
+- **Your library, remembered.** Every pairing is saved. Sync, playback position, PiP layout — everything comes back. Browse by movie, by reactor, or by pairing.
 - **Subtitles.** Load SRT or VTT files. They display over the movie.
-- **Playback controls that follow you.** Space, earbud taps, and system media play/pause keys control both videos. Arrows skip; R and M mute. Full list in the [FAQ](FAQ.md).
+- **Audio track selection.** Watching a foreign film? Choose between the original language and the dub directly from the player. Supports multi-track MKV files.
+- **Playback controls that follow you.** Space, earbud taps, and system media keys control both videos. Arrows skip. R and M mute. Full list in the [FAQ](FAQ.md).
 
 ## Our principles
 
-- **Creators get paid.** WatchAlong doesn't bypass Patreon. You need an active subscription to download a creator's full-length reactions. The only people who use this app are people already supporting the creator.
+- **Creators get paid.** Full-length reactions live behind a Patreon subscription. WatchAlong doesn't bypass that. You need an active subscription to download. The only people who use this app are people already supporting the creator — and the easier it is to watch their content, the more reason to keep subscribing.
 - **You own your media.** The app works with DRM-free local files you're authorized to use. No streaming service in the middle. No license that can expire.
 - **Everything stays local.** Your library, your sessions, your downloads, your settings — all on your drive. No telemetry. No analytics. No account. No server. The only network requests are the ones you trigger.
 - **Free and open source.** MIT license. No paid features, no ads, no data sale. Now and always.
@@ -67,13 +70,19 @@ WatchAlong looks at the reaction, finds the movie showing inside it, and matches
 
 The engine is confident on most pairings. When it isn't, it says so and steps aside. You fall back to the manual sync screen, line up the countdown yourself, and pick up the frame-rate selector. No guess is ever applied silently. A sync tool that confidently lines you up wrong is worse than one that asks you to do it yourself.
 
+## Appearance
+
+WatchAlong has two cabinet modes: **Mahogany** (dark) and **Oak** (light). Both are warm, textured, and built to feel like real furniture — not a generic app theme. The app follows your system's dark or light preference by default, and you can switch manually from the Command Panel.
+
+Movie poster art appears automatically when your library folders contain standard image files (`poster.jpg`, `folder.jpg`, or the movie filename with a `.jpg` extension) — the same conventions used by Kodi, Jellyfin, and other media tools. WatchAlong reads what you already have. It never fetches images from the internet.
+
 ## Platform notes
 
 **Windows:** Tested end to end.
 
 **macOS:** Built and verified, but tested in a virtual machine rather than on real Apple hardware. If you run into trouble on a real Mac, [open an issue](https://github.com/nizzyG/WatchAlong/issues) and let me know.
 
-This is a first public release, built by one person. Bug reports and feedback are always welcome.
+This release was built by one person. Bug reports and feedback are always welcome.
 
 ## FAQ
 
@@ -89,13 +98,13 @@ Questions about legality, file formats, Patreon setup, frame-rate drift, or how 
 
 ## Support
 
-WatchAlong is free and always will be. If it makes your watch-along nights better, you can [buy me a coffee on Ko-fi](https://ko-fi.com/watchalong).
+WatchAlong is free and always will be. The best way to support it: keep supporting the creators whose reactions you watch. That's what the app is for.
+
+If you'd like to support the developer directly, you can [buy me a coffee on Ko-fi](https://ko-fi.com/watchalong).
 
 ## For developers
 
-Electron, React, and TypeScript. The sync engine and auto-sync detection are pure, tested TypeScript modules. The bundled tools (yt-dlp, ffmpeg, patreon-dl, Node.js) have their own licenses — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Exact sources and SHA-256 digests for the standalone yt-dlp, FFmpeg, ffprobe, and Node.js executables are recorded in [TOOL_PROVENANCE.md](TOOL_PROVENANCE.md) and checked offline before every build.
-
-Audio-track selection depends on Electron's non-default Blink `AudioVideoTracks` capability. `WindowManager` enables it only for the main playback renderer and detached movie window; onboarding/import and Patreon login windows retain their baseline sandboxed capabilities. Renderer code must still feature-detect `video.audioTracks`: if an Electron upgrade removes or changes the capability, the selector should hide while ordinary playback continues with Chromium's default track.
+Electron, React, and TypeScript. The sync engine and auto-sync detection are pure, tested TypeScript modules. The bundled tools (yt-dlp, ffmpeg, patreon-dl, Node.js) have their own licenses — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Exact sources and SHA-256 digests for the standalone executables are recorded in [TOOL_PROVENANCE.md](TOOL_PROVENANCE.md) and checked offline before every build.
 
 ```bash
 git clone https://github.com/nizzyG/WatchAlong.git
