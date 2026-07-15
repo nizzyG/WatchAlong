@@ -1,2 +1,3 @@
 export { DeleteSessionDialog } from './DeleteSessionDialog'
-export { RenameSessionDialog } from './RenameSessionDialog'
+export { existingReactorNames, RenameSessionDialog } from './RenameSessionDialog'
+export type { RenameSessionFocus } from './RenameSessionDialog'

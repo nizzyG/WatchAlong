@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
-import type { AppPreferences, LibraryViewPreference } from '@shared/types'
+import { dirname, isAbsolute } from 'node:path'
+import type { AppPreferences, CabinetThemePreference, LibraryViewPreference } from '@shared/types'
 
 const defaultPreferences: AppPreferences = {
   hasCompletedOnboarding: false,
   openLibraryOnLaunch: true,
   libraryView: 'grid',
-  reactionDownloadDirectory: null
+  reactionDownloadDirectory: null,
+  cabinetTheme: 'system'
 }
 
 export class PreferencesStore {
@@ -50,7 +51,8 @@ export function normalizePreferences(value: unknown): AppPreferences {
     openLibraryOnLaunch:
       typeof source.openLibraryOnLaunch === 'boolean' ? source.openLibraryOnLaunch : defaultPreferences.openLibraryOnLaunch,
     libraryView: normalizeLibraryView(source.libraryView),
-    reactionDownloadDirectory: stringOrNull(source.reactionDownloadDirectory)
+    reactionDownloadDirectory: normalizeDownloadDirectory(source.reactionDownloadDirectory),
+    cabinetTheme: normalizeCabinetTheme(source.cabinetTheme)
   }
 }
 
@@ -62,6 +64,14 @@ function normalizeLibraryView(value: unknown): LibraryViewPreference {
   return value === 'list' || value === 'grid' ? value : defaultPreferences.libraryView
 }
 
-function stringOrNull(value: unknown): string | null {
-  return typeof value === 'string' && value.trim().length > 0 ? value : null
+function normalizeCabinetTheme(value: unknown): CabinetThemePreference {
+  return value === 'mahogany' || value === 'oak' || value === 'system'
+    ? value
+    : defaultPreferences.cabinetTheme
+}
+
+function normalizeDownloadDirectory(value: unknown): string | null {
+  if (typeof value !== 'string' || value.includes('\0')) return null
+  const path = value.trim()
+  return path && isAbsolute(path) ? path : null
 }

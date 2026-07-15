@@ -1,4 +1,11 @@
-import type { AutoSyncCompleteEvent, AutoSyncProgressEvent, LibrarySession, SessionLibrary, StartAutoSyncResult } from '@shared/types'
+import type {
+  AutoSyncCompleteEvent,
+  AutoSyncIntent,
+  AutoSyncProgressEvent,
+  LibrarySession,
+  SessionLibrary,
+  StartAutoSyncResult
+} from '@shared/types'
 import {
   fitAnchors,
   isConfidentFit,
@@ -37,8 +44,12 @@ export interface AutoSyncServiceOptions {
 
 interface RunningAnalysis {
   abortController: AbortController
-  moviePath: string
-  reactionPath: string
+}
+
+export interface AutoSyncAnalysisOptions {
+  intent: AutoSyncIntent
+  snapshot?: LibrarySession
+  signal?: AbortSignal
 }
 
 interface DetectedInset {
@@ -64,14 +75,15 @@ export class AutoSyncService {
     this.now = options.now ?? (() => new Date())
   }
 
-  start(sessionId: string): StartAutoSyncResult {
+  start(sessionId: string, intent: AutoSyncIntent): StartAutoSyncResult {
     if (this.running.has(sessionId)) return { started: false, reason: 'already-running' }
     const session = this.options.sessions.getSession(sessionId)
     if (!session) return { started: false, reason: 'missing-session' }
     if (!session.moviePath || !session.reactionPath) return { started: false, reason: 'missing-media' }
     const abortController = new AbortController()
-    this.running.set(sessionId, { abortController, moviePath: session.moviePath, reactionPath: session.reactionPath })
-    void this.analyze(sessionId, session, abortController.signal)
+    const snapshot = snapshotSession(session)
+    this.running.set(sessionId, { abortController })
+    void this.analyze(sessionId, { intent, snapshot, signal: abortController.signal })
       .then((result) => this.options.emitComplete(result))
       .finally(() => this.running.delete(sessionId))
     return { started: true }
@@ -85,10 +97,11 @@ export class AutoSyncService {
     return this.running.has(sessionId)
   }
 
-  async analyze(sessionId: string, snapshot?: LibrarySession, signal?: AbortSignal): Promise<AutoSyncCompleteEvent> {
-    const session = snapshot ?? this.options.sessions.getSession(sessionId)
+  async analyze(sessionId: string, options: AutoSyncAnalysisOptions): Promise<AutoSyncCompleteEvent> {
+    const sourceSession = options.snapshot ?? this.options.sessions.getSession(sessionId)
+    const session = sourceSession ? snapshotSession(sourceSession) : null
     if (!session?.moviePath || !session.reactionPath) return fallback(sessionId, 'This watchalong needs both files before sync can be found.')
-    const effectiveSignal = signal ?? new AbortController().signal
+    const effectiveSignal = options.signal ?? new AbortController().signal
     try {
       this.progress(sessionId, 'preparing', 3, 'Checking both videos…')
       const [movieInfo, reactionInfo] = await Promise.all([
@@ -111,9 +124,7 @@ export class AutoSyncService {
       // This also prevents a marginal refined pass from hiding a valid coarse fit.
       const fit = choosePreferredFit(refinedFit, coarseFit)
       const current = this.options.sessions.getSession(sessionId)
-      if (!current || current.moviePath !== session.moviePath || current.reactionPath !== session.reactionPath) {
-        return { sessionId, outcome: 'stale', message: 'The files changed while WatchAlong was checking, so the old result was safely ignored.' }
-      }
+      if (!isAnalysisSnapshotCurrent(current, session)) return stale(sessionId)
 
       this.progress(sessionId, 'finishing', 94, 'Finishing the timing…')
       if (fit && isConfidentFit(fit)) {
@@ -122,8 +133,10 @@ export class AutoSyncService {
       }
 
       const refinedIntro = await this.refineAnchors(session, intro.anchors, intro.geometry, intro.mask, effectiveSignal, false)
-      const introOffset = offsetStatsForRate(refinedIntro.anchors, current.movieRateCorrection)
-      const bodyOffset = offsetStatsForRate(refined.anchors, current.movieRateCorrection)
+      const latest = this.options.sessions.getSession(sessionId)
+      if (!isAnalysisSnapshotCurrent(latest, session)) return stale(sessionId)
+      const introOffset = offsetStatsForRate(refinedIntro.anchors, latest.movieRateCorrection)
+      const bodyOffset = offsetStatsForRate(refined.anchors, latest.movieRateCorrection)
       const partialOffset = introOffset && bodyOffset && Math.abs(bodyOffset.offsetSeconds - introOffset.offsetSeconds) <= 2
         ? bodyOffset.offsetSeconds
         : introOffset?.offsetSeconds
@@ -131,13 +144,17 @@ export class AutoSyncService {
       if (intro.confidence >= 0.5 && introOffsetIsReliable && partialOffset !== undefined && Number.isFinite(partialOffset)) {
         // A marginal drift estimate is useful evidence, but not safe to apply.
         // Keep the user's current rate and only prefill the well-supported start point.
-        const rate = current.movieRateCorrection
+        const rate = latest.movieRateCorrection
         const confidence = Math.min(0.69, fit?.confidence ?? intro.confidence)
-        this.commit(sessionId, partialOffset, rate, confidence, movieInfo.frameRate)
+        if (options.intent === 'initial') {
+          this.commit(sessionId, partialOffset, rate, confidence, movieInfo.frameRate)
+        }
         return {
           sessionId,
           outcome: 'partial',
-          message: 'WatchAlong found the starting point. Please give the timing a quick check before you begin.',
+          message: options.intent === 'initial'
+            ? 'WatchAlong found the starting point. Please give the timing a quick check before you begin.'
+            : 'WatchAlong found a possible starting point, but kept your existing timing because the new result was not certain enough.',
           offsetSeconds: partialOffset,
           movieRateCorrection: rate,
           confidence,
@@ -405,6 +422,41 @@ function choosePreferredFit(...fits: Array<AutoSyncFit | null>): AutoSyncFit | n
 
 function fallback(sessionId: string, message: string): AutoSyncCompleteEvent {
   return { sessionId, outcome: 'fallback', message }
+}
+
+function stale(sessionId: string): AutoSyncCompleteEvent {
+  return {
+    sessionId,
+    outcome: 'stale',
+    message: 'The files or timing changed while WatchAlong was checking, so the old result was safely ignored.'
+  }
+}
+
+function snapshotSession(session: LibrarySession): LibrarySession {
+  return {
+    ...session,
+    overlay: { ...session.overlay },
+    movieWindowGeometry: { ...session.movieWindowGeometry }
+  }
+}
+
+function isAnalysisSnapshotCurrent(
+  current: LibrarySession | null,
+  snapshot: LibrarySession
+): current is LibrarySession {
+  return Boolean(
+    current &&
+    current.moviePath === snapshot.moviePath &&
+    current.reactionPath === snapshot.reactionPath &&
+    current.offsetSeconds === snapshot.offsetSeconds &&
+    current.movieRateCorrection === snapshot.movieRateCorrection &&
+    current.reactorSource === snapshot.reactorSource &&
+    current.detectedMovieFps === snapshot.detectedMovieFps &&
+    current.timingOrigin === snapshot.timingOrigin &&
+    current.autoSyncConfidence === snapshot.autoSyncConfidence &&
+    current.autoSyncAnalyzedAt === snapshot.autoSyncAnalyzedAt &&
+    current.autoSyncAlgorithmVersion === snapshot.autoSyncAlgorithmVersion
+  )
 }
 
 function friendlyError(error: unknown): string {

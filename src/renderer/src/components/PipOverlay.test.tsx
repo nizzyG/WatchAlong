@@ -3,25 +3,29 @@ import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { PipOverlay } from './PipOverlay'
 
+function renderOverlay(overrides: Partial<React.ComponentProps<typeof PipOverlay>> = {}): void {
+  render(
+    <PipOverlay
+      geometry={{ x: 10, y: 10, width: 320, height: 180 }}
+      videoRef={createRef<HTMLVideoElement>()}
+      hidden={false}
+      onChange={vi.fn()}
+      onCommit={vi.fn()}
+      onHide={vi.fn()}
+      onPopOut={vi.fn()}
+      onLoadedMetadata={vi.fn()}
+      onTimeUpdate={vi.fn()}
+      onVideoError={vi.fn()}
+      {...overrides}
+    />
+  )
+}
+
 describe('PipOverlay', () => {
   it('emits geometry changes while dragging', () => {
     const onChange = vi.fn()
     const onCommit = vi.fn()
-    render(
-      <PipOverlay
-        geometry={{ x: 10, y: 10, width: 320, height: 180 }}
-        videoRef={createRef<HTMLVideoElement>()}
-        hidden={false}
-        onChange={onChange}
-        onCommit={onCommit}
-        onHide={vi.fn()}
-        onPopOut={vi.fn()}
-        onPopIn={vi.fn()}
-        onLoadedMetadata={vi.fn()}
-        onTimeUpdate={vi.fn()}
-        onVideoError={vi.fn()}
-      />
-    )
+    renderOverlay({ onChange, onCommit })
 
     const titlebar = screen.getByText('Movie').parentElement!
     fireEvent(titlebar, new MouseEvent('pointerdown', { button: 0, clientX: 10, clientY: 10, bubbles: true }))
@@ -33,45 +37,27 @@ describe('PipOverlay', () => {
   })
 
   it('keeps the media element mounted when hidden', () => {
-    render(
-      <PipOverlay
-        geometry={{ x: 10, y: 10, width: 320, height: 180 }}
-        videoRef={createRef<HTMLVideoElement>()}
-        hidden
-        onChange={vi.fn()}
-        onCommit={vi.fn()}
-        onHide={vi.fn()}
-        onPopOut={vi.fn()}
-        onPopIn={vi.fn()}
-        onLoadedMetadata={vi.fn()}
-        onTimeUpdate={vi.fn()}
-        onVideoError={vi.fn()}
-      />
-    )
+    renderOverlay({ hidden: true })
 
     expect(screen.getByLabelText('Movie picture in picture')).toHaveClass('pip-hidden')
     expect(document.querySelector('video.pip-video')).toBeInTheDocument()
   })
 
+  it('reports errors from the movie element itself', () => {
+    const onVideoError = vi.fn()
+    renderOverlay({ onVideoError })
+
+    const movie = document.querySelector('video.pip-video') as HTMLVideoElement
+    fireEvent.error(movie)
+
+    expect(onVideoError).toHaveBeenCalledWith(movie)
+  })
+
   it('emits pop-out from the toolbar button', () => {
     const onPopOut = vi.fn()
-    render(
-      <PipOverlay
-        geometry={{ x: 10, y: 10, width: 320, height: 180 }}
-        videoRef={createRef<HTMLVideoElement>()}
-        hidden={false}
-        onChange={vi.fn()}
-        onCommit={vi.fn()}
-        onHide={vi.fn()}
-        onPopOut={onPopOut}
-        onPopIn={vi.fn()}
-        onLoadedMetadata={vi.fn()}
-        onTimeUpdate={vi.fn()}
-        onVideoError={vi.fn()}
-      />
-    )
+    renderOverlay({ onPopOut })
 
-    fireEvent.click(screen.getByLabelText('Pop out movie to separate window'))
+    fireEvent.click(screen.getByLabelText('Pop out movie'))
 
     expect(onPopOut).toHaveBeenCalledTimes(1)
   })
@@ -79,88 +65,18 @@ describe('PipOverlay', () => {
   it('does not drag from local PiP toolbar buttons', () => {
     const onChange = vi.fn()
     const onCommit = vi.fn()
-    render(
-      <PipOverlay
-        geometry={{ x: 10, y: 10, width: 320, height: 180 }}
-        videoRef={createRef<HTMLVideoElement>()}
-        hidden={false}
-        onChange={onChange}
-        onCommit={onCommit}
-        onHide={vi.fn()}
-        onPopOut={vi.fn()}
-        onPopIn={vi.fn()}
-        onLoadedMetadata={vi.fn()}
-        onTimeUpdate={vi.fn()}
-        onVideoError={vi.fn()}
-      />
-    )
+    renderOverlay({ onChange, onCommit })
 
-    for (const label of ['Snap movie', 'Pop out movie to separate window', 'Hide movie']) {
-      fireEvent(screen.getByLabelText(label), new MouseEvent('pointerdown', { button: 0, clientX: 10, clientY: 10, bubbles: true }))
+    for (const label of ['Snap movie', 'Pop out movie', 'Hide movie']) {
+      fireEvent(screen.getByLabelText(label), new MouseEvent('pointerdown', {
+        button: 0,
+        clientX: 10,
+        clientY: 10,
+        bubbles: true
+      }))
       window.dispatchEvent(new MouseEvent('pointermove', { clientX: 30, clientY: 35 }))
       window.dispatchEvent(new MouseEvent('pointerup'))
     }
-
-    expect(onChange).not.toHaveBeenCalled()
-    expect(onCommit).not.toHaveBeenCalled()
-  })
-
-  it('shows a pop-in indicator without rendering local movie video when popped out', () => {
-    const onPopIn = vi.fn()
-    render(
-      <PipOverlay
-        geometry={{ x: 10, y: 10, width: 320, height: 180 }}
-        videoRef={createRef<HTMLVideoElement>()}
-        hidden={false}
-        poppedOut
-        onChange={vi.fn()}
-        onCommit={vi.fn()}
-        onHide={vi.fn()}
-        onPopOut={vi.fn()}
-        onPopIn={onPopIn}
-        onLoadedMetadata={vi.fn()}
-        onTimeUpdate={vi.fn()}
-        onVideoError={vi.fn()}
-      />
-    )
-
-    expect(screen.getByLabelText('Movie picture in picture')).toHaveClass('pip-popped-out')
-    expect(screen.getByLabelText('Movie picture in picture')).toHaveStyle({ height: '42px' })
-    expect(screen.getByRole('button', { name: 'Pop movie back in' })).toHaveTextContent('Movie is popped out.')
-    expect(document.querySelector('video.pip-video')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Pop movie back in' }))
-    expect(onPopIn).toHaveBeenCalledTimes(1)
-  })
-
-  it('does not drag from the popped-out status button', () => {
-    const onChange = vi.fn()
-    const onCommit = vi.fn()
-    render(
-      <PipOverlay
-        geometry={{ x: 10, y: 10, width: 320, height: 180 }}
-        videoRef={createRef<HTMLVideoElement>()}
-        hidden={false}
-        poppedOut
-        onChange={onChange}
-        onCommit={onCommit}
-        onHide={vi.fn()}
-        onPopOut={vi.fn()}
-        onPopIn={vi.fn()}
-        onLoadedMetadata={vi.fn()}
-        onTimeUpdate={vi.fn()}
-        onVideoError={vi.fn()}
-      />
-    )
-
-    fireEvent(screen.getByRole('button', { name: 'Pop movie back in' }), new MouseEvent('pointerdown', {
-      button: 0,
-      clientX: 10,
-      clientY: 10,
-      bubbles: true
-    }))
-    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 30, clientY: 35 }))
-    window.dispatchEvent(new MouseEvent('pointerup'))
 
     expect(onChange).not.toHaveBeenCalled()
     expect(onCommit).not.toHaveBeenCalled()
@@ -172,22 +88,7 @@ describe('PipOverlay', () => {
       configurable: true,
       value: requestFullscreen
     })
-
-    render(
-      <PipOverlay
-        geometry={{ x: 10, y: 10, width: 320, height: 180 }}
-        videoRef={createRef<HTMLVideoElement>()}
-        hidden={false}
-        onChange={vi.fn()}
-        onCommit={vi.fn()}
-        onHide={vi.fn()}
-        onPopOut={vi.fn()}
-        onPopIn={vi.fn()}
-        onLoadedMetadata={vi.fn()}
-        onTimeUpdate={vi.fn()}
-        onVideoError={vi.fn()}
-      />
-    )
+    renderOverlay()
 
     fireEvent.doubleClick(document.querySelector('video.pip-video')!)
 

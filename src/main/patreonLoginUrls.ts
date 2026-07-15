@@ -1,3 +1,10 @@
+const PATREON_LOGIN_HOST_FAMILIES = [
+  'patreon.com',
+  'facebook.com',
+  'google.com',
+  'apple.com'
+] as const
+
 export function isAllowedPatreonLoginUrl(rawUrl: string): boolean {
   try {
     const url = new URL(rawUrl)
@@ -5,14 +12,13 @@ export function isAllowedPatreonLoginUrl(rawUrl: string): boolean {
       return false
     }
 
-    const host = url.hostname
-    return (
-      host === 'patreon.com' ||
-      host === 'www.patreon.com' ||
-      host === 'facebook.com' ||
-      host.endsWith('.facebook.com') ||
-      host.endsWith('.google.com') ||
-      host.endsWith('.apple.com')
+    if (url.username || url.password || url.port) {
+      return false
+    }
+
+    const hostname = url.hostname.toLowerCase()
+    return PATREON_LOGIN_HOST_FAMILIES.some(
+      (allowedHost) => hostname === allowedHost || hostname.endsWith(`.${allowedHost}`)
     )
   } catch {
     return false

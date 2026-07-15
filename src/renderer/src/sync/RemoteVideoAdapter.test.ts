@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { RemoteMediaCommand, RemoteMediaEvent, RemoteMediaEventType, RemoteMediaState } from '@shared/types'
+import type { MovieMediaCommandRequest, RemoteMediaEvent, RemoteMediaEventType, RemoteMediaState } from '@shared/types'
 import { RemoteVideoAdapter, type RemoteVideoTransport } from './RemoteVideoAdapter'
 
 const bridgedEvents: RemoteMediaEventType[] = [
@@ -20,10 +20,10 @@ const bridgedEvents: RemoteMediaEventType[] = [
 ]
 
 class FakeTransport implements RemoteVideoTransport {
-  readonly commands: RemoteMediaCommand[] = []
+  readonly commands: MovieMediaCommandRequest[] = []
   private callback: ((event: RemoteMediaEvent) => void) | null = null
 
-  async sendCommand(command: RemoteMediaCommand) {
+  async sendCommand(command: MovieMediaCommandRequest) {
     this.commands.push(command)
     return {
       id: command.id,

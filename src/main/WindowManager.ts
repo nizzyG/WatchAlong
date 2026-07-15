@@ -1,4 +1,4 @@
-import { BrowserWindow, screen, shell } from 'electron'
+import { BrowserWindow, screen, type WebContents, type WebPreferences } from 'electron'
 import { existsSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type {
@@ -9,19 +9,46 @@ import type {
   MovieWindowCloseResult,
   MovieWindowGeometryEvent,
   MovieWindowInit,
+  MovieMediaCommandRequest,
   MovieWindowOpenRequest,
   MovieWindowOpenResult,
   OverlayGeometry,
-  RemoteMediaCommand,
   RemoteMediaCommandResult,
-  RemoteMediaEvent,
   RemoteMediaState,
   WizardLifecycleEvent,
   WizardOutcome
 } from '@shared/types'
-import { ensureVisibleWindowBounds, MOVIE_WINDOW_MIN_HEIGHT, MOVIE_WINDOW_MIN_WIDTH, PendingMovieCommandTracker } from './movieWindowHelpers'
+import {
+  bindTrustedMovieSource,
+  ensureVisibleWindowBounds,
+  MOVIE_WINDOW_MIN_HEIGHT,
+  MOVIE_WINDOW_MIN_WIDTH,
+  normalizeRemoteMediaCommandResult,
+  normalizeRemoteMediaEvent,
+  PendingMovieCommandTracker,
+  SerialTaskQueue
+} from './movieWindowHelpers'
 import { SessionStore } from './sessionStore'
 import { APP_NAME, IPC_PREFIX, MAIN_WINDOW_CLOSE_TIMEOUT_MS } from './constants'
+import { hardenRendererWindow, type RendererRole } from './ipc/security'
+import { createSessionMediaUrl } from './mediaProtocol'
+import { secureRendererWebPreferences } from './rendererSecurityPolicy'
+import { createRendererEntryUrl } from './rendererProtocolPolicy'
+
+const AUDIO_TRACKS_BLINK_FEATURE = 'AudioVideoTracks'
+
+/**
+ * Audio-track enumeration is a playback-only capability. Keep onboarding and
+ * import wizard renderers on the baseline sandboxed preferences; Patreon and
+ * other remote windows are created outside WindowManager and never use this
+ * helper.
+ */
+export function rendererWebPreferencesForRole(preload: string, role: RendererRole): WebPreferences {
+  const preferences = secureRendererWebPreferences(preload)
+  return role === 'main' || role === 'movie'
+    ? { ...preferences, enableBlinkFeatures: AUDIO_TRACKS_BLINK_FEATURE }
+    : preferences
+}
 
 export class WindowManager {
   private mainWindow: BrowserWindow | null = null
@@ -39,62 +66,80 @@ export class WindowManager {
   private shouldNotifyMovieWindowClosed = true
   private mainWindowCloseConfirmed = false
   private mainWindowCloseTimer: NodeJS.Timeout | null = null
+  private movieWindowOperationVersion = 0
+  private readonly movieWindowOpenQueue = new SerialTaskQueue()
   private readonly pendingMovieCommands = new PendingMovieCommandTracker({
     getState: () => this.lastMovieMediaState ?? this.emptyRemoteMediaState(),
     onTimeout: () => this.closeUnresponsiveMovieWindow()
   })
 
-  constructor(private readonly sessionStore: SessionStore) {}
+  constructor(
+    private readonly sessionStore: SessionStore,
+    private readonly developmentRendererUrl: string | null = null
+  ) {}
 
   getMainWindow(): BrowserWindow | null {
     return this.mainWindow && !this.mainWindow.isDestroyed() ? this.mainWindow : null
+  }
+
+  focusMainWindow(): void {
+    const target = this.getMainWindow()
+    if (!target) return
+    if (target.isMinimized()) target.restore()
+    target.show()
+    target.focus()
   }
 
   getImportWizardContext(): ImportWizardContext {
     return this.importWizardContext
   }
 
-  getMovieWindowInit(): MovieWindowInit | null {
-    return this.movieWindowInit
+  getMovieWindowInit(sender: WebContents): MovieWindowInit | null {
+    return this.isCurrentMovieWindowSender(sender) ? this.movieWindowInit : null
   }
 
-  markMovieWindowReady(): void {
+  markMovieWindowReady(sender: WebContents): boolean {
+    if (!this.isCurrentMovieWindowSender(sender)) return false
     this.resolveMovieWindowReady?.()
     this.resolveMovieWindowReady = null
+    return true
   }
 
-  handleMovieMediaCommandResult(result: RemoteMediaCommandResult): void {
+  handleMovieMediaCommandResult(sender: WebContents, value: unknown): boolean {
+    if (!this.isCurrentMovieWindowSender(sender)) return false
+    const result = normalizeRemoteMediaCommandResult(value)
+    if (!result || !this.pendingMovieCommands.resolve(result)) return false
     this.lastMovieMediaState = result.state
-    this.pendingMovieCommands.resolve(result)
+    return true
   }
 
-  handleMovieMediaEvent(event: RemoteMediaEvent): void {
+  handleMovieMediaEvent(sender: WebContents, value: unknown): boolean {
+    if (!this.isCurrentMovieWindowSender(sender)) return false
+    const event = normalizeRemoteMediaEvent(value)
+    if (!event) return false
     this.lastMovieMediaState = event.state
     this.getMainWindow()?.webContents.send(`${IPC_PREFIX}:movie-media-event`, event)
+    return true
+  }
+
+  requestMovieWindowPopIn(sender: WebContents): boolean {
+    if (!this.isCurrentMovieWindowSender(sender)) return false
+    this.sendMovieWindowPopInRequest()
+    return true
   }
 
   public createMainWindow(): void {
     this.mainWindow = new BrowserWindow({
       width: 1280,
       height: 780,
-      minWidth: 960,
-      minHeight: 560,
-      backgroundColor: '#05070a',
+      minWidth: 1280,
+      minHeight: 720,
+      backgroundColor: '#0c0b09',
       title: APP_NAME,
-      webPreferences: {
-        preload: join(__dirname, '../preload/index.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: false
-      }
+      webPreferences: rendererWebPreferencesForRole(join(__dirname, '../preload/index.js'), 'main')
     })
   
     this.mainWindow.setMenuBarVisibility(false)
-    this.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-      void shell.openExternal(url)
-      return { action: 'deny' }
-    })
-  
     this.mainWindow.on('close', (event) => {
       if (this.mainWindowCloseConfirmed) {
         return
@@ -175,21 +220,11 @@ export class WindowManager {
       parent: this.mainWindow,
       modal: true,
       title: 'Choose Your Movie',
-      backgroundColor: '#05070a',
-      webPreferences: {
-        preload: join(__dirname, '../preload/index.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: false
-      }
+      backgroundColor: '#0c0b09',
+      webPreferences: rendererWebPreferencesForRole(join(__dirname, '../preload/index.js'), 'wizard')
     })
   
     this.wizardWindow.setMenuBarVisibility(false)
-    this.wizardWindow.webContents.setWindowOpenHandler(({ url }) => {
-      void shell.openExternal(url)
-      return { action: 'deny' }
-    })
-  
     this.recenterWizardOnParent = () => this.centerWizardOnParent()
     this.mainWindow.on('move', this.recenterWizardOnParent)
     this.mainWindow.on('resize', this.recenterWizardOnParent)
@@ -200,8 +235,10 @@ export class WindowManager {
       this.wizardWindow?.focus()
     })
   
-    this.wizardWindow.on('close', () => {
-      this.wizardCloseOutcome ??= 'cancelled'
+    this.wizardWindow.on('close', (event) => {
+      if (this.wizardCloseOutcome) return
+      event.preventDefault()
+      this.wizardWindow?.webContents.send(`${IPC_PREFIX}:wizard-close-request`)
     })
   
     this.wizardWindow.on('closed', () => {
@@ -279,19 +316,13 @@ export class WindowManager {
   }
   
   private async loadRenderer(targetWindow: BrowserWindow, view?: 'wizard' | 'movie'): Promise<void> {
-    if (process.env.ELECTRON_RENDERER_URL) {
-      const rendererUrl = new URL(process.env.ELECTRON_RENDERER_URL)
-      if (view) {
-        rendererUrl.searchParams.set('view', view)
-      }
-      await targetWindow.loadURL(rendererUrl.toString())
-      return
+    const rendererUrl = new URL(this.developmentRendererUrl ?? createRendererEntryUrl(view))
+    if (this.developmentRendererUrl && view) {
+      rendererUrl.searchParams.set('view', view)
     }
-  
-    await targetWindow.loadFile(
-      join(__dirname, '../renderer/index.html'),
-      view ? { query: { view } } : undefined
-    )
+
+    hardenRendererWindow(targetWindow, (view ?? 'main') satisfies RendererRole, rendererUrl.toString())
+    await targetWindow.loadURL(rendererUrl.toString())
   }
   
   private sendWizardLifecycle(event: WizardLifecycleEvent): void {
@@ -310,44 +341,78 @@ export class WindowManager {
     }
   }
   
-  public async openMovieWindow(request: MovieWindowOpenRequest): Promise<MovieWindowOpenResult> {
-    const session = this.sessionStore.getSession(request.sessionId)
-    if (!session?.moviePath || !existsSync(session.moviePath)) {
+  public openMovieWindow(request: MovieWindowOpenRequest): Promise<MovieWindowOpenResult> {
+    const operationVersion = ++this.movieWindowOperationVersion
+    return this.movieWindowOpenQueue.run(() => this.openMovieWindowSerially(request, operationVersion))
+  }
+
+  private async openMovieWindowSerially(
+    request: MovieWindowOpenRequest,
+    operationVersion: number
+  ): Promise<MovieWindowOpenResult> {
+    const requestedGeometry = this.normalizeWindowGeometry(request?.geometry)
+    const sessionId = typeof request?.sessionId === 'string' ? request.sessionId : ''
+    const source = this.getStoredMovieSource(sessionId)
+    if (!source) {
+      return this.movieWindowOpenFailure(requestedGeometry, 'missing-media')
+    }
+    if (operationVersion !== this.movieWindowOperationVersion || this.sessionStore.getActiveSession()?.id !== sessionId) {
+      return this.movieWindowOpenFailure(requestedGeometry, 'stale-session')
+    }
+
+    if (
+      this.movieWindow && !this.movieWindow.isDestroyed() &&
+      this.movieWindowInit?.sessionId === sessionId &&
+      !this.closingMovieWindowIntentionally
+    ) {
       return {
-        opened: false,
-        geometry: request.geometry,
-        state: this.lastMovieMediaState,
-        reason: 'missing-media'
+        opened: true,
+        geometry: this.currentMovieWindowGeometry() ?? requestedGeometry,
+        state: this.lastMovieMediaState
       }
     }
-  
-    await this.closeMovieWindow({ notifyMainWindow: false })
-  
+
+    await this.closeMovieWindowNow({ notifyMainWindow: false })
+    const refreshedSource = this.getStoredMovieSource(sessionId)
+    if (
+      operationVersion !== this.movieWindowOperationVersion ||
+      this.sessionStore.getActiveSession()?.id !== sessionId ||
+      !refreshedSource || refreshedSource.path !== source.path
+    ) {
+      return this.movieWindowOpenFailure(requestedGeometry, refreshedSource ? 'stale-session' : 'missing-media')
+    }
+
     const bounds = this.movieWindowBoundsFromRequest(request)
+    const currentTime = Math.max(0, finiteOr(request.currentTime, 0))
+    const playbackRate = clamp(finiteOr(request.playbackRate, 1), 0.25, 4)
+    const volume = clamp(finiteOr(request.volume, 1), 0, 1)
+    const muted = request.muted === true
+    const subtitleText = typeof request.subtitleText === 'string' ? request.subtitleText : null
     this.movieWindowGeometry = bounds
     this.movieWindowInit = {
-      sessionId: request.sessionId,
-      title: request.title,
-      mediaUrl: request.mediaUrl,
-      subtitleText: request.subtitleText,
-      currentTime: request.currentTime,
-      playbackRate: request.playbackRate,
-      volume: request.volume,
-      muted: request.muted
+      sessionId,
+      title: refreshedSource.session.title,
+      mediaUrl: refreshedSource.mediaUrl,
+      subtitleText,
+      currentTime,
+      playbackRate,
+      volume,
+      muted,
+      audioTrackPreference: refreshedSource.session.movieAudioTrackPreference
     }
     this.lastMovieMediaState = {
-      currentTime: request.currentTime,
+      currentTime,
       duration: Number.NaN,
       paused: true,
-      playbackRate: request.playbackRate,
+      playbackRate,
       readyState: 0,
       seeking: false,
       ended: false,
-      volume: request.volume,
-      muted: request.muted
+      volume,
+      muted
     }
-  
-    this.movieWindow = new BrowserWindow({
+
+    const targetWindow = new BrowserWindow({
       ...bounds,
       minWidth: 320,
       minHeight: 180,
@@ -355,38 +420,32 @@ export class WindowManager {
       resizable: true,
       alwaysOnTop: true,
       show: false,
-      title: request.title,
-      backgroundColor: '#05070a',
-      webPreferences: {
-        preload: join(__dirname, '../preload/index.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: false
-      }
+      title: refreshedSource.session.title,
+      backgroundColor: '#0c0b09',
+      webPreferences: rendererWebPreferencesForRole(join(__dirname, '../preload/index.js'), 'movie')
     })
-  
-    this.movieWindow.setMenuBarVisibility(false)
-    this.movieWindow.webContents.setWindowOpenHandler(({ url }) => {
-      void shell.openExternal(url)
-      return { action: 'deny' }
-    })
-  
-    this.movieWindow.on('move', () => this.notifyMovieWindowGeometry())
-    this.movieWindow.on('resize', () => this.notifyMovieWindowGeometry())
-    this.movieWindow.on('close', (event) => {
+    this.movieWindow = targetWindow
+
+    targetWindow.setMenuBarVisibility(false)
+    targetWindow.on('move', () => this.notifyMovieWindowGeometry())
+    targetWindow.on('resize', () => this.notifyMovieWindowGeometry())
+    targetWindow.on('close', (event) => {
       if (this.closingMovieWindowIntentionally) {
         return
       }
-  
+
       event.preventDefault()
       this.sendMovieWindowPopInRequest()
     })
-    this.movieWindow.on('closed', () => {
+    targetWindow.on('closed', () => {
       this.pendingMovieCommands.resolveAll('Movie window closed.')
+      if (this.movieWindow !== targetWindow) {
+        return
+      }
       this.movieWindow = null
       this.movieWindowInit = null
       this.resolveMovieWindowReady = null
-      const closedEvent = this.movieWindowClosedEvent
+      const closedEvent = { ...this.movieWindowClosedEvent, sessionId }
       const notifyMainWindow = this.shouldNotifyMovieWindowClosed
       this.movieWindowClosedEvent = undefined
       this.shouldNotifyMovieWindowClosed = true
@@ -394,30 +453,52 @@ export class WindowManager {
         this.sendMovieWindowClosed(closedEvent)
       }
     })
-    this.movieWindow.once('ready-to-show', () => {
-      this.movieWindow?.show()
+    targetWindow.once('ready-to-show', () => {
+      if (this.isCurrentMovieWindow(targetWindow, sessionId, refreshedSource.path, operationVersion)) {
+        targetWindow.show()
+      }
     })
-  
+
     const readyPromise = new Promise<void>((resolve) => {
       this.resolveMovieWindowReady = resolve
     })
-    await this.loadRenderer(this.movieWindow, 'movie')
-    await Promise.race([readyPromise, delay(5000)])
+    try {
+      await this.loadRenderer(targetWindow, 'movie')
+      await Promise.race([readyPromise, delay(5000)])
+    } catch {
+      if (this.movieWindow === targetWindow) {
+        await this.closeMovieWindowNow({ notifyMainWindow: false })
+      }
+      return this.movieWindowOpenFailure(requestedGeometry, 'renderer-load-failed')
+    }
+
+    if (!this.isCurrentMovieWindow(targetWindow, sessionId, refreshedSource.path, operationVersion)) {
+      if (this.movieWindow === targetWindow) {
+        await this.closeMovieWindowNow({ notifyMainWindow: false })
+      }
+      return this.movieWindowOpenFailure(requestedGeometry, 'stale-session')
+    }
+
     this.notifyMovieWindowGeometry()
-  
     return {
       opened: true,
-      geometry: this.movieWindowGeometry,
+      geometry: this.movieWindowGeometry ?? requestedGeometry,
       state: this.lastMovieMediaState
     }
   }
-  
-  public async closeMovieWindow(options: MovieWindowCloseOptions = {}): Promise<MovieWindowCloseResult> {
+
+  public closeMovieWindow(options: MovieWindowCloseOptions = {}): Promise<MovieWindowCloseResult> {
+    this.movieWindowOperationVersion += 1
+    return this.closeMovieWindowNow(options)
+  }
+
+  private async closeMovieWindowNow(options: MovieWindowCloseOptions = {}): Promise<MovieWindowCloseResult> {
     const geometry = this.currentMovieWindowGeometry()
     const overlay = geometry ? this.movieWindowGeometryToOverlay(geometry) : null
     const state = this.lastMovieMediaState
     const notifyMainWindow = options.notifyMainWindow !== false
     const targetWindow = this.movieWindow
+    const sessionId = this.movieWindowInit?.sessionId
     this.closingMovieWindowIntentionally = true
     try {
       if (targetWindow && !targetWindow.isDestroyed()) {
@@ -428,7 +509,7 @@ export class WindowManager {
         targetWindow.close()
         await closed
       } else if (notifyMainWindow) {
-        this.sendMovieWindowClosed(this.movieWindowClosedEvent)
+        this.sendMovieWindowClosed({ ...this.movieWindowClosedEvent, sessionId })
         this.movieWindowClosedEvent = undefined
       }
     } finally {
@@ -447,12 +528,14 @@ export class WindowManager {
   
   private notifyMovieWindowGeometry(): void {
     const geometry = this.currentMovieWindowGeometry()
-    if (!geometry) {
+    const sessionId = this.movieWindowInit?.sessionId
+    if (!geometry || !sessionId) {
       return
     }
   
     this.movieWindowGeometry = geometry
     const event: MovieWindowGeometryEvent = {
+      sessionId,
       geometry,
       overlay: this.movieWindowGeometryToOverlay(geometry)
     }
@@ -507,12 +590,58 @@ export class WindowManager {
     }
   }
   
-  private normalizeWindowGeometry(geometry: OverlayGeometry): Electron.Rectangle {
+  private normalizeWindowGeometry(geometry?: OverlayGeometry | null): Electron.Rectangle {
     return {
-      x: Math.round(finiteOr(geometry.x, 24)),
-      y: Math.round(finiteOr(geometry.y, 24)),
-      width: Math.max(MOVIE_WINDOW_MIN_WIDTH, Math.round(finiteOr(geometry.width, 420))),
-      height: Math.max(MOVIE_WINDOW_MIN_HEIGHT, Math.round(finiteOr(geometry.height, 236)))
+      x: Math.round(finiteOr(geometry?.x, 24)),
+      y: Math.round(finiteOr(geometry?.y, 24)),
+      width: Math.max(MOVIE_WINDOW_MIN_WIDTH, Math.round(finiteOr(geometry?.width, 420))),
+      height: Math.max(MOVIE_WINDOW_MIN_HEIGHT, Math.round(finiteOr(geometry?.height, 236)))
+    }
+  }
+
+  private getStoredMovieSource(sessionId: string) {
+    if (!sessionId) {
+      return null
+    }
+    const session = this.sessionStore.getSession(sessionId)
+    if (!session?.moviePath || !existsSync(session.moviePath)) {
+      return null
+    }
+    return {
+      session,
+      path: session.moviePath,
+      mediaUrl: createSessionMediaUrl(session, 'movie')
+    }
+  }
+
+  private isCurrentMovieWindow(
+    targetWindow: BrowserWindow,
+    sessionId: string,
+    moviePath: string,
+    operationVersion: number
+  ): boolean {
+    const currentSource = this.getStoredMovieSource(sessionId)
+    return operationVersion === this.movieWindowOperationVersion &&
+      this.sessionStore.getActiveSession()?.id === sessionId &&
+      currentSource?.path === moviePath &&
+      this.movieWindow === targetWindow &&
+      !targetWindow.isDestroyed()
+  }
+
+  private isCurrentMovieWindowSender(sender: WebContents): boolean {
+    return Boolean(
+      this.movieWindow &&
+      !this.movieWindow.isDestroyed() &&
+      this.movieWindow.webContents === sender
+    )
+  }
+
+  private movieWindowOpenFailure(geometry: OverlayGeometry, reason: string): MovieWindowOpenResult {
+    return {
+      opened: false,
+      geometry,
+      state: this.lastMovieMediaState,
+      reason
     }
   }
   
@@ -522,18 +651,31 @@ export class WindowManager {
     }
   }
   
-  public sendMovieWindowPopInRequest(): void {
+  private sendMovieWindowPopInRequest(): void {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send(`${IPC_PREFIX}:movie-window-pop-in-requested`)
+      this.mainWindow.webContents.send(`${IPC_PREFIX}:movie-window-pop-in-requested`, {
+        sessionId: this.movieWindowInit?.sessionId
+      } satisfies MovieWindowClosedEvent)
     }
   }
   
   private closeUnresponsiveMovieWindow(): void {
-    this.movieWindowClosedEvent = { reason: 'unresponsive' }
+    this.movieWindowClosedEvent = {
+      sessionId: this.movieWindowInit?.sessionId,
+      reason: 'unresponsive'
+    }
     void this.closeMovieWindow()
   }
   
-  public sendMovieMediaCommand(command: RemoteMediaCommand): Promise<RemoteMediaCommandResult> {
+  public sendMovieMediaCommand(command: MovieMediaCommandRequest): Promise<RemoteMediaCommandResult> {
+    if (!command || typeof command.id !== 'string' || command.id.length === 0 || command.id.length > 256) {
+      return Promise.resolve({
+        id: '',
+        ok: false,
+        state: this.lastMovieMediaState ?? this.emptyRemoteMediaState(),
+        error: 'Invalid movie command.'
+      })
+    }
     if (!this.movieWindow || this.movieWindow.isDestroyed()) {
       return Promise.resolve({
         id: command.id,
@@ -542,10 +684,26 @@ export class WindowManager {
         error: 'Movie window is not open.'
       })
     }
+
+    const sessionId = this.movieWindowInit?.sessionId
+    const source = sessionId ? this.getStoredMovieSource(sessionId) : null
+    if (!source || this.sessionStore.getActiveSession()?.id !== sessionId) {
+      return Promise.resolve({
+        id: command.id,
+        ok: false,
+        state: this.lastMovieMediaState ?? this.emptyRemoteMediaState(),
+        error: 'The stored movie file is no longer available.'
+      })
+    }
+    const trustedCommand = bindTrustedMovieSource(command, {
+      mediaUrl: source.mediaUrl,
+      title: source.session.title,
+      audioTrackPreference: source.session.movieAudioTrackPreference
+    })
   
     return new Promise((resolve) => {
       this.pendingMovieCommands.add(command.id, resolve)
-      this.movieWindow!.webContents.send(`${IPC_PREFIX}:movie-media-command`, command)
+      this.movieWindow!.webContents.send(`${IPC_PREFIX}:movie-media-command`, trustedCommand)
     })
   }
   
@@ -568,6 +726,10 @@ export class WindowManager {
 
 function finiteOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value))
 }
 
 function delay(milliseconds: number): Promise<void> {

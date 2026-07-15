@@ -50,7 +50,7 @@ describe.runIf(enabled)('local auto-sync corpus shipping gate', () => {
         },
         emitComplete: () => undefined
       })
-      const result = await service.analyze(session.id, analysisSession)
+      const result = await service.analyze(session.id, { intent: 'initial', snapshot: analysisSession })
       const offsetError = result.offsetSeconds === undefined ? null : Math.abs(result.offsetSeconds - session.offsetSeconds)
       const endError = result.offsetSeconds === undefined || result.movieRateCorrection === undefined
         ? null
@@ -81,6 +81,6 @@ class MemoryRepository implements AutoSyncSessionRepository {
   getSession(id: string): LibrarySession | null { return id === this.session.id ? this.session : null }
   updateSession(_id: string, patch: Partial<LibrarySession>): SessionLibrary {
     this.session = { ...this.session, ...patch }
-    return { version: 4, activeSessionId: this.session.id, sessions: [this.session] }
+    return { version: 6, activeSessionId: this.session.id, sessions: [this.session] }
   }
 }

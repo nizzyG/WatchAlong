@@ -7,15 +7,13 @@ interface PipOverlayProps {
   geometry: OverlayGeometry
   videoRef: RefObject<HTMLVideoElement>
   hidden: boolean
-  poppedOut?: boolean
   onChange(geometry: OverlayGeometry): void
   onCommit(geometry: OverlayGeometry): void
   onHide(): void
   onPopOut(): void
-  onPopIn(): void
   onLoadedMetadata(): void
   onTimeUpdate(): void
-  onVideoError(): void
+  onVideoError(video: HTMLVideoElement): void
   subtitleText?: string | null
 }
 
@@ -26,12 +24,10 @@ export function PipOverlay({
   geometry,
   videoRef,
   hidden,
-  poppedOut = false,
   onChange,
   onCommit,
   onHide,
   onPopOut,
-  onPopIn,
   onLoadedMetadata,
   onTimeUpdate,
   onVideoError,
@@ -111,11 +107,11 @@ export function PipOverlay({
 
   return (
     <section
-      className={`pip ${hidden ? 'pip-hidden' : ''} ${poppedOut ? 'pip-popped-out' : ''}`}
+      className={`pip ${hidden ? 'pip-hidden' : ''}`}
       style={{
         transform: `translate(${geometry.x}px, ${geometry.y}px)`,
         width: geometry.width,
-        height: poppedOut ? 42 : geometry.height
+        height: geometry.height
       }}
       aria-label="Movie picture in picture"
       aria-hidden={hidden}
@@ -135,29 +131,16 @@ export function PipOverlay({
         >
           <Magnet size={16} aria-hidden />
         </button>
-        {poppedOut ? (
-          <button
-            className="pip-popout-status"
-            type="button"
-            title="Pop movie back in"
-            aria-label="Pop movie back in"
-            onPointerDown={stopToolbarPointerDown}
-            onClick={onPopIn}
-          >
-            Movie is popped out.
-          </button>
-        ) : (
-          <button
-            className="icon-button"
-            type="button"
-            title="Pop out movie to separate window."
-            aria-label="Pop out movie to separate window"
-            onPointerDown={stopToolbarPointerDown}
-            onClick={onPopOut}
-          >
-            <ExternalLink size={16} aria-hidden />
-          </button>
-        )}
+        <button
+          className="icon-button"
+          type="button"
+          title="Pop out movie"
+          aria-label="Pop out movie"
+          onPointerDown={stopToolbarPointerDown}
+          onClick={onPopOut}
+        >
+          <ExternalLink size={16} aria-hidden />
+        </button>
         <button
           className="icon-button"
           type="button"
@@ -169,29 +152,25 @@ export function PipOverlay({
           <EyeOff size={17} aria-hidden />
         </button>
       </div>
-      {!poppedOut && (
-        <>
-          <video
-            ref={videoRef}
-            className="pip-video"
-            playsInline
-            preload="metadata"
-            onLoadedMetadata={onLoadedMetadata}
-            onTimeUpdate={onTimeUpdate}
-            onError={onVideoError}
-          />
-          {subtitleText && <div className="pip-subtitles">{subtitleText}</div>}
-          <button
-            className="pip-resize"
-            type="button"
-            title="Resize movie"
-            aria-label="Resize movie"
-            onPointerDown={beginResize}
-          >
-            <Maximize2 size={16} aria-hidden />
-          </button>
-        </>
-      )}
+      <video
+        ref={videoRef}
+        className="pip-video"
+        playsInline
+        preload="metadata"
+        onLoadedMetadata={onLoadedMetadata}
+        onTimeUpdate={onTimeUpdate}
+        onError={(event) => onVideoError(event.currentTarget)}
+      />
+      {subtitleText && <div className="pip-subtitles">{subtitleText}</div>}
+      <button
+        className="pip-resize"
+        type="button"
+        title="Resize movie"
+        aria-label="Resize movie"
+        onPointerDown={beginResize}
+      >
+        <Maximize2 size={16} aria-hidden />
+      </button>
     </section>
   )
 }

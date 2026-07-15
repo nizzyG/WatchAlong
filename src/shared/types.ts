@@ -2,16 +2,18 @@ export type MediaRole = 'reaction' | 'movie'
 export type PlaybackRate = 1 | 1.25 | 1.5 | 2
 export type ReactorSource = 'streaming' | 'ntsc' | 'pal'
 export type ToolName = 'yt-dlp' | 'ffmpeg' | 'node' | 'patreon-dl'
-export type BrowserName = 'firefox' | 'chrome' | 'edge' | 'brave' | 'safari' | 'opera'
-export type BrowserExtractionMode = 'automatic' | 'best-effort' | 'manual-only'
+export type BrowserName = 'firefox'
 export type ReactionDownloadSource = 'youtube' | 'patreon'
 export type ReactionSource = 'local' | ReactionDownloadSource
 export type DownloadJobState = 'idle' | 'checking' | 'downloading' | 'success' | 'failed' | 'cancelled'
 export type WizardOutcome = 'cancelled' | 'completed' | 'completed-needs-review'
 export type AutoSyncPhase = 'preparing' | 'finding-inset' | 'scanning' | 'refining' | 'finishing'
 export type AutoSyncOutcome = 'confident' | 'partial' | 'fallback' | 'cancelled' | 'stale' | 'failed'
+export type AutoSyncIntent = 'initial' | 'recheck'
 export type LibraryViewPreference = 'grid' | 'list'
 export type ImportWizardMode = 'new' | 'show-again' | 'swap-reaction'
+export type SessionTitleOrigin = 'generated' | 'custom'
+export type ReactorNameOrigin = 'metadata' | 'custom'
 
 export interface MediaFile {
   path: string
@@ -25,13 +27,40 @@ export interface OverlayGeometry {
   height: number
 }
 
+/**
+ * Identifies a playable movie audio track without relying on Chromium's
+ * generated track id, which is not stable across loads or runtime upgrades.
+ */
+export interface AudioTrackPreference {
+  label: string
+  language: string
+  /** Zero-based position in the playable audio track list. */
+  ordinal: number
+}
+
+/** Serializable renderer snapshot of one Chromium-playable audio track. */
+export interface MovieAudioTrackOption extends AudioTrackPreference {
+  displayLabel: string
+  enabled: boolean
+}
+
+export interface MovieAudioTrackSnapshot {
+  tracks: MovieAudioTrackOption[]
+  selected: AudioTrackPreference | null
+}
+
 export interface LibrarySession {
   id: string
   title: string
+  titleOrigin: SessionTitleOrigin
+  reactorName: string | null
+  reactorNameOrigin: ReactorNameOrigin
   reactionPath: string | null
   reactionSource: ReactionSource
   reactionDurationSeconds: number | null
   moviePath: string | null
+  moviePosterPath: string | null
+  movieAudioTrackPreference: AudioTrackPreference | null
   subtitlePath: string | null
   offsetSeconds: number
   lastReactionTimeSeconds: number
@@ -58,10 +87,19 @@ export interface LibrarySession {
 export type SessionData = LibrarySession
 
 export interface SessionLibrary {
-  version: 4
+  version: 6
   activeSessionId: string | null
   sessions: LibrarySession[]
 }
+
+export interface LibraryRecoveryStatus {
+  available: boolean
+}
+
+export type ReplaceSessionMediaResult =
+  | { status: 'replaced'; library: SessionLibrary }
+  | { status: 'conflict'; library: SessionLibrary; existingSessionId: string }
+  | { status: 'missing'; library: SessionLibrary }
 
 export interface OpenVideosResult {
   library: SessionLibrary
@@ -89,16 +127,12 @@ export interface BrowserDetection {
   name: BrowserName
   label: string
   installed: boolean
-  extractionSupported: boolean
-  extractionMode: BrowserExtractionMode
-  subtitle?: string
   paths: string[]
 }
 
 export type PatreonSessionSource =
   | { type: 'browser'; browser: BrowserName; token: string }
   | { type: 'token'; token: string }
-  | { type: 'manual'; sessionId: string }
   | { type: 'saved' }
 
 export type ReactionDownloadRequest =
@@ -109,12 +143,29 @@ export interface StartDownloadResult {
   jobId: string
 }
 
+export interface DownloadedReactionMetadata {
+  reactionTitle?: string
+  reactorName?: string
+  avatarPath?: string
+}
+
 export interface DownloadProgressEvent {
   jobId: string
   source: ReactionDownloadSource
   state: DownloadJobState
   message: string
   percent: number | null
+  /**
+   * True only when a Patreon failure happened before main consumed the
+   * supplied session source, so retrying the same request does not require a
+   * new sign-in.
+   */
+  retryWithoutPatreonSignIn?: boolean
+  speed?: string
+  eta?: string
+  fragmentIndex?: number
+  fragmentCount?: number
+  metadata?: DownloadedReactionMetadata
   filePath?: string
   error?: string
 }
@@ -165,6 +216,7 @@ export type RemoteMediaEventType =
   | 'volumechange'
   | 'loadeddata'
   | 'canplaythrough'
+  | 'audiotrackchange'
 
 export interface RemoteMediaState {
   currentTime: number
@@ -181,13 +233,14 @@ export interface RemoteMediaState {
 export interface RemoteMediaEvent {
   type: RemoteMediaEventType
   state: RemoteMediaState
+  audioTrackSnapshot?: MovieAudioTrackSnapshot
   error?: string
 }
 
 export type RemoteMediaEventCallback = (event: RemoteMediaEvent) => void
 
 export type RemoteMediaCommand =
-  | { id: string; type: 'setSource'; mediaUrl: string | null; currentTime: number; playbackRate: number; volume: number; muted: boolean; subtitleText: string | null; title: string }
+  | { id: string; type: 'setSource'; mediaUrl: string | null; currentTime: number; playbackRate: number; volume: number; muted: boolean; subtitleText: string | null; title: string; audioTrackPreference: AudioTrackPreference | null }
   | { id: string; type: 'play' }
   | { id: string; type: 'pause' }
   | { id: string; type: 'setCurrentTime'; value: number }
@@ -195,19 +248,29 @@ export type RemoteMediaCommand =
   | { id: string; type: 'setVolume'; value: number }
   | { id: string; type: 'setMuted'; value: boolean }
   | { id: string; type: 'setSubtitleText'; value: string | null }
+  | { id: string; type: 'setAudioTrack'; value: AudioTrackPreference }
   | { id: string; type: 'fadeOut' }
+
+type RemoteMediaCommandWithoutSource = Exclude<RemoteMediaCommand, { type: 'setSource' }>
+
+/**
+ * Commands accepted from the main renderer. A renderer may ask to refresh the
+ * source, but it cannot choose the URL or title loaded by the movie window.
+ * Those values are bound from the stored session in the main process.
+ */
+export type MovieMediaCommandRequest = RemoteMediaCommandWithoutSource |
+  { id: string; type: 'setSource'; currentTime: number; playbackRate: number; volume: number; muted: boolean; subtitleText: string | null }
 
 export interface RemoteMediaCommandResult {
   id: string
   ok: boolean
   state: RemoteMediaState
+  audioTrackSnapshot?: MovieAudioTrackSnapshot
   error?: string
 }
 
 export interface MovieWindowOpenRequest {
   sessionId: string
-  title: string
-  mediaUrl: string
   subtitleText: string | null
   currentTime: number
   playbackRate: number
@@ -235,13 +298,20 @@ export interface MovieWindowCloseResult {
 }
 
 export interface MovieWindowGeometryEvent {
+  sessionId: string
   geometry: OverlayGeometry
   overlay: OverlayGeometry | null
 }
 
 export interface MovieWindowClosedEvent {
+  sessionId?: string
   reason?: 'unresponsive'
 }
+
+export type MovieWindowSessionPatch = Partial<Pick<
+  LibrarySession,
+  'isMoviePoppedOut' | 'movieWindowGeometry' | 'overlay'
+>>
 
 export interface MovieWindowInit {
   sessionId: string
@@ -252,12 +322,14 @@ export interface MovieWindowInit {
   playbackRate: number
   volume: number
   muted: boolean
+  audioTrackPreference: AudioTrackPreference | null
 }
 
 export type MovieWindowGeometryCallback = (event: MovieWindowGeometryEvent) => void
 export type MovieWindowLifecycleCallback = (event?: MovieWindowClosedEvent) => void
 export type MovieWindowCommandCallback = (command: RemoteMediaCommand) => void
 export type MainWindowCloseCallback = () => void
+export type WizardCloseRequestCallback = () => void
 
 export type WizardLifecycleEvent =
   | { type: 'opened' }
@@ -274,11 +346,17 @@ export interface SavedPatreonSessionStatus {
   canEncrypt: boolean
 }
 
+export type CabinetTheme = 'mahogany' | 'oak'
+export type CabinetThemePreference = 'system' | CabinetTheme
+export type CabinetThemePreferenceCallback = (preference: CabinetThemePreference) => void
+export type MediaPlayPauseCallback = () => void
+
 export interface AppPreferences {
   hasCompletedOnboarding: boolean
   openLibraryOnLaunch: boolean
   libraryView: LibraryViewPreference
   reactionDownloadDirectory: string | null
+  cabinetTheme: CabinetThemePreference
 }
 
 export interface ImportWizardLaunchOptions {
@@ -296,25 +374,50 @@ export interface WatchAlongApi {
   openVideos(): Promise<OpenVideosResult | null>
   selectMovieFile(): Promise<MediaFile | null>
   selectReactionFile(): Promise<MediaFile | null>
-  createOrSwitchSessionFromPaths(reactionPath: string, moviePath: string, reactionSource?: ReactionSource): Promise<SessionLibrary>
+  createOrSwitchSessionFromPaths(
+    reactionPath: string,
+    moviePath: string,
+    reactionSource?: ReactionSource,
+    suggestedTitle?: string,
+    reactorName?: string
+  ): Promise<SessionLibrary>
   getLibrary(): Promise<SessionLibrary>
+  getLibraryRecoveryStatus(): Promise<LibraryRecoveryStatus>
+  revealLibraryRecoveryFile(): Promise<boolean>
+  startFreshLibraryAfterRecovery(): Promise<SessionLibrary>
   saveActiveSession(patch: Partial<LibrarySession>): Promise<SessionLibrary>
   saveSessionPosition(sessionId: string, lastReactionTimeSeconds: number): Promise<SessionLibrary>
-  setSessionMedia(role: MediaRole, path: string, reactionSource?: ReactionSource): Promise<SessionLibrary>
-  replaceSessionMedia(sessionId: string, role: MediaRole, path: string, reactionSource?: ReactionSource): Promise<SessionLibrary>
+  setSessionMedia(
+    role: MediaRole,
+    path: string,
+    reactionSource?: ReactionSource,
+    suggestedTitle?: string,
+    reactorName?: string
+  ): Promise<SessionLibrary>
+  replaceSessionMedia(
+    sessionId: string,
+    role: MediaRole,
+    path: string,
+    reactionSource?: ReactionSource,
+    suggestedTitle?: string,
+    reactorName?: string
+  ): Promise<ReplaceSessionMediaResult>
   setActiveSession(sessionId: string): Promise<SessionLibrary>
   deleteSession(sessionId: string): Promise<SessionLibrary>
-  renameSession(sessionId: string, title: string): Promise<SessionLibrary>
+  renameSession(sessionId: string, title: string, reactorName?: string): Promise<SessionLibrary>
+  chooseMoviePoster(sessionId: string): Promise<SessionLibrary | null>
+  clearMoviePoster(sessionId: string): Promise<SessionLibrary>
   openSubtitle(): Promise<SessionLibrary | null>
   clearSubtitle(): Promise<SessionLibrary>
   getSubtitleText(sessionId: string): Promise<string | null>
   getMediaUrl(role: MediaRole, sessionId: string): Promise<string | null>
+  saveMovieWindowState(sessionId: string, patch: MovieWindowSessionPatch): Promise<SessionLibrary>
   openMovieWindow(request: MovieWindowOpenRequest): Promise<MovieWindowOpenResult>
   closeMovieWindow(options?: MovieWindowCloseOptions): Promise<MovieWindowCloseResult>
   requestMovieWindowPopIn(): Promise<void>
   getMovieWindowInit(): Promise<MovieWindowInit | null>
   movieWindowReady(): Promise<void>
-  sendMovieMediaCommand(command: RemoteMediaCommand): Promise<RemoteMediaCommandResult>
+  sendMovieMediaCommand(command: MovieMediaCommandRequest): Promise<RemoteMediaCommandResult>
   acknowledgeMovieMediaCommand(result: RemoteMediaCommandResult): Promise<void>
   reportMovieMediaEvent(event: RemoteMediaEvent): Promise<void>
   onMovieMediaCommand(callback: MovieWindowCommandCallback): () => void
@@ -323,10 +426,11 @@ export interface WatchAlongApi {
   onMovieWindowPopInRequest(callback: MovieWindowLifecycleCallback): () => void
   onMovieWindowClosed(callback: MovieWindowLifecycleCallback): () => void
   checkTools(): Promise<ToolCheckResult>
-  detectMovieFrameRate(moviePath: string): Promise<number | null>
+  detectMovieFrameRate(sessionId: string): Promise<number | null>
   detectBrowsers(): Promise<BrowserDetection[]>
   extractPatreonSession(browserName: BrowserName): Promise<PatreonSessionExtractionResult>
   openPatreonLoginWindow(): Promise<PatreonSessionExtractionResult>
+  discardPatreonSessionToken(token: string): Promise<void>
   getSavedPatreonSessionStatus(): Promise<SavedPatreonSessionStatus>
   saveLastPatreonSession(jobId: string): Promise<SavedPatreonSessionStatus>
   discardLastPatreonSession(jobId: string): Promise<SavedPatreonSessionStatus>
@@ -334,7 +438,7 @@ export interface WatchAlongApi {
   startReactionDownload(request: ReactionDownloadRequest): Promise<StartDownloadResult>
   cancelDownload(jobId: string): Promise<void>
   onDownloadProgress(callback: DownloadProgressCallback): () => void
-  startSessionAutoSync(sessionId: string): Promise<StartAutoSyncResult>
+  startSessionAutoSync(sessionId: string, intent: AutoSyncIntent): Promise<StartAutoSyncResult>
   cancelSessionAutoSync(sessionId: string): Promise<void>
   onAutoSyncProgress(callback: AutoSyncProgressCallback): () => void
   onAutoSyncComplete(callback: AutoSyncCompleteCallback): () => void
@@ -343,11 +447,16 @@ export interface WatchAlongApi {
   getImportWizardContext(): Promise<ImportWizardContext>
   finishOnboardingWizard(outcome: WizardOutcome): Promise<void>
   onWizardLifecycle(callback: WizardLifecycleCallback): () => void
+  onWizardCloseRequest(callback: WizardCloseRequestCallback): () => void
   confirmMainWindowClose(): Promise<void>
   onMainWindowCloseRequest(callback: MainWindowCloseCallback): () => void
+  setMediaPlayPauseEnabled(enabled: boolean): Promise<boolean>
+  onMediaPlayPause(callback: MediaPlayPauseCallback): () => void
   getPreferences(): Promise<AppPreferences>
+  getCabinetThemePreference(): Promise<CabinetThemePreference>
+  onCabinetThemePreference(callback: CabinetThemePreferenceCallback): () => void
   setPreference<K extends keyof AppPreferences>(key: K, value: AppPreferences[K]): Promise<AppPreferences>
-  selectDownloadDirectory(): Promise<string | null>
+  selectDownloadDirectory(): Promise<AppPreferences | null>
   completeOnboarding(): Promise<AppPreferences>
 }
 

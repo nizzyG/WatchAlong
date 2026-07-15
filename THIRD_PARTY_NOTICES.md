@@ -2,24 +2,41 @@
 
 WatchAlong source code is MIT licensed. The installers bundle the following third-party tools, each distributed under its own license.
 
-## FFmpeg
+The acquisition source and SHA-256 digest of every standalone yt-dlp, FFmpeg, ffprobe, and Node.js executable are recorded in [TOOL_PROVENANCE.md](TOOL_PROVENANCE.md). Release builds verify those hashes locally and fail before packaging if any managed executable is missing, unlisted, or changed. `patreon-dl` and its JavaScript dependencies are pinned separately by their package lock.
 
-- **Version:** 8.1.1
+## Cabinet wood textures
+
+WatchAlong includes transformed diffuse maps from two Poly Haven assets:
+
+- **Mahogany:** [Dark Wood](https://polyhaven.com/a/dark_wood), with contributions by Dimitrios Savva (photography), Rico Cilliers (tiling), and Dario Barresi (baking).
+- **Oak:** [Oak Veneer 01](https://polyhaven.com/a/oak_veneer_01), by Jenelle van Heerden.
+
+Both assets are provided under the [Creative Commons CC0 1.0 Universal license](https://polyhaven.com/license). CC0 permits copying, modification, redistribution, and commercial use without permission or required attribution. WatchAlong nevertheless credits the artists here.
+
+The 4096 x 4096 diffuse maps were center-cropped to 16:9, downsampled to 2560 x 1440, stripped of source metadata, and encoded as WebP. The exact source URLs, source and derivative SHA-256 checksums, and transformation details are included with the app in [CABINET_TEXTURE_PROVENANCE.md](CABINET_TEXTURE_PROVENANCE.md).
+
+## FFmpeg and ffprobe
+
+- **Windows x64 FFmpeg and ffprobe:** 8.1.1 full build from [Gyan](https://github.com/GyanD/codexffmpeg/releases/download/8.1.1/ffmpeg-8.1.1-full_build.7z)
+- **macOS Intel FFmpeg:** 8.1.1-tessus from [Evermeet](https://evermeet.cx/ffmpeg/ffmpeg-8.1.1.7z)
+- **macOS Intel ffprobe:** 8.0 from [OSXExperts](https://www.osxexperts.net/ffprobe80intel.zip)
+- **macOS Apple Silicon FFmpeg:** 6.0 from [OSXExperts](https://www.osxexperts.net/ffmpeg6arm.zip)
+- **macOS Apple Silicon ffprobe:** 8.1 from [OSXExperts](https://www.osxexperts.net/ffprobe81arm.zip)
 - **License:** GNU General Public License v3.0 or later
-- **Build configuration:** This binary is built with `--enable-gpl --enable-version3`
-- **Windows binaries:** [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) (8.1.1-full_build)
-- **macOS binaries:** x64: [evermeet.cx](https://evermeet.cx/ffmpeg/), arm64: [osxexperts.net](https://www.osxexperts.net/)
-- **ffprobe (macOS):** [osxexperts.net](https://www.osxexperts.net/)
+- **Build configuration:** The distributed builds enable GPL components. Exact build configurations and scripts are available from the distributors linked above.
 
 ### GPL source offer
 
 FFmpeg is distributed under the GNU General Public License v3.0. Under GPLv3 §6, any distribution of FFmpeg binaries must be accompanied by the corresponding source code or a written offer to provide it.
 
-The corresponding FFmpeg source code for the exact binaries distributed with WatchAlong is available at:
+The corresponding FFmpeg source releases for the binaries distributed with WatchAlong are available at:
 
-**https://ffmpeg.org/releases/ffmpeg-8.1.1.tar.xz**
+- **6.0:** https://ffmpeg.org/releases/ffmpeg-6.0.tar.xz
+- **8.0:** https://ffmpeg.org/releases/ffmpeg-8.0.tar.xz
+- **8.1:** https://ffmpeg.org/releases/ffmpeg-8.1.tar.xz
+- **8.1.1:** https://ffmpeg.org/releases/ffmpeg-8.1.1.tar.xz
 
-The build configuration used matches the upstream Gyan (Windows) and Evermeet/osxexperts (macOS) builds with `--enable-gpl --enable-version3`. Full build scripts for those distributions are available at their respective project pages linked above.
+Build configurations and scripts for these static distributions are available from Gyan, Evermeet, and OSXExperts at the artifact links above. Exact executable hashes are recorded in [TOOL_PROVENANCE.md](TOOL_PROVENANCE.md).
 
 To request the source on physical media, or if the above link doesn't work for you, email `watchalong@pm.me`. I'll provide the corresponding source at no charge.
 
@@ -660,7 +677,8 @@ To request the source on physical media, or if the above link doesn't work for y
 
 ## Node.js
 
-- **Version:** 24.15.0
+- **Windows x64 version:** 24.15.0
+- **macOS Intel and Apple Silicon version:** 24.16.0
 - **License:** MIT
 - **Source:** https://nodejs.org
 

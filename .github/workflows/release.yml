@@ -22,16 +22,30 @@ jobs:
             artifact-name: watchalong-windows
             artifact-path: release/*.exe
             arch-args: ""
+            tool-platform: win32
+            tool-arch: x64
+            node-version: '24.15.0'
           - name: macOS (Intel)
             os: macos-latest
             artifact-name: watchalong-macos-x64
             artifact-path: release/*.dmg
             arch-args: "--mac dmg --x64"
+            tool-platform: darwin
+            tool-arch: x64
+            node-version: '24.16.0'
           - name: macOS (Apple Silicon)
             os: macos-latest
             artifact-name: watchalong-macos-arm64
             artifact-path: release/*.dmg
             arch-args: "--mac dmg --arm64"
+            tool-platform: darwin
+            tool-arch: arm64
+            node-version: '24.16.0'
+
+    env:
+      WATCHALONG_TARGET_PLATFORM: ${{ matrix.tool-platform }}
+      WATCHALONG_TARGET_ARCH: ${{ matrix.tool-arch }}
+      WATCHALONG_TARGET_NODE_VERSION: ${{ matrix.node-version }}
 
     steps:
       - name: Check out repository
@@ -42,8 +56,11 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24.15.0'
+          node-version: ${{ matrix.node-version }}
           cache: npm
+
+      - name: Verify bundled tool provenance
+        run: npm run verify:tool-provenance
 
       - name: Make macOS tools executable
         if: runner.os == 'macOS'
@@ -74,14 +91,48 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist-artifacts
-          merge-multiple: true
+
+      - name: Name release artifacts and generate SHA-256 checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+
+          copy_release_artifact() {
+            local source_directory="$1"
+            local extension="$2"
+            local target="$3"
+            local matches=()
+
+            while IFS= read -r -d '' file; do
+              matches+=("$file")
+            done < <(find "$source_directory" -type f -name "*.${extension}" -print0)
+
+            if [[ "${#matches[@]}" -ne 1 ]]; then
+              echo "Expected exactly one .${extension} in ${source_directory}; found ${#matches[@]}." >&2
+              exit 1
+            fi
+
+            cp -- "${matches[0]}" "release-assets/WatchAlong-${GITHUB_REF_NAME}-${target}.${extension}"
+          }
+
+          copy_release_artifact dist-artifacts/watchalong-windows exe windows-x64
+          copy_release_artifact dist-artifacts/watchalong-macos-x64 dmg macos-x64
+          copy_release_artifact dist-artifacts/watchalong-macos-arm64 dmg macos-arm64
+
+          (
+            cd release-assets
+            LC_ALL=C sha256sum -- WatchAlong-* > SHA256SUMS.txt
+            cat SHA256SUMS.txt
+          )
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist-artifacts/*.exe
-            dist-artifacts/*.dmg
+            release-assets/*.exe
+            release-assets/*.dmg
+            release-assets/SHA256SUMS.txt
           overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

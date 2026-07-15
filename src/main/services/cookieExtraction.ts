@@ -1,52 +1,21 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { BrowserDetection, BrowserExtractionMode, BrowserName } from '@shared/types'
+import type { BrowserDetection, BrowserName } from '@shared/types'
+import { secureYtDlpArgs } from './childProcessSecurity'
 import { PatreonSessionVault } from './patreonSessionVault'
 import { ToolResolver, runToolCommand } from './toolResolution'
+
+export interface PatreonExtractionResult {
+  ok: boolean
+  token?: string
+  message?: string
+}
 
 interface BrowserDefinition {
   name: BrowserName
   label: string
   paths: string[]
-}
-
-const CHROMIUM_BROWSERS = new Set<BrowserName>(['chrome', 'edge', 'brave', 'opera'])
-
-function browserLabelFromName(browserName: BrowserName): string {
-  return getBrowserDefinitions().find((browser) => browser.name === browserName)?.label ?? browserName
-}
-
-export function getBrowserExtractionMode(
-  browserName: BrowserName,
-  platform: NodeJS.Platform = process.platform
-): BrowserExtractionMode {
-  if (browserName === 'firefox') {
-    return 'automatic'
-  }
-
-  if (platform === 'darwin' && CHROMIUM_BROWSERS.has(browserName)) {
-    return 'best-effort'
-  }
-
-  return 'manual-only'
-}
-
-function getBrowserSubtitle(browserName: BrowserName, platform: NodeJS.Platform): string | undefined {
-  const mode = getBrowserExtractionMode(browserName, platform)
-  if (mode === 'best-effort') {
-    return 'May not work'
-  }
-
-  if (browserName === 'safari') {
-    return 'Rarely works - manual entry needed'
-  }
-
-  if (mode === 'manual-only') {
-    return 'Manual entry needed'
-  }
-
-  return undefined
 }
 
 export function getBrowserDefinitions(
@@ -58,69 +27,23 @@ export function getBrowserDefinitions(
 
   if (platform === 'darwin') {
     return [
-      { name: 'firefox', label: 'Firefox', paths: [appPath('Firefox.app'), userAppPath('Firefox.app')] },
-      { name: 'chrome', label: 'Chrome', paths: [appPath('Google Chrome.app'), userAppPath('Google Chrome.app')] },
-      { name: 'edge', label: 'Edge', paths: [appPath('Microsoft Edge.app'), userAppPath('Microsoft Edge.app')] },
-      { name: 'brave', label: 'Brave', paths: [appPath('Brave Browser.app'), userAppPath('Brave Browser.app')] },
-      {
-        name: 'safari',
-        label: 'Safari',
-        paths: [appPath('Safari.app'), '/System/Applications/Safari.app', userAppPath('Safari.app')]
-      },
-      { name: 'opera', label: 'Opera', paths: [appPath('Opera.app'), userAppPath('Opera.app')] }
+      { name: 'firefox', label: 'Firefox', paths: [appPath('Firefox.app'), userAppPath('Firefox.app')] }
     ]
   }
 
-  return [
-    {
-      name: 'firefox',
-      label: 'Firefox',
-      paths: [
+  const paths = platform === 'win32'
+    ? [
         join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'Mozilla Firefox\\firefox.exe'),
         join(process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'Mozilla Firefox\\firefox.exe')
       ]
-    },
-    {
-      name: 'chrome',
-      label: 'Chrome',
-      paths: [
-        join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'Google\\Chrome\\Application\\chrome.exe'),
-        join(process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'Google\\Chrome\\Application\\chrome.exe'),
-        join(process.env.LOCALAPPDATA ?? '', 'Google\\Chrome\\Application\\chrome.exe')
-      ]
-    },
-    {
-      name: 'edge',
-      label: 'Edge',
-      paths: [
-        join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'Microsoft\\Edge\\Application\\msedge.exe'),
-        join(process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'Microsoft\\Edge\\Application\\msedge.exe')
-      ]
-    },
-    {
-      name: 'brave',
-      label: 'Brave',
-      paths: [
-        join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'BraveSoftware\\Brave-Browser\\Application\\brave.exe'),
-        join(process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'BraveSoftware\\Brave-Browser\\Application\\brave.exe'),
-        join(process.env.LOCALAPPDATA ?? '', 'BraveSoftware\\Brave-Browser\\Application\\brave.exe')
-      ]
-    },
-    { name: 'safari', label: 'Safari', paths: [] },
-    {
-      name: 'opera',
-      label: 'Opera',
-      paths: [
-        join(process.env.LOCALAPPDATA ?? '', 'Programs\\Opera\\opera.exe'),
-        join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'Opera\\launcher.exe')
-      ]
-    }
-  ]
+    : ['/usr/bin/firefox', '/usr/local/bin/firefox', '/snap/bin/firefox']
+
+  return [{ name: 'firefox', label: 'Firefox', paths }]
 }
 
-export function canExtractNatively(browserName: BrowserName, platform: NodeJS.Platform = process.platform): boolean {
-  return getBrowserExtractionMode(browserName, platform) !== 'manual-only'
-}
+// yt-dlp initializes and exports the browser cookie jar while handling this
+// built-in data URL. It performs no DNS lookup or network request.
+const COOKIE_EXPORT_TRIGGER = 'data:text/plain,watchalong-cookie-export'
 
 export function detectBrowsers(
   platform: NodeJS.Platform = process.platform,
@@ -128,14 +51,10 @@ export function detectBrowsers(
 ): BrowserDetection[] {
   return getBrowserDefinitions(platform).map((browser) => {
     const paths = browser.paths.filter((browserPath) => pathExists(browserPath))
-    const extractionMode = getBrowserExtractionMode(browser.name, platform)
     return {
       name: browser.name,
       label: browser.label,
       installed: paths.length > 0,
-      extractionSupported: extractionMode !== 'manual-only',
-      extractionMode,
-      subtitle: getBrowserSubtitle(browser.name, platform),
       paths
     }
   })
@@ -145,16 +64,10 @@ export async function extractPatreonSession(
   browserName: BrowserName,
   tools: ToolResolver,
   vault: PatreonSessionVault,
-  platform: NodeJS.Platform = process.platform
-): Promise<{ ok: boolean; token?: string; message?: string }> {
-  if (getBrowserExtractionMode(browserName, platform) === 'manual-only') {
-    const browserLabel = browserLabelFromName(browserName)
-    return {
-      ok: false,
-      message: `${browserLabel} requires manual Patreon session entry in WatchAlong. Paste your session_id to continue.`
-    }
-  }
-
+  runCommand: typeof runToolCommand = runToolCommand,
+  signal?: AbortSignal
+): Promise<PatreonExtractionResult> {
+  const authorizationEpoch = vault.authEpoch
   const ytDlpPath = tools.getYtDlpPath()
   if (!ytDlpPath) {
     return { ok: false, message: 'yt-dlp is required to read browser cookies.' }
@@ -163,16 +76,36 @@ export async function extractPatreonSession(
   const tempDir = mkdtempSync(join(tmpdir(), 'watchalong-patreon-cookies-'))
   const cookiePath = join(tempDir, 'cookies.txt')
   try {
-    const result = await runToolCommand(ytDlpPath, [
+    // yt-dlp treats --cookies as both an input and output file. A valid empty
+    // Netscape jar lets us create it owner-only before yt-dlp ever opens it.
+    writeFileSync(cookiePath, '# Netscape HTTP Cookie File\n', {
+      encoding: 'utf8',
+      mode: 0o600,
+      flag: 'wx'
+    })
+    try {
+      chmodSync(cookiePath, 0o600)
+    } catch {
+      // Windows applies the private temp-directory ACL instead of POSIX modes.
+    }
+
+    const result = await runCommand(ytDlpPath, secureYtDlpArgs([
       '--cookies-from-browser',
       browserName,
       '--cookies',
       cookiePath,
       '--skip-download',
       '--simulate',
-      'https://www.patreon.com/posts/0'
-    ], 30000)
+      COOKIE_EXPORT_TRIGGER
+    ]), 30000, signal)
 
+    // yt-dlp exports the browser jar as a whole. Reduce it to the single
+    // Patreon session cookie immediately after the child exits, before any
+    // parsing or error handling can extend the full jar's lifetime on disk.
+    retainOnlyPatreonSessionCookie(cookiePath)
+    if (signal?.aborted) {
+      return { ok: false, message: 'Patreon connection was cancelled.' }
+    }
     const cookie = parsePatreonSessionCookie(cookiePath)
     if (!cookie) {
       return {
@@ -181,7 +114,13 @@ export async function extractPatreonSession(
       }
     }
 
-    return { ok: true, token: vault.createToken(cookie) }
+    const token = vault.createToken(cookie, authorizationEpoch)
+    return token
+      ? { ok: true, token }
+      : {
+          ok: false,
+          message: 'Patreon sign-in was cancelled before browser access finished.'
+        }
   } catch (error) {
     return {
       ok: false,
@@ -191,7 +130,42 @@ export async function extractPatreonSession(
       )
     }
   } finally {
-    rmSync(tempDir, { recursive: true, force: true })
+    if (existsSync(cookiePath)) {
+      try {
+        writeFileSync(cookiePath, '', { encoding: 'utf8', mode: 0o600 })
+      } catch {
+        // A crash-leftover sweep runs before the next app window opens.
+      }
+    }
+    try {
+      rmSync(tempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 25 })
+    } catch {
+      // Startup cleanup retries the private temp directory.
+    }
+  }
+}
+
+export function retainOnlyPatreonSessionCookie(cookiePath: string): void {
+  if (!existsSync(cookiePath)) {
+    return
+  }
+
+  let retainedLine: string | undefined
+  try {
+    retainedLine = readFileSync(cookiePath, 'utf8')
+      .split(/\r?\n/)
+      .find((line) => cookieLineToPatreonSession(line) !== null)
+  } finally {
+    writeFileSync(
+      cookiePath,
+      `# Netscape HTTP Cookie File\n${retainedLine ? `${retainedLine}\n` : ''}`,
+      { encoding: 'utf8', mode: 0o600 }
+    )
+    try {
+      chmodSync(cookiePath, 0o600)
+    } catch {
+      // The private temp directory remains the boundary on Windows.
+    }
   }
 }
 
@@ -202,16 +176,8 @@ export function parsePatreonSessionCookie(cookiePath: string): string | null {
 
   const lines = readFileSync(cookiePath, 'utf8').split(/\r?\n/)
   for (const line of lines) {
-    if (!line || (line.startsWith('#') && !line.startsWith('#HttpOnly_'))) {
-      continue
-    }
-
-    const cleanLine = line.startsWith('#HttpOnly_') ? line.substring(10) : line
-    const parts = cleanLine.split('\t')
-    const [domain, , , , , name, value] = parts
-    if (domain?.includes('patreon.com') && name === 'session_id' && value) {
-      return `session_id=${value}`
-    }
+    const session = cookieLineToPatreonSession(line)
+    if (session) return session
   }
 
   return null
@@ -229,15 +195,32 @@ export function findPatreonSessionCookieValue(
 }
 
 export function humanizeCookieExtractionError(browserName: BrowserName, output: string): string {
-  const browserLabel = browserLabelFromName(browserName)
-  if (/could not copy chrome cookie database|file is locked|locked or in use|database is locked/i.test(output)) {
-    return `${browserLabel} is blocking cookie access. This is usually caused by browser encryption or a locked database. Use the Patreon sign-in window or paste session_id manually.`
+  const browserLabel = browserName === 'firefox' ? 'Firefox' : browserName
+  if (/file is locked|locked or in use|database is locked/i.test(output)) {
+    return `${browserLabel} is currently using its cookie database. Close Firefox and try again, or use Sign in with browser.`
   }
 
   if (/could not find .*cookies database|No .*cookie|session_id/i.test(output)) {
     return `No Patreon session was found in ${browserLabel}. Make sure you are logged into Patreon in that browser, then try again.`
   }
 
-  return `We could not read your Patreon session from ${browserLabel}. Use the Patreon sign-in window or paste session_id manually.`
+  return `We could not read your Patreon session from ${browserLabel}. Try Sign in with browser instead.`
+}
+
+function cookieLineToPatreonSession(line: string): string | null {
+  if (!line || (line.startsWith('#') && !line.startsWith('#HttpOnly_'))) {
+    return null
+  }
+
+  const cleanLine = line.startsWith('#HttpOnly_') ? line.substring(10) : line
+  const [domain, , , , , name, value] = cleanLine.split('\t')
+  const normalizedDomain = domain?.toLowerCase().replace(/^\./, '') ?? ''
+  return (
+    (normalizedDomain === 'patreon.com' || normalizedDomain.endsWith('.patreon.com')) &&
+    name === 'session_id' &&
+    value
+  )
+    ? `session_id=${value}`
+    : null
 }
 

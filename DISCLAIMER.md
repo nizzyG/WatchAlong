@@ -30,11 +30,11 @@ Using yt-dlp or patreon-dl may be subject to additional platform terms (YouTube,
 
 ## No DRM circumvention
 
-WatchAlong doesn't rip discs, remove DRM, or bypass copy protection. The bundled patreon-dl tool skips DRM-protected content. If a reaction can't be downloaded, it's because the content is protected — not because the tool failed.
+WatchAlong doesn't rip discs, remove DRM, or bypass copy protection. The bundled patreon-dl tool skips DRM-protected content. Downloads can also fail because of authentication, network, regional, platform, filesystem, or bundled-tool errors; a failure by itself does not show that content is DRM-protected.
 
 ## Your Patreon session
 
-WatchAlong handles your Patreon session cookie with care: it's used locally to authenticate directly with Patreon, never sent to a WatchAlong server (there isn't one), temporarily written to OS temp files during download (deleted immediately after), and only saved to disk if you choose — encrypted with your operating system's secure storage. You can delete the saved session or revoke it from your Patreon account settings at any time. See [SECURITY.md](SECURITY.md) for the full details.
+WatchAlong handles your Patreon session cookie with care: it's used locally to authenticate directly with Patreon, never sent to a WatchAlong server (there isn't one), temporarily written to OS temp files that receive best-effort clearing and removal (with leftovers retried during shutdown and startup), and only saved to disk if you choose — encrypted with your operating system's secure storage. Best-effort clearing is not forensic erasure on SSDs or backed-up/indexed volumes. You can delete the saved session or follow the revocation guidance in [SECURITY.md](SECURITY.md) at any time.
 
 ## No warranty
 

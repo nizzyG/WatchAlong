@@ -7,6 +7,8 @@ jobs:
   build-and-test:
     name: Build macOS + SSH
     runs-on: macos-latest
+    env:
+      WATCHALONG_TARGET_NODE_VERSION: '24.16.0'
 
     steps:
       - name: Check out repository
@@ -17,7 +19,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24.15.0'
+          node-version: '24.16.0'
           cache: npm
 
       - name: Make macOS tools executable

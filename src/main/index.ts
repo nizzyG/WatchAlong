@@ -1,74 +1,136 @@
-import { app, BrowserWindow, protocol } from 'electron'
+import { app, BrowserWindow, protocol, session } from 'electron'
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { APP_NAME, IPC_PREFIX, LEGACY_APP_NAME, MEDIA_SCHEME } from './constants'
+import {
+  APP_NAME,
+  IPC_PREFIX,
+  LEGACY_APP_NAME,
+  MEDIA_SCHEME,
+  RENDERER_SCHEME
+} from './constants'
 import { registerDownloadIpc } from './ipc/downloadIpc'
 import { registerAutoSyncIpc } from './ipc/autoSyncIpc'
 import { registerMovieWindowIpc } from './ipc/movieWindowIpc'
+import { registerMediaKeyIpc } from './ipc/mediaKeyIpc'
 import { registerPatreonIpc } from './ipc/patreonIpc'
 import { registerPreferencesIpc } from './ipc/preferencesIpc'
 import { registerSessionIpc } from './ipc/sessionIpc'
 import { registerToolsIpc } from './ipc/toolsIpc'
 import { registerWindowIpc } from './ipc/windowIpc'
 import { registerMediaProtocol } from './mediaProtocol'
+import { registerRendererProtocol } from './rendererProtocol'
+import { trustedDevelopmentRendererUrl } from './rendererProtocolPolicy'
 import { PreferencesStore } from './preferencesStore'
 import { SessionStore } from './sessionStore'
 import { DownloadManager } from './services/downloadManager'
+import { MediaPathGrantStore, secureDownloadedMediaEvent } from './services/mediaPathGrants'
+import { cleanupStalePatreonTempDirectories } from './services/patreonDownload'
 import { PatreonSessionVault } from './services/patreonSessionVault'
 import { ToolResolver } from './services/toolResolution'
 import { AutoSyncService } from './services/autosync/AutoSyncService'
 import { FfmpegAutoSyncBackend } from './services/autosync/ffmpegBackend'
 import { WindowManager } from './WindowManager'
+import { MediaKeyController } from './mediaKeyController'
+import {
+  hardenDefaultSession,
+  installGlobalWebContentsGuards
+} from './webContentsSecurity'
+import { ShutdownLifecycle } from './shutdownLifecycle'
 
-protocol.registerSchemesAsPrivileged([{
-  scheme: MEDIA_SCHEME,
-  privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true }
-}])
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: MEDIA_SCHEME,
+    privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true }
+  },
+  {
+    scheme: RENDERER_SCHEME,
+    privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true }
+  }
+])
 
 app.setName(APP_NAME)
+installGlobalWebContentsGuards(app)
 
-void app.whenReady().then(() => {
-  const userDataPath = app.getPath('userData')
-  migrateLegacyUserData(userDataPath)
+let primaryWindowManager: WindowManager | null = null
+const ownsSingleInstance = app.requestSingleInstanceLock()
 
-  const sessionStore = new SessionStore(join(userDataPath, 'library.json'), join(userDataPath, 'session.json'))
-  const preferencesStore = new PreferencesStore(join(userDataPath, 'preferences.json'))
-  const toolResolver = new ToolResolver()
-  const patreonVault = new PatreonSessionVault(join(userDataPath, 'patreon-session.bin'))
-  const windowManager = new WindowManager(sessionStore)
-  const downloadManager = new DownloadManager(
-    toolResolver,
-    patreonVault,
-    (event) => windowManager.sendToRendererWindows(`${IPC_PREFIX}:download-progress`, event),
-    () => preferencesStore.read().reactionDownloadDirectory
-  )
-  const ffmpegPath = toolResolver.getFfmpegPath()
-  const ffprobePath = toolResolver.getFfprobePath()
-  const autoSyncService = ffmpegPath && ffprobePath
-    ? new AutoSyncService({
-        sessions: sessionStore,
-        backend: new FfmpegAutoSyncBackend(ffmpegPath, ffprobePath),
-        emitProgress: (event) => windowManager.sendToRendererWindows(`${IPC_PREFIX}:auto-sync-progress`, event),
-        emitComplete: (event) => windowManager.sendToRendererWindows(`${IPC_PREFIX}:auto-sync-complete`, event)
-      })
-    : null
-  const mainWindowGetter = () => windowManager.getMainWindow()
+if (!ownsSingleInstance) {
+  app.quit()
+} else {
+  app.on('second-instance', () => primaryWindowManager?.focusMainWindow())
+  void app.whenReady().then(() => {
+    hardenDefaultSession(session.defaultSession)
+    const userDataPath = app.getPath('userData')
+    migrateLegacyUserData(userDataPath)
 
-  registerMediaProtocol(sessionStore)
-  registerSessionIpc({ sessionStore, mainWindowGetter })
-  registerPreferencesIpc({ preferencesStore, mainWindowGetter })
-  registerDownloadIpc({ downloadManager })
-  registerAutoSyncIpc({ autoSyncService })
-  registerMovieWindowIpc({ windowManager })
-  registerPatreonIpc({ toolResolver, patreonVault, mainWindowGetter })
-  registerToolsIpc({ toolResolver })
-  registerWindowIpc({ windowManager })
+    const sessionStore = new SessionStore(join(userDataPath, 'library.json'), join(userDataPath, 'session.json'))
+    const mediaPathGrants = new MediaPathGrantStore(() =>
+      sessionStore.read().sessions.flatMap((session) => [session.reactionPath, session.moviePath]))
+    const preferencesStore = new PreferencesStore(join(userDataPath, 'preferences.json'))
+    const toolResolver = new ToolResolver()
+    const patreonVault = new PatreonSessionVault(join(userDataPath, 'patreon-session.bin'))
+    cleanupStalePatreonTempDirectories()
+    const developmentRendererUrl = trustedDevelopmentRendererUrl(
+      app.isPackaged,
+      process.env.ELECTRON_RENDERER_URL
+    )
+    const windowManager = new WindowManager(sessionStore, developmentRendererUrl)
+    primaryWindowManager = windowManager
+    const downloadManager = new DownloadManager(
+      toolResolver,
+      patreonVault,
+      (event) => {
+        windowManager.sendToRendererWindows(
+          `${IPC_PREFIX}:download-progress`,
+          secureDownloadedMediaEvent(event, mediaPathGrants)
+        )
+      },
+      () => preferencesStore.read().reactionDownloadDirectory
+    )
+    const ffmpegPath = toolResolver.getFfmpegPath()
+    const ffprobePath = toolResolver.getFfprobePath()
+    const autoSyncService = ffmpegPath && ffprobePath
+      ? new AutoSyncService({
+          sessions: sessionStore,
+          backend: new FfmpegAutoSyncBackend(ffmpegPath, ffprobePath),
+          emitProgress: (event) => windowManager.sendToRendererWindows(`${IPC_PREFIX}:auto-sync-progress`, event),
+          emitComplete: (event) => windowManager.sendToRendererWindows(`${IPC_PREFIX}:auto-sync-complete`, event)
+        })
+      : null
+    const mainWindowGetter = () => windowManager.getMainWindow()
+    const mediaKeys = new MediaKeyController(mainWindowGetter)
 
-  windowManager.createMainWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) windowManager.createMainWindow()
+    registerMediaProtocol(sessionStore)
+    if (!developmentRendererUrl) {
+      registerRendererProtocol(join(__dirname, '../renderer'))
+    }
+    registerSessionIpc({ sessionStore, mediaPathGrants, mainWindowGetter })
+    registerPreferencesIpc({ preferencesStore, mainWindowGetter })
+    registerDownloadIpc({ downloadManager })
+    registerAutoSyncIpc({ autoSyncService })
+    registerMovieWindowIpc({ windowManager })
+    registerMediaKeyIpc({ mediaKeys })
+    const patreonIpcLifecycle = registerPatreonIpc({ toolResolver, patreonVault, downloadManager, mainWindowGetter })
+    registerToolsIpc({ toolResolver, sessionStore })
+    registerWindowIpc({ windowManager })
+
+    const shutdown = new ShutdownLifecycle({
+      disposeDownloads: () => downloadManager.disposeAndWait(),
+      disposePatreon: () => patreonIpcLifecycle.dispose(),
+      clearPatreonTemp: () => cleanupStalePatreonTempDirectories(),
+      quit: () => app.quit()
+    })
+    app.on('before-quit', (event) => {
+      void shutdown.handleBeforeQuit(event)
+    })
+    app.on('will-quit', () => mediaKeys.dispose())
+
+    windowManager.createMainWindow()
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) windowManager.createMainWindow()
+    })
   })
-})
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

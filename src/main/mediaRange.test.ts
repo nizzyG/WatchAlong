@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createMediaResponse, parseRange } from './mediaRange'
+import { createMediaResponse, getContentType, parseRange } from './mediaRange'
 
 describe('media range handling', () => {
   describe('parseRange', () => {
@@ -49,6 +49,7 @@ describe('media range handling', () => {
       expect(response.status).toBe(206)
       expect(response.headers.get('Content-Range')).toBe('bytes 6-9/10')
       expect(response.headers.get('Content-Length')).toBe('4')
+      expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
       expect(await response.text()).toBe('6789')
     })
 
@@ -57,6 +58,24 @@ describe('media range handling', () => {
 
       expect(response.status).toBe(416)
       expect(response.headers.get('Content-Range')).toBe('bytes */10')
+    })
+
+    it('refuses files above an optional route-specific size cap', async () => {
+      const response = createMediaResponse(mediaPath, null, 5)
+
+      expect(response.status).toBe(413)
+      expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
+    })
+  })
+
+  describe('getContentType', () => {
+    it.each([
+      ['avatar.jpg', 'image/jpeg'],
+      ['avatar.JPEG', 'image/jpeg'],
+      ['avatar.png', 'image/png'],
+      ['avatar.webp', 'image/webp']
+    ])('returns the correct image MIME type for %s', (filePath, expected) => {
+      expect(getContentType(filePath)).toBe(expected)
     })
   })
 })
