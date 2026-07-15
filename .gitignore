@@ -37,3 +37,8 @@ docs/release-note-template.md
 .obsidian/
 __pycache__/
 build/
+
+# Development specs, dispatches, and internal docs
+docs/specs/
+docs/video-essay/
+docs/images/
