@@ -2,8 +2,15 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BrowserDetection, BrowserName } from '@shared/types'
+import { secureYtDlpArgs } from './childProcessSecurity'
 import { PatreonSessionVault } from './patreonSessionVault'
 import { ToolResolver, runToolCommand } from './toolResolution'
+
+export interface PatreonExtractionResult {
+  ok: boolean
+  token?: string
+  message?: string
+}
 
 interface BrowserDefinition {
   name: BrowserName
@@ -34,6 +41,10 @@ export function getBrowserDefinitions(
   return [{ name: 'firefox', label: 'Firefox', paths }]
 }
 
+// yt-dlp initializes and exports the browser cookie jar while handling this
+// built-in data URL. It performs no DNS lookup or network request.
+const COOKIE_EXPORT_TRIGGER = 'data:text/plain,watchalong-cookie-export'
+
 export function detectBrowsers(
   platform: NodeJS.Platform = process.platform,
   pathExists: (path: string) => boolean = existsSync
@@ -53,8 +64,9 @@ export async function extractPatreonSession(
   browserName: BrowserName,
   tools: ToolResolver,
   vault: PatreonSessionVault,
-  runCommand: typeof runToolCommand = runToolCommand
-): Promise<{ ok: boolean; token?: string; message?: string }> {
+  runCommand: typeof runToolCommand = runToolCommand,
+  signal?: AbortSignal
+): Promise<PatreonExtractionResult> {
   const authorizationEpoch = vault.authEpoch
   const ytDlpPath = tools.getYtDlpPath()
   if (!ytDlpPath) {
@@ -64,21 +76,35 @@ export async function extractPatreonSession(
   const tempDir = mkdtempSync(join(tmpdir(), 'watchalong-patreon-cookies-'))
   const cookiePath = join(tempDir, 'cookies.txt')
   try {
-    const result = await runCommand(ytDlpPath, [
+    // yt-dlp treats --cookies as both an input and output file. A valid empty
+    // Netscape jar lets us create it owner-only before yt-dlp ever opens it.
+    writeFileSync(cookiePath, '# Netscape HTTP Cookie File\n', {
+      encoding: 'utf8',
+      mode: 0o600,
+      flag: 'wx'
+    })
+    try {
+      chmodSync(cookiePath, 0o600)
+    } catch {
+      // Windows applies the private temp-directory ACL instead of POSIX modes.
+    }
+
+    const result = await runCommand(ytDlpPath, secureYtDlpArgs([
       '--cookies-from-browser',
       browserName,
       '--cookies',
       cookiePath,
       '--skip-download',
       '--simulate',
-      'https://www.patreon.com/posts/0'
-    ], 30000)
+      COOKIE_EXPORT_TRIGGER
+    ]), 30000, signal)
 
-    try {
-      chmodSync(cookiePath, 0o600)
-    } catch {
-      // The private temp directory is still the primary boundary on systems
-      // that do not support POSIX modes.
+    // yt-dlp exports the browser jar as a whole. Reduce it to the single
+    // Patreon session cookie immediately after the child exits, before any
+    // parsing or error handling can extend the full jar's lifetime on disk.
+    retainOnlyPatreonSessionCookie(cookiePath)
+    if (signal?.aborted) {
+      return { ok: false, message: 'Patreon connection was cancelled.' }
     }
     const cookie = parsePatreonSessionCookie(cookiePath)
     if (!cookie) {
@@ -119,6 +145,30 @@ export async function extractPatreonSession(
   }
 }
 
+export function retainOnlyPatreonSessionCookie(cookiePath: string): void {
+  if (!existsSync(cookiePath)) {
+    return
+  }
+
+  let retainedLine: string | undefined
+  try {
+    retainedLine = readFileSync(cookiePath, 'utf8')
+      .split(/\r?\n/)
+      .find((line) => cookieLineToPatreonSession(line) !== null)
+  } finally {
+    writeFileSync(
+      cookiePath,
+      `# Netscape HTTP Cookie File\n${retainedLine ? `${retainedLine}\n` : ''}`,
+      { encoding: 'utf8', mode: 0o600 }
+    )
+    try {
+      chmodSync(cookiePath, 0o600)
+    } catch {
+      // The private temp directory remains the boundary on Windows.
+    }
+  }
+}
+
 export function parsePatreonSessionCookie(cookiePath: string): string | null {
   if (!existsSync(cookiePath)) {
     return null
@@ -126,17 +176,8 @@ export function parsePatreonSessionCookie(cookiePath: string): string | null {
 
   const lines = readFileSync(cookiePath, 'utf8').split(/\r?\n/)
   for (const line of lines) {
-    if (!line || (line.startsWith('#') && !line.startsWith('#HttpOnly_'))) {
-      continue
-    }
-
-    const cleanLine = line.startsWith('#HttpOnly_') ? line.substring(10) : line
-    const parts = cleanLine.split('\t')
-    const [domain, , , , , name, value] = parts
-    const normalizedDomain = domain?.toLowerCase().replace(/^\./, '') ?? ''
-    if ((normalizedDomain === 'patreon.com' || normalizedDomain.endsWith('.patreon.com')) && name === 'session_id' && value) {
-      return `session_id=${value}`
-    }
+    const session = cookieLineToPatreonSession(line)
+    if (session) return session
   }
 
   return null
@@ -164,5 +205,22 @@ export function humanizeCookieExtractionError(browserName: BrowserName, output: 
   }
 
   return `We could not read your Patreon session from ${browserLabel}. Try Sign in with browser instead.`
+}
+
+function cookieLineToPatreonSession(line: string): string | null {
+  if (!line || (line.startsWith('#') && !line.startsWith('#HttpOnly_'))) {
+    return null
+  }
+
+  const cleanLine = line.startsWith('#HttpOnly_') ? line.substring(10) : line
+  const [domain, , , , , name, value] = cleanLine.split('\t')
+  const normalizedDomain = domain?.toLowerCase().replace(/^\./, '') ?? ''
+  return (
+    (normalizedDomain === 'patreon.com' || normalizedDomain.endsWith('.patreon.com')) &&
+    name === 'session_id' &&
+    value
+  )
+    ? `session_id=${value}`
+    : null
 }
 

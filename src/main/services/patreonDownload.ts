@@ -1,12 +1,18 @@
 import {
   chmodSync,
+  closeSync,
   type Dirent,
   existsSync,
+  fsyncSync,
+  ftruncateSync,
+  lstatSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   readdirSync,
   rmSync,
   statSync,
+  writeSync,
   writeFileSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -24,6 +30,7 @@ const PATREON_TEMP_PREFIXES = [
   'watchalong-patreon-dl-',
   'watchalong-patreon-cookies-'
 ] as const
+const PATREON_TEMP_CREDENTIAL_FILENAMES = ['cookies.txt', 'patreon-dl.conf'] as const
 
 interface HeldPatreonSession {
   cookie: string
@@ -192,6 +199,7 @@ export function cleanupStalePatreonTempDirectories(
       if (now - statSync(path).mtimeMs < staleAfterMs) {
         continue
       }
+      clearKnownPatreonTempCredentials(path)
       rmSync(path, {
         recursive: true,
         force: true,
@@ -201,6 +209,36 @@ export function cleanupStalePatreonTempDirectories(
     } catch {
       // The OS or a security scanner may still own this directory. Retry on
       // the next launch; the single-instance lock prevents active-job races.
+    }
+  }
+}
+
+/** Best-effort overwrite and truncation before deletion; skips known symlinks. */
+export function clearKnownPatreonTempCredentials(directory: string): void {
+  for (const filename of PATREON_TEMP_CREDENTIAL_FILENAMES) {
+    const credentialPath = join(directory, filename)
+    try {
+      const metadata = lstatSync(credentialPath)
+      if (!metadata.isFile()) continue
+
+      const descriptor = openSync(credentialPath, 'r+')
+      try {
+        const zeros = Buffer.alloc(64 * 1024)
+        let offset = 0
+        while (offset < metadata.size) {
+          const length = Math.min(zeros.length, metadata.size - offset)
+          const written = writeSync(descriptor, zeros, 0, length, offset)
+          if (written <= 0) break
+          offset += written
+        }
+        fsyncSync(descriptor)
+        ftruncateSync(descriptor, 0)
+        fsyncSync(descriptor)
+      } finally {
+        closeSync(descriptor)
+      }
+    } catch {
+      // The file may already be gone or held by a terminating child process.
     }
   }
 }

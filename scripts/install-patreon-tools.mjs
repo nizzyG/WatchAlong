@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { sanitizeChildEnvironment } from './child-process-security.mjs'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageRoot = resolve(repositoryRoot, 'resources', 'tools', 'patreon-dl')
@@ -18,7 +19,7 @@ if (!/^\d+\.\d+\.\d+$/.test(targetNodeVersion)) {
 }
 
 const installEnvironment = {
-  ...process.env,
+  ...sanitizeChildEnvironment(),
   WATCHALONG_TARGET_PLATFORM: targetPlatform,
   WATCHALONG_TARGET_ARCH: targetArch,
   WATCHALONG_TARGET_NODE_VERSION: targetNodeVersion,

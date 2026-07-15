@@ -21,6 +21,7 @@ import {
   stripAnsi,
   type SpawnDownloadProcess
 } from './downloadProcess'
+import { secureChildProcessOptions, terminateChildProcess } from './childProcessSecurity'
 import {
   buildPatreonDownloadArgs,
   canonicalizePatreonPostUrl,
@@ -85,6 +86,7 @@ export class DownloadManager {
   private readonly running = new Map<string, RunningDownload>()
   private readonly pending = new Map<string, PendingDownload>()
   private readonly cancelledJobs = new Set<string>()
+  private readonly terminatingChildren = new Set<Promise<void>>()
   private readonly patreonSessions = new PatreonSessionRetention()
   private disposed = false
 
@@ -161,6 +163,11 @@ export class DownloadManager {
     this.disposed = true
     this.cancelAllInternal(false)
     this.patreonSessions.dispose()
+  }
+
+  async disposeAndWait(): Promise<void> {
+    this.dispose()
+    await Promise.allSettled([...this.terminatingChildren])
   }
 
   saveLastPatreonSession(jobId: string): SavedPatreonSessionStatus {
@@ -365,7 +372,7 @@ export class DownloadManager {
 
     let child: ChildProcessWithoutNullStreams
     try {
-      child = this.spawnProcess(command, args, { windowsHide: true })
+      child = this.spawnProcess(command, args, secureChildProcessOptions())
     } catch (error) {
       cleanupOnce()
       const message =
@@ -601,11 +608,9 @@ export class DownloadManager {
     emitCancelled: boolean
   ): void {
     this.cancelledJobs.add(jobId)
-    try {
-      running.child.kill()
-    } catch {
-      // The process may already have exited between the map read and kill().
-    }
+    const termination = terminateChildProcess(running.child)
+    this.terminatingChildren.add(termination)
+    void termination.finally(() => this.terminatingChildren.delete(termination))
 
     try {
       running.cleanup?.()

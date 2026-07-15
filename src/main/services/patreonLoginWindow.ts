@@ -5,6 +5,7 @@ import {
 } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { isAllowedPatreonLoginUrl } from '../patreonLoginUrls'
+import { hardenPatreonLoginSession } from '../webContentsSecurity'
 import { findPatreonSessionCookieValue } from './cookieExtraction'
 import { PatreonSessionVault } from './patreonSessionVault'
 
@@ -56,6 +57,7 @@ export class PatreonLoginWindowManager {
         autoHideMenuBar: true,
         webPreferences: secureLoginWebPreferences(partition)
       })
+      hardenPatreonLoginSession(loginWindow.webContents.session)
     } catch {
       return Promise.resolve({
         ok: false,
@@ -143,6 +145,13 @@ export class PatreonLoginWindowManager {
         return { action: 'deny' }
       }
 
+      const guardLoginNavigation = (event: Electron.Event, url: string): void => {
+        if (!isAllowedPatreonLoginUrl(url)) {
+          event.preventDefault()
+          openExternalUrl(url)
+        }
+      }
+
       scope = {
         cancel: () => finish({ ok: false, message: CANCELLED_MESSAGE })
       }
@@ -168,19 +177,11 @@ export class PatreonLoginWindowManager {
       })
       loginWindow.webContents.on('did-create-window', (popup) => {
         popup.webContents.setWindowOpenHandler(guardPopupOpen)
-        popup.webContents.on('will-navigate', (event, url) => {
-          if (!isAllowedPatreonLoginUrl(url)) {
-            event.preventDefault()
-            openExternalUrl(url)
-          }
-        })
+        popup.webContents.on('will-navigate', guardLoginNavigation)
+        popup.webContents.on('will-redirect', guardLoginNavigation)
       })
-      loginWindow.webContents.on('will-navigate', (event, url) => {
-        if (!isAllowedPatreonLoginUrl(url)) {
-          event.preventDefault()
-          openExternalUrl(url)
-        }
-      })
+      loginWindow.webContents.on('will-navigate', guardLoginNavigation)
+      loginWindow.webContents.on('will-redirect', guardLoginNavigation)
 
       loginSession.cookies.on('changed', onCookieChanged)
       loginWindow.webContents.on('did-navigate', () => void checkCookies())
@@ -222,7 +223,8 @@ function secureLoginWebPreferences(partition: string): Electron.WebPreferences {
     partition,
     contextIsolation: true,
     nodeIntegration: false,
-    sandbox: true
+    sandbox: true,
+    spellcheck: false
   }
 }
 

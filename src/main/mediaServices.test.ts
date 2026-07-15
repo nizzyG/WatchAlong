@@ -1,10 +1,13 @@
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DownloadProgressEvent } from '@shared/types'
-import { cleanupStalePatreonTempDirectories } from './services/patreonDownload'
+import {
+  cleanupStalePatreonTempDirectories,
+  clearKnownPatreonTempCredentials
+} from './services/patreonDownload'
 import {
   BufferedLineReader,
   canonicalizePatreonPostUrl,
@@ -27,6 +30,7 @@ import {
   parseYtDlpProgressLine,
   PatreonSessionVault,
   retrieveYouTubeCreatorAvatar,
+  retainOnlyPatreonSessionCookie,
   selectYouTubeAvatarThumbnail,
   ToolResolver
 } from './mediaServices'
@@ -78,6 +82,17 @@ describe('media services', () => {
         expect(vault.resolve({ type: 'token', token })).toBeNull()
       } finally {
         vi.useRealTimers()
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it('rejects the removed manual session source at the runtime boundary', () => {
+      const root = mkdtempSync(join(tmpdir(), 'watchalong-vault-manual-source-test-'))
+      try {
+        const vault = new PatreonSessionVault(join(root, 'patreon-session.bin'))
+
+        expect(vault.resolve({ type: 'manual', sessionId: 'injected-cookie' } as never)).toBeNull()
+      } finally {
         rmSync(root, { recursive: true, force: true })
       }
     })
@@ -200,8 +215,15 @@ describe('media services', () => {
           { getYtDlpPath: () => 'yt-dlp' } as ToolResolver,
           vault,
           async (_command, args) => {
+            expect(args.slice(0, 2)).toEqual(['--ignore-config', '--no-plugin-dirs'])
             expect(valueAfter(args, '--cookies-from-browser')).toBe('firefox')
+            expect(args.filter((argument) => /^https?:\/\//i.test(argument))).toEqual([])
+            expect(args.at(-1)).toBe('data:text/plain,watchalong-cookie-export')
             const cookiePath = valueAfter(args, '--cookies')
+            expect(readFileSync(cookiePath, 'utf8')).toBe('# Netscape HTTP Cookie File\n')
+            if (process.platform !== 'win32') {
+              expect(statSync(cookiePath).mode & 0o077).toBe(0)
+            }
             writeFileSync(
               cookiePath,
               '.patreon.com\tTRUE\t/\tTRUE\t1234567890\tsession_id\tlate-session\n'
@@ -219,9 +241,87 @@ describe('media services', () => {
         rmSync(root, { recursive: true, force: true })
       }
     })
+
+    it('immediately reduces an exported browser jar to the Patreon session cookie', () => {
+      const root = mkdtempSync(join(tmpdir(), 'watchalong-cookie-filter-test-'))
+      const cookiePath = join(root, 'cookies.txt')
+      try {
+        writeFileSync(cookiePath, [
+          '# Netscape HTTP Cookie File',
+          '.bank.example\tTRUE\t/\tTRUE\t123\taccount\tprivate-bank-cookie',
+          '.google.com\tTRUE\t/\tTRUE\t123\tSID\tprivate-google-cookie',
+          '#HttpOnly_.patreon.com\tTRUE\t/\tTRUE\t123\tsession_id\tpatreon-only',
+          '.patreon.com\tTRUE\t/\tTRUE\t123\tother_cookie\tnot-needed'
+        ].join('\n'))
+
+        retainOnlyPatreonSessionCookie(cookiePath)
+
+        expect(readFileSync(cookiePath, 'utf8')).toBe(
+          '# Netscape HTTP Cookie File\n' +
+          '#HttpOnly_.patreon.com\tTRUE\t/\tTRUE\t123\tsession_id\tpatreon-only\n'
+        )
+        expect(parsePatreonSessionCookie(cookiePath)).toBe('session_id=patreon-only')
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it('passes cancellation to yt-dlp and removes its temp directory after abort', async () => {
+      const root = mkdtempSync(join(tmpdir(), 'watchalong-extraction-abort-test-'))
+      const vault = new PatreonSessionVault(join(root, 'patreon-session.bin'))
+      const controller = new AbortController()
+      let cookiePath = ''
+      let commandStarted!: () => void
+      const started = new Promise<void>((resolve) => { commandStarted = resolve })
+      try {
+        const extraction = extractPatreonSession(
+          'firefox',
+          { getYtDlpPath: () => 'yt-dlp' } as ToolResolver,
+          vault,
+          async (_command, args, _timeout, signal) => {
+            cookiePath = valueAfter(args, '--cookies')
+            commandStarted()
+            await new Promise<void>((resolve) => {
+              signal?.addEventListener('abort', () => resolve(), { once: true })
+            })
+            return { ok: false, output: 'cancelled' }
+          },
+          controller.signal
+        )
+        await started
+        const extractionDirectory = dirname(cookiePath)
+
+        controller.abort()
+
+        await expect(extraction).resolves.toMatchObject({ ok: false })
+        expect(existsSync(extractionDirectory)).toBe(false)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
   })
 
   describe('Patreon temporary files', () => {
+    it('best-effort clears known credentials without touching other temp files', () => {
+      const root = mkdtempSync(join(tmpdir(), 'watchalong-temp-clear-test-'))
+      try {
+        const cookies = join(root, 'cookies.txt')
+        const config = join(root, 'patreon-dl.conf')
+        const unrelated = join(root, 'progress.txt')
+        writeFileSync(cookies, 'all browser cookies')
+        writeFileSync(config, 'session_id=private')
+        writeFileSync(unrelated, 'keep')
+
+        clearKnownPatreonTempCredentials(root)
+
+        expect(readFileSync(cookies, 'utf8')).toBe('')
+        expect(readFileSync(config, 'utf8')).toBe('')
+        expect(readFileSync(unrelated, 'utf8')).toBe('keep')
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
     it('removes old crash leftovers without touching unrelated temp folders', () => {
       const root = mkdtempSync(join(tmpdir(), 'watchalong-stale-temp-test-'))
       try {
@@ -444,8 +544,13 @@ describe('media services', () => {
         const avatarPath = await avatarPromise
         expect(spawnProcess).toHaveBeenCalledWith(
           'yt-dlp',
-          expect.arrayContaining(['--dump-single-json', 'https://youtube.com/@cinema']),
-          { windowsHide: true }
+          expect.arrayContaining([
+            '--ignore-config',
+            '--no-plugin-dirs',
+            '--dump-single-json',
+            'https://youtube.com/@cinema'
+          ]),
+          expect.objectContaining({ windowsHide: true, env: expect.any(Object) })
         )
         expect(fetchAvatar).toHaveBeenCalledWith(
           'https://yt3.googleusercontent.com/avatar.jpg',
@@ -542,6 +647,10 @@ describe('media services', () => {
       await vi.advanceTimersByTimeAsync(25)
 
       const args = spawnProcess.mock.calls[0][1]
+      expect(args.slice(0, 2)).toEqual(['--ignore-config', '--no-plugin-dirs'])
+      expect(spawnProcess.mock.calls[0][2]).toEqual(
+        expect.objectContaining({ windowsHide: true, env: expect.any(Object) })
+      )
       expect(valueAfter(args, '--progress-template')).toContain('WA_PROGRESS')
       expect(args.filter((value: string) => value === '--print')).toHaveLength(2)
       const outDir = valueAfter(args, '-P')
@@ -588,7 +697,7 @@ describe('media services', () => {
       manager.start({
         source: 'patreon',
         url: 'https://www.patreon.com/posts/example-123',
-        sessionSource: { type: 'manual', sessionId: cookie }
+        sessionSource: { type: 'saved' }
       })
       await vi.advanceTimersByTimeAsync(25)
 
@@ -633,7 +742,7 @@ describe('media services', () => {
       const cookie = 'session_id=private-cookie'
       const { manager, vault, spawnProcess } = createPatreonDownloadManager(child, tempDir, cookie)
 
-      const { jobId } = manager.start({ source: 'patreon', url: 'https://www.patreon.com/posts/example-123', sessionSource: { type: 'manual', sessionId: cookie } })
+      const { jobId } = manager.start({ source: 'patreon', url: 'https://www.patreon.com/posts/example-123', sessionSource: { type: 'saved' } })
       await vi.advanceTimersByTimeAsync(25)
 
       const args = spawnProcess.mock.calls[0][1]
@@ -659,7 +768,7 @@ describe('media services', () => {
       const cookie = 'session_id=failing-cookie'
       const { manager, vault, spawnProcess } = createPatreonDownloadManager(child, tempDir, cookie)
 
-      const { jobId } = manager.start({ source: 'patreon', url: 'https://www.patreon.com/posts/example-123', sessionSource: { type: 'manual', sessionId: cookie } })
+      const { jobId } = manager.start({ source: 'patreon', url: 'https://www.patreon.com/posts/example-123', sessionSource: { type: 'saved' } })
       await vi.advanceTimersByTimeAsync(25)
 
       const configPath = valueAfter(spawnProcess.mock.calls[0][1], '--config-file')
@@ -679,7 +788,7 @@ describe('media services', () => {
       manager.start({
         source: 'patreon',
         url: 'https://www.patreon.com/HoldDownA/posts/tombstone-watch-88502955?utm_source=copy',
-        sessionSource: { type: 'manual', sessionId: cookie }
+        sessionSource: { type: 'saved' }
       })
       await vi.advanceTimersByTimeAsync(25)
 
@@ -785,7 +894,7 @@ describe('media services', () => {
       const { jobId } = manager.start({
         source: 'patreon',
         url: 'https://www.patreon.com/posts/example-123',
-        sessionSource: { type: 'manual', sessionId: cookie }
+        sessionSource: { type: 'saved' }
       })
       await vi.advanceTimersByTimeAsync(25)
       const outDir = valueAfter(spawnProcess.mock.calls[0][1], '--out-dir')
@@ -807,7 +916,7 @@ describe('media services', () => {
       const { jobId } = manager.start({
         source: 'patreon',
         url: 'https://www.patreon.com/posts/example-123',
-        sessionSource: { type: 'manual', sessionId: cookie }
+        sessionSource: { type: 'saved' }
       })
       await vi.advanceTimersByTimeAsync(25)
       const outDir = valueAfter(spawnProcess.mock.calls[0][1], '--out-dir')
@@ -835,7 +944,7 @@ describe('media services', () => {
       manager.start({
         source: 'patreon',
         url: 'https://www.patreon.com/posts/example-123',
-        sessionSource: { type: 'manual', sessionId: cookie }
+        sessionSource: { type: 'saved' }
       })
       manager.forgetPatreonSession()
       await vi.advanceTimersByTimeAsync(25)
@@ -853,7 +962,7 @@ describe('media services', () => {
       const cookie = 'session_id=discard-cookie'
       const { manager, vault, spawnProcess } = createPatreonDownloadManager(child, tempDir, cookie)
 
-      const { jobId } = manager.start({ source: 'patreon', url: 'https://www.patreon.com/posts/example-123', sessionSource: { type: 'manual', sessionId: cookie } })
+      const { jobId } = manager.start({ source: 'patreon', url: 'https://www.patreon.com/posts/example-123', sessionSource: { type: 'saved' } })
       await vi.advanceTimersByTimeAsync(25)
 
       const configPath = valueAfter(spawnProcess.mock.calls[0][1], '--config-file')
@@ -882,7 +991,7 @@ describe('media services', () => {
       manager.start({
         source: 'patreon',
         url: 'https://www.patreon.com/posts/example-123',
-        sessionSource: { type: 'manual', sessionId: cookie }
+        sessionSource: { type: 'saved' }
       })
       await vi.advanceTimersByTimeAsync(25)
       const configPath = valueAfter(spawnProcess.mock.calls[0][1], '--config-file')
@@ -896,6 +1005,33 @@ describe('media services', () => {
       await flushPromises()
       expect(events.map((event) => event.state)).not.toContain('success')
       expect(events.map((event) => event.state)).not.toContain('failed')
+    })
+
+    it('waits for a running Patreon child to close during shutdown disposal', async () => {
+      const child = createFakeChildProcess()
+      const cookie = 'session_id=shutdown-drain-cookie'
+      const { manager, spawnProcess } = createPatreonDownloadManager(child, tempDir, cookie)
+
+      manager.start({
+        source: 'patreon',
+        url: 'https://www.patreon.com/posts/example-123',
+        sessionSource: { type: 'saved' }
+      })
+      await vi.advanceTimersByTimeAsync(25)
+      const configPath = valueAfter(spawnProcess.mock.calls[0][1], '--config-file')
+      let disposed = false
+
+      const disposal = manager.disposeAndWait().then(() => { disposed = true })
+      await Promise.resolve()
+
+      expect(child.kill).toHaveBeenCalledOnce()
+      expect(existsSync(configPath)).toBe(false)
+      expect(disposed).toBe(false)
+
+      child.emit('close', null)
+      await disposal
+
+      expect(disposed).toBe(true)
     })
 
     it('prevents pending downloads from spawning after dispose', async () => {

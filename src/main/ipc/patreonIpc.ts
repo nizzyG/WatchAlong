@@ -5,6 +5,7 @@ import { detectBrowsers, extractPatreonSession } from '../services/cookieExtract
 import { PatreonSessionVault } from '../services/patreonSessionVault'
 import { DownloadManager } from '../services/downloadManager'
 import { PatreonLoginWindowManager } from '../services/patreonLoginWindow'
+import { PatreonExtractionLifecycle } from '../services/patreonExtractionLifecycle'
 import { ToolResolver } from '../services/toolResolution'
 import { handleTrustedIpc } from './security'
 import { getSenderWindow } from './utils'
@@ -19,12 +20,15 @@ export function registerPatreonIpc(deps: {
 }): { dispose(): Promise<void> } {
   const { toolResolver, patreonVault, downloadManager, mainWindowGetter } = deps
   const loginWindows = new PatreonLoginWindowManager(patreonVault)
+  const extractions = new PatreonExtractionLifecycle((browser, signal) =>
+    extractPatreonSession(browser, toolResolver, patreonVault, undefined, signal)
+  )
   handleTrustedIpc(`${IPC_PREFIX}:detect-browsers`, APP_RENDERERS, () => detectBrowsers())
   handleTrustedIpc(`${IPC_PREFIX}:extract-patreon-session`, APP_RENDERERS, (_event, browser: unknown) => {
     if (!isBrowserName(browser)) {
       throw new Error('Invalid browser selection.')
     }
-    return extractPatreonSession(browser, toolResolver, patreonVault)
+    return extractions.extract(browser)
   })
   handleTrustedIpc(`${IPC_PREFIX}:open-patreon-login-window`, APP_RENDERERS, (event) => {
     const parent = getSenderWindow(event, mainWindowGetter)
@@ -47,5 +51,12 @@ export function registerPatreonIpc(deps: {
     }
   })
 
-  return { dispose: () => loginWindows.dispose() }
+  return {
+    dispose: async () => {
+      await Promise.allSettled([
+        extractions.dispose(),
+        loginWindows.dispose()
+      ])
+    }
+  }
 }

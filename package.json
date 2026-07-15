@@ -9,9 +9,12 @@
     "dev": "electron-vite dev",
     "postinstall": "node scripts/install-patreon-tools.mjs",
     "verify:patreon-tools": "node scripts/verify-patreon-tools.mjs",
+    "verify:tool-provenance": "node scripts/verify-tool-provenance.mjs",
+    "test:child-process-security": "node --test scripts/child-process-security.node-test.mjs",
+    "test:tool-provenance": "node --test scripts/tool-provenance.node-test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
-    "build": "npm run postinstall && npm run typecheck && electron-vite build",
+    "build": "npm run verify:tool-provenance && npm run postinstall && npm run typecheck && electron-vite build",
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {
@@ -58,6 +61,10 @@
       {
         "from": "CABINET_TEXTURE_PROVENANCE.md",
         "to": "CABINET_TEXTURE_PROVENANCE.md"
+      },
+      {
+        "from": "TOOL_PROVENANCE.md",
+        "to": "TOOL_PROVENANCE.md"
       }
     ],
     "win": {

@@ -67,7 +67,7 @@ Playback shortcuts work in the player and are ignored while you're typing or usi
 
 Patreon doesn't provide a public video-download API for subscriber-only watchalong videos. WatchAlong needs to prove you have an active subscription — your browser login cookie contains that proof.
 
-Your session is never sent to WatchAlong-operated servers. It's used locally by WatchAlong and bundled tools to authenticate directly with Patreon. During extraction and download, it may be written temporarily to OS temp files; WatchAlong scrubs and removes them during cleanup and retries crash leftovers at startup. If you choose to save it, WatchAlong stores it encrypted with Electron safeStorage, using your operating system's secure storage where available. You can delete the saved session or revoke it from Patreon's account settings at any time.
+Your session is never sent to WatchAlong-operated servers. It's used locally by WatchAlong and bundled tools to authenticate directly with Patreon. During extraction and download, it may be written temporarily to OS temp files; WatchAlong performs best-effort clearing, removes them during cleanup, and retries crash leftovers during shutdown and startup. This is not forensic erasure on SSDs or backed-up/indexed volumes. If you choose to save it, WatchAlong stores it encrypted with Electron safeStorage, using your operating system's secure storage where available. You can delete the saved session or follow the revocation guidance in [SECURITY.md](SECURITY.md) at any time.
 
 ### 11. How do I sign in to Patreon?
 

@@ -52,7 +52,8 @@ describe('WindowManager renderer capabilities', () => {
     preload,
     contextIsolation: true,
     nodeIntegration: false,
-    sandbox: true
+    sandbox: true,
+    spellcheck: false
   }
 
   it.each(['main', 'movie'] as const)('enables native audio-track access for the %s playback renderer', (role) => {

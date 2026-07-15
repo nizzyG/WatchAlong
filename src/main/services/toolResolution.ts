@@ -1,8 +1,13 @@
 import { app } from 'electron'
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import type { ToolCheckResult, ToolName, ToolStatus } from '@shared/types'
+import {
+  secureChildProcessOptions,
+  secureYtDlpArgs,
+  terminateChildProcess
+} from './childProcessSecurity'
 
 type ToolExecutableName = Exclude<ToolName, 'patreon-dl'> | 'ffprobe'
 
@@ -41,7 +46,12 @@ export function getPlatformToolFilename(
 export class ToolResolver {
   async checkTools(): Promise<ToolCheckResult> {
     const tools = await Promise.all<ToolStatus>([
-      this.checkExecutable('yt-dlp', 'yt-dlp', this.getYtDlpPath(), ['--version']),
+      this.checkExecutable(
+        'yt-dlp',
+        'yt-dlp',
+        this.getYtDlpPath(),
+        secureYtDlpArgs(['--version'])
+      ),
       this.checkExecutable('ffmpeg', 'FFmpeg', this.getFfmpegPath(), ['-version']),
       this.checkExecutable('node', 'Node runtime', this.getNodePath(), ['--version']),
       this.checkPatreonDl()
@@ -194,11 +204,40 @@ export function parseFfprobeFrameRate(output: string): number | null {
   return Number.isFinite(fps) && fps > 0 ? Math.round(fps * 1000) / 1000 : null
 }
 
-export function runToolCommand(command: string, args: string[], timeoutMs: number): Promise<{ ok: boolean; output: string }> {
+type SpawnToolProcess = (
+  command: string,
+  args: string[],
+  options: ReturnType<typeof secureChildProcessOptions>
+) => ChildProcessWithoutNullStreams
+
+export function runToolCommand(
+  command: string,
+  args: string[],
+  timeoutMs: number,
+  signal?: AbortSignal,
+  spawnProcess: SpawnToolProcess = spawn
+): Promise<{ ok: boolean; output: string }> {
   return new Promise((resolvePromise) => {
-    const child = spawn(command, args, { windowsHide: true })
+    if (signal?.aborted) {
+      resolvePromise({ ok: false, output: 'Command cancelled.' })
+      return
+    }
+
+    let child: ChildProcessWithoutNullStreams
+    try {
+      child = spawnProcess(command, args, secureChildProcessOptions())
+    } catch (error) {
+      resolvePromise({
+        ok: false,
+        output: error instanceof Error ? error.message : 'The tool could not be started.'
+      })
+      return
+    }
+
     let output = ''
     let settled = false
+    let stopMessage: string | null = null
+
     const finish = (ok: boolean, nextOutput = output): void => {
       if (settled) {
         return
@@ -206,12 +245,23 @@ export function runToolCommand(command: string, args: string[], timeoutMs: numbe
 
       settled = true
       clearTimeout(timer)
+      signal?.removeEventListener('abort', abort)
       resolvePromise({ ok, output: nextOutput })
     }
+
+    const stop = (message: string): void => {
+      if (settled || stopMessage) return
+      stopMessage = message
+      void terminateChildProcess(child).then(() => {
+        finish(false, `${output}\n${message}`.trim())
+      })
+    }
+
+    const abort = (): void => stop('Command cancelled.')
     const timer = setTimeout(() => {
-      child.kill()
-      finish(false, `${output}\nTimed out after ${timeoutMs / 1000}s.`.trim())
+      stop(`Timed out after ${timeoutMs / 1000}s.`)
     }, timeoutMs)
+    timer.unref?.()
 
     child.stdout.on('data', (chunk: Buffer) => {
       output += chunk.toString()
@@ -219,8 +269,18 @@ export function runToolCommand(command: string, args: string[], timeoutMs: numbe
     child.stderr.on('data', (chunk: Buffer) => {
       output += chunk.toString()
     })
-    child.on('error', (error) => finish(false, error.message))
-    child.on('close', (code) => finish(code === 0, output))
+    child.on('error', (error) => {
+      if (stopMessage) return
+      finish(false, error.message)
+    })
+    child.on('close', (code) => {
+      finish(
+        !stopMessage && code === 0,
+        stopMessage ? `${output}\n${stopMessage}`.trim() : output
+      )
+    })
+    signal?.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted) abort()
   })
 }
 

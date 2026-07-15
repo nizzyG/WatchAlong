@@ -11,7 +11,8 @@ describe('renderer security policy', () => {
       preload: 'C:\\WatchAlong\\preload.js',
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      spellcheck: false
     })
   })
 

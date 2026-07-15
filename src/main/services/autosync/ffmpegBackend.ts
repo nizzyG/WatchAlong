@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import type { PixelFrame } from './signatures'
+import { secureChildProcessOptions } from '../childProcessSecurity'
 
 export interface MediaInfo {
   duration: number
@@ -74,7 +75,7 @@ export class FfmpegAutoSyncBackend implements AutoSyncMediaBackend {
     ]
     return new Promise((resolve, reject) => {
       if (signal.aborted) { reject(abortError()); return }
-      const child = this.spawnProcess(this.ffmpegPath, args, { windowsHide: true })
+      const child = this.spawnProcess(this.ffmpegPath, args, secureChildProcessOptions())
       const frameBytes = width * height * 3
       let pending: Buffer<ArrayBufferLike> = Buffer.alloc(0)
       let frameIndex = 0
@@ -98,7 +99,7 @@ export class FfmpegAutoSyncBackend implements AutoSyncMediaBackend {
   private run(command: string, args: string[], signal: AbortSignal): Promise<string> {
     return new Promise((resolve, reject) => {
       if (signal.aborted) { reject(abortError()); return }
-      const child = this.spawnProcess(command, args, { windowsHide: true })
+      const child = this.spawnProcess(command, args, secureChildProcessOptions())
       let stdout = ''; let stderr = ''
       const abort = (): void => { child.kill() }
       signal.addEventListener('abort', abort, { once: true })

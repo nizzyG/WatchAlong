@@ -33,6 +33,34 @@ WatchAlong replaces that with one app. Load your movie. Add the reaction. The ap
 3. Launch and click **+ New WatchAlong**.
 4. Follow the wizard to load your movie and add a reaction.
 
+### Verify your download
+
+WatchAlong's installers are not yet code-signed or notarized. Each GitHub release includes a `SHA256SUMS.txt` generated from the installers produced by that release's CI job. Download the checksum file and your installer into the same otherwise-empty folder, then verify it before opening the installer.
+
+**Windows (PowerShell):**
+
+```powershell
+$installer = Get-ChildItem -File 'WatchAlong-v*-windows-x64.exe'
+if (@($installer).Count -ne 1) { throw 'Expected exactly one WatchAlong Windows installer.' }
+$line = Get-Content .\SHA256SUMS.txt | Where-Object { $_.EndsWith("  $($installer.Name)") }
+if (-not $line) { throw 'Installer is not listed in SHA256SUMS.txt.' }
+$expected = ($line -split '\s+', 2)[0]
+$actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer.FullName).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw 'Checksum mismatch. Do not run this installer.' }
+"Checksum verified: $($installer.Name)"
+```
+
+**macOS (Terminal):**
+
+```bash
+installer=$(find . -maxdepth 1 -type f -name 'WatchAlong-v*-macos-*.dmg' -print)
+count=$(printf '%s\n' "$installer" | sed '/^$/d' | wc -l | tr -d ' ')
+test "$count" -eq 1 || { echo "Expected exactly one WatchAlong macOS installer" >&2; exit 1; }
+grep -F "  ${installer#./}" SHA256SUMS.txt | shasum -a 256 -c -
+```
+
+A successful check prints the installer name followed by `OK`. A mismatch means the file is not byte-for-byte identical to the CI-built release; delete it and report the release rather than opening it. A checksum confirms integrity against the published checksum file, but it does not replace publisher code signing.
+
 ## How auto-sync works (and when it asks for help)
 
 WatchAlong looks at the reaction, finds the movie showing inside it, and matches several moments across the runtime. From those matches, it calculates both the sync point and the frame-rate drift in one step.
@@ -57,6 +85,7 @@ Questions about legality, file formats, Patreon setup, frame-rate drift, or how 
 - [Privacy](PRIVACY.md)
 - [Security](SECURITY.md)
 - [Third-Party Notices](THIRD_PARTY_NOTICES.md)
+- [Bundled Tool Provenance](TOOL_PROVENANCE.md)
 
 ## Support
 
@@ -64,7 +93,7 @@ WatchAlong is free and always will be. If it makes your watch-along nights bette
 
 ## For developers
 
-Electron, React, and TypeScript. The sync engine and auto-sync detection are pure, tested TypeScript modules. The bundled tools (yt-dlp, ffmpeg, patreon-dl, Node.js) have their own licenses — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Electron, React, and TypeScript. The sync engine and auto-sync detection are pure, tested TypeScript modules. The bundled tools (yt-dlp, ffmpeg, patreon-dl, Node.js) have their own licenses — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Exact sources and SHA-256 digests for the standalone yt-dlp, FFmpeg, ffprobe, and Node.js executables are recorded in [TOOL_PROVENANCE.md](TOOL_PROVENANCE.md) and checked offline before every build.
 
 Audio-track selection depends on Electron's non-default Blink `AudioVideoTracks` capability. `WindowManager` enables it only for the main playback renderer and detached movie window; onboarding/import and Patreon login windows retain their baseline sandboxed capabilities. Renderer code must still feature-detect `video.audioTracks`: if an Electron upgrade removes or changes the capability, the selector should hide while ordinary playback continues with Chromium's default track.
 

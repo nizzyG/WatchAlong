@@ -36,15 +36,17 @@ Stored as `patreon-session.bin` in the same `userData` directory. Encrypted with
 
 ## Temporary files during download
 
-When you connect to Patreon or download a reaction, WatchAlong uses short-lived temporary files. It scrubs and removes them during normal cleanup; if the OS prevents removal or the app crashes, WatchAlong retries matching leftovers the next time it starts.
+When you connect to Patreon or download a reaction, WatchAlong uses short-lived temporary files. It performs best-effort clearing and removes them during normal cleanup; app shutdown and the next launch retry matching leftovers if the OS prevents removal or the app crashes. Overwriting and deleting a file is not forensic erasure on an SSD, journaled filesystem, backup, or indexed volume.
 
-- **Firefox cookie extraction:** If you use Firefox one-click connection, `yt-dlp` writes a temporary browser cookie jar in a private OS temp directory. That jar can contain cookies beyond Patreon; WatchAlong reads only Patreon's `session_id`, then removes the directory. Crash leftovers are removed at the next launch.
-- **patreon-dl config:** During download, a temporary config file containing your session cookie is written to an OS temp directory with `0600` permissions where supported (owner read/write only). WatchAlong clears the credential contents before removal and retries any locked leftovers at startup.
+- **Firefox cookie extraction:** If you use Firefox one-click connection, WatchAlong pre-creates an owner-only file (`0600` where supported) and `yt-dlp` writes a temporary copy of Firefox's cookie jar there. The jar can contain cookies beyond Patreon while `yt-dlp` is running. Immediately after it exits, WatchAlong rewrites the file to retain only Patreon's `session_id`, then best-effort clears the file and removes its private temp directory; shutdown and startup cleanup retry matching leftovers.
+- **patreon-dl config:** During download, a temporary config file containing your session cookie is written to an OS temp directory with `0600` permissions where supported (owner read/write only). WatchAlong best-effort clears the credential contents before removal and retries any locked leftovers during shutdown and startup.
 - **In-memory holding:** After a successful Patreon download, the session cookie is held briefly in memory so the app can offer to save it. If you decline or dismiss, it's discarded.
 
 ## Network requests
 
 WatchAlong makes network requests only when you trigger them:
+
+Firefox one-click connection is local-only. The bundled `yt-dlp` exports Firefox's cookie jar using an internal `data:` target; it does not probe Patreon or contact any other host during extraction. Patreon traffic begins only if you subsequently start a Patreon download.
 
 | Trigger | Destination | What's sent |
 |---|---|---|

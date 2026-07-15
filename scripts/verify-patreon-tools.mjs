@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { closeSync, openSync, readSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { sanitizeChildEnvironment } from './child-process-security.mjs'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const toolsRoot = resolve(repositoryRoot, 'resources', 'tools')
@@ -78,6 +79,7 @@ function smokeTestNativeBinding() {
   const result = spawnSync(runtimePath, ['-e', smokeProgram, nativePackageRoot], {
     cwd: repositoryRoot,
     encoding: 'utf8',
+    env: sanitizeChildEnvironment(),
     windowsHide: true
   })
 

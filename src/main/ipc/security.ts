@@ -1,5 +1,6 @@
 import { ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { isHttpExternalUrl, isTrustedRendererNavigation } from '../rendererSecurityPolicy'
+import { registerTrustedRendererSecurityPolicy } from '../webContentsSecurity'
 
 export type RendererRole = 'main' | 'wizard' | 'movie'
 
@@ -13,6 +14,10 @@ const trustedRenderers = new WeakMap<WebContents, TrustedRenderer>()
 export function hardenRendererWindow(targetWindow: BrowserWindow, role: RendererRole, rendererUrl: string): void {
   const { webContents } = targetWindow
   trustedRenderers.set(webContents, { role, url: rendererUrl })
+  registerTrustedRendererSecurityPolicy(webContents, {
+    allowFullscreen: role === 'main' || role === 'movie',
+    isNavigationAllowed: (url) => isTrustedRendererNavigation(url, rendererUrl)
+  })
 
   webContents.setWindowOpenHandler(({ url }) => {
     openExternalHttpUrl(url)

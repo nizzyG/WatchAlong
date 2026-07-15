@@ -133,7 +133,6 @@ export interface BrowserDetection {
 export type PatreonSessionSource =
   | { type: 'browser'; browser: BrowserName; token: string }
   | { type: 'token'; token: string }
-  | { type: 'manual'; sessionId: string }
   | { type: 'saved' }
 
 export type ReactionDownloadRequest =

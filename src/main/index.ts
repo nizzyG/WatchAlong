@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol } from 'electron'
+import { app, BrowserWindow, protocol, session } from 'electron'
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -31,6 +31,11 @@ import { AutoSyncService } from './services/autosync/AutoSyncService'
 import { FfmpegAutoSyncBackend } from './services/autosync/ffmpegBackend'
 import { WindowManager } from './WindowManager'
 import { MediaKeyController } from './mediaKeyController'
+import {
+  hardenDefaultSession,
+  installGlobalWebContentsGuards
+} from './webContentsSecurity'
+import { ShutdownLifecycle } from './shutdownLifecycle'
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -44,6 +49,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 app.setName(APP_NAME)
+installGlobalWebContentsGuards(app)
 
 let primaryWindowManager: WindowManager | null = null
 const ownsSingleInstance = app.requestSingleInstanceLock()
@@ -53,6 +59,7 @@ if (!ownsSingleInstance) {
 } else {
   app.on('second-instance', () => primaryWindowManager?.focusMainWindow())
   void app.whenReady().then(() => {
+    hardenDefaultSession(session.defaultSession)
     const userDataPath = app.getPath('userData')
     migrateLegacyUserData(userDataPath)
 
@@ -107,9 +114,14 @@ if (!ownsSingleInstance) {
     registerToolsIpc({ toolResolver, sessionStore })
     registerWindowIpc({ windowManager })
 
-    app.on('before-quit', () => {
-      downloadManager.dispose()
-      void patreonIpcLifecycle.dispose()
+    const shutdown = new ShutdownLifecycle({
+      disposeDownloads: () => downloadManager.disposeAndWait(),
+      disposePatreon: () => patreonIpcLifecycle.dispose(),
+      clearPatreonTemp: () => cleanupStalePatreonTempDirectories(),
+      quit: () => app.quit()
+    })
+    app.on('before-quit', (event) => {
+      void shutdown.handleBeforeQuit(event)
     })
     app.on('will-quit', () => mediaKeys.dispose())
 

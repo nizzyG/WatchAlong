@@ -1,9 +1,13 @@
 import { type ChildProcessWithoutNullStreams } from 'node:child_process'
+import {
+  secureChildProcessOptions,
+  type SecureChildProcessOptions
+} from './childProcessSecurity'
 
 export type SpawnDownloadProcess = (
   command: string,
   args: string[],
-  options: { windowsHide: boolean }
+  options: SecureChildProcessOptions
 ) => ChildProcessWithoutNullStreams
 
 export const MAX_DIAGNOSTIC_OUTPUT_LENGTH = 64 * 1024
@@ -63,7 +67,7 @@ export async function captureProcessOutput(
 ): Promise<string | null> {
   let child: ChildProcessWithoutNullStreams
   try {
-    child = spawnProcess(command, args, { windowsHide: true })
+    child = spawnProcess(command, args, secureChildProcessOptions())
   } catch {
     return null
   }

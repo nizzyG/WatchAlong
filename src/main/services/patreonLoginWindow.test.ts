@@ -33,10 +33,30 @@ describe('PatreonLoginWindowManager', () => {
     expect(options[0]?.webPreferences).toMatchObject({
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      spellcheck: false
     })
     expect(options[0]?.webPreferences).not.toHaveProperty('enableBlinkFeatures')
     expect(options[0]?.webPreferences?.partition).toMatch(/^patreon-login-/)
+    expect(loginSession.setSpellCheckerEnabled).toHaveBeenCalledWith(false)
+    expect(loginSession.setPermissionCheckHandler).toHaveBeenCalledOnce()
+    expect(loginSession.setPermissionRequestHandler).toHaveBeenCalledOnce()
+    const permissionCheck = loginSession.setPermissionCheckHandler.mock.calls[0]?.[0]
+    expect(permissionCheck?.(
+      root.webContents,
+      'fullscreen',
+      'https://www.patreon.com',
+      { isMainFrame: true, requestingUrl: 'https://www.patreon.com/login' }
+    )).toBe(false)
+    const permissionDecision = vi.fn()
+    const permissionRequest = loginSession.setPermissionRequestHandler.mock.calls[0]?.[0]
+    permissionRequest?.(
+      root.webContents,
+      'media',
+      permissionDecision,
+      { isMainFrame: true, requestingUrl: 'https://www.patreon.com/login' }
+    )
+    expect(permissionDecision).toHaveBeenCalledWith(false)
 
     const popupDecision = root.openHandler?.({
       url: 'https://accounts.google.com/o/oauth2/v2/auth'
@@ -53,7 +73,8 @@ describe('PatreonLoginWindowManager', () => {
     expect(popup.openHandler?.({ url: 'https://www.patreon.com/api/oauth2/callback' })).toEqual({
       action: 'allow'
     })
-    expect(popup.webContents.listenerCount('will-redirect')).toBe(0)
+    expect(root.webContents.listenerCount('will-redirect')).toBe(1)
+    expect(popup.webContents.listenerCount('will-redirect')).toBe(1)
     expect(popup.webContents.listenerCount('did-navigate')).toBe(0)
 
     const allowedNavigation = { preventDefault: vi.fn() }
@@ -64,6 +85,14 @@ describe('PatreonLoginWindowManager', () => {
     )
     expect(allowedNavigation.preventDefault).not.toHaveBeenCalled()
 
+    const allowedRedirect = { preventDefault: vi.fn() }
+    popup.webContents.emit(
+      'will-redirect',
+      allowedRedirect,
+      'https://www.patreon.com/api/oauth2/callback?state=opaque'
+    )
+    expect(allowedRedirect.preventDefault).not.toHaveBeenCalled()
+
     const blockedNavigation = { preventDefault: vi.fn() }
     popup.webContents.emit(
       'will-navigate',
@@ -72,6 +101,15 @@ describe('PatreonLoginWindowManager', () => {
     )
     expect(blockedNavigation.preventDefault).toHaveBeenCalledOnce()
     expect(shell.openExternal).toHaveBeenCalledWith('https://example.test/leave-login')
+
+    const blockedRedirect = { preventDefault: vi.fn() }
+    root.webContents.emit(
+      'will-redirect',
+      blockedRedirect,
+      'https://patreon.com.attacker.example/oauth'
+    )
+    expect(blockedRedirect.preventDefault).toHaveBeenCalledOnce()
+    expect(shell.openExternal).toHaveBeenCalledWith('https://patreon.com.attacker.example/oauth')
 
     await manager.closeAll()
     await expect(resultPromise).resolves.toMatchObject({ ok: false })
@@ -190,6 +228,9 @@ class FakeCookies extends EventEmitter {
 
 class FakeSession {
   cookies = new FakeCookies()
+  setSpellCheckerEnabled = vi.fn()
+  setPermissionCheckHandler = vi.fn()
+  setPermissionRequestHandler = vi.fn()
 }
 
 class FakeWebContents extends EventEmitter {

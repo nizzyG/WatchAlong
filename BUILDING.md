@@ -40,7 +40,11 @@ Before publishing a release, run:
 
 ```bash
 npm test
+npm run test:tool-provenance
+npm run verify:tool-provenance
 npm run typecheck
 npm run build
 npm run dist
 ```
+
+`npm run build` also runs the offline tool-provenance check automatically. If a bundled executable is upgraded, update its reviewed source and SHA-256 row in [TOOL_PROVENANCE.md](TOOL_PROVENANCE.md); an unlisted or changed tool intentionally stops the build.

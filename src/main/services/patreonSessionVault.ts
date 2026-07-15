@@ -48,11 +48,13 @@ export class PatreonSessionVault {
       return entry && entry.expiresAt > Date.now() ? entry.cookie : null
     }
 
-    if (source.type === 'manual') {
-      return sessionIdToCookie(source.sessionId)
+    if (source.type === 'saved') {
+      return this.readSavedCookie()
     }
 
-    return this.readSavedCookie()
+    // Runtime IPC values are untrusted even when the TypeScript union is
+    // narrower. Unknown/deleted source formats never fall back to a credential.
+    return null
   }
 
   discardToken(token: string): void {
@@ -110,14 +112,5 @@ interface HeldSessionToken {
   cookie: string
   expiresAt: number
   expiryTimer: ReturnType<typeof setTimeout>
-}
-
-export function sessionIdToCookie(value: string): string {
-  const trimmed = value.trim()
-  if (trimmed.startsWith('session_id=')) {
-    return trimmed
-  }
-
-  return `session_id=${trimmed}`
 }
 

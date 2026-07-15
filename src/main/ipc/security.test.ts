@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { BrowserWindow, IpcMainInvokeEvent, WebContents } from 'electron'
+import type { BrowserWindow, IpcMainInvokeEvent, Session, WebContents } from 'electron'
 
 const electronMocks = vi.hoisted(() => ({
   handle: vi.fn(),
@@ -12,6 +12,7 @@ vi.mock('electron', () => ({
 }))
 
 import { handleTrustedIpc, hardenRendererWindow, isTrustedIpcSender, isTrustedRendererWebContents } from './security'
+import { hardenDefaultSession } from '../webContentsSecurity'
 
 describe('trusted renderer boundary', () => {
   beforeEach(() => {
@@ -65,7 +66,56 @@ describe('trusted renderer boundary', () => {
     expect(electronMocks.openExternal).toHaveBeenCalledTimes(2)
     expect(electronMocks.openExternal).toHaveBeenCalledWith('https://example.com/help')
   })
+
+  it('grants fullscreen only to main and movie roles at their registered document', () => {
+    const permissions = createPermissionSessionHarness()
+    hardenDefaultSession(permissions.session)
+    const cases = [
+      ['main', 'watchalong-app://renderer/index.html', true],
+      ['movie', 'watchalong-app://renderer/index.html?view=movie', true],
+      ['wizard', 'watchalong-app://renderer/index.html?view=wizard', false]
+    ] as const
+
+    for (const [role, url, expected] of cases) {
+      const harness = createWindowHarness(url)
+      hardenRendererWindow(harness.window, role, url)
+      expect(permissions.checkHandler?.(
+        harness.window.webContents,
+        'fullscreen',
+        new URL(url).origin,
+        { isMainFrame: true, requestingUrl: url }
+      )).toBe(expected)
+    }
+  })
 })
+
+function createPermissionSessionHarness(): {
+  session: Session
+  checkHandler: PermissionCheckHandler | null
+} {
+  let checkHandler: PermissionCheckHandler | null = null
+  const session = {
+    setSpellCheckerEnabled: vi.fn(),
+    setPermissionCheckHandler: vi.fn((handler: PermissionCheckHandler) => {
+      checkHandler = handler
+    }),
+    setPermissionRequestHandler: vi.fn()
+  } as unknown as Session
+
+  return {
+    session,
+    get checkHandler() {
+      return checkHandler
+    }
+  }
+}
+
+type PermissionCheckHandler = (
+  webContents: WebContents | null,
+  permission: string,
+  requestingOrigin: string,
+  details: { isMainFrame: boolean; requestingUrl?: string }
+) => boolean
 
 function createWindowHarness(url: string): {
   url: string

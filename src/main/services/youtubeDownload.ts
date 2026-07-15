@@ -8,6 +8,7 @@ import {
   stripAnsi,
   type SpawnDownloadProcess
 } from './downloadProcess'
+import { secureYtDlpArgs } from './childProcessSecurity'
 
 export interface YouTubeOutputMetadata extends DownloadedReactionMetadata {
   channelUrl?: string
@@ -61,7 +62,7 @@ export function buildYouTubeDownloadArgs(
   downloadDir: string,
   ffmpegPath: string | null
 ): string[] {
-  const args = [
+  const args = secureYtDlpArgs([
     '--no-playlist',
     '--newline',
     '--no-colors',
@@ -80,7 +81,7 @@ export function buildYouTubeDownloadArgs(
     'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best',
     '--merge-output-format',
     'mp4'
-  ]
+  ])
 
   if (ffmpegPath) {
     args.push('--ffmpeg-location', ffmpegPath)
@@ -210,14 +211,14 @@ export async function retrieveYouTubeCreatorAvatar(
   }
 
   try {
-    const channelInfo = await captureProcessOutput(spawnProcess, ytDlpPath, [
+    const channelInfo = await captureProcessOutput(spawnProcess, ytDlpPath, secureYtDlpArgs([
       '--flat-playlist',
       '--playlist-end',
       '1',
       '--dump-single-json',
       '--no-warnings',
       channelUrl
-    ])
+    ]))
     if (!channelInfo) {
       return null
     }

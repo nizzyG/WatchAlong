@@ -5,7 +5,8 @@ export function secureRendererWebPreferences(preload: string): WebPreferences {
     preload,
     contextIsolation: true,
     nodeIntegration: false,
-    sandbox: true
+    sandbox: true,
+    spellcheck: false
   }
 }
 
