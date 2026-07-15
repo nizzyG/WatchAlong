@@ -68,6 +68,8 @@ WatchAlong is free and always will be. If it makes your watch-along nights bette
 
 Electron, React, and TypeScript. The sync engine and auto-sync detection are pure, tested TypeScript modules. The bundled tools (yt-dlp, ffmpeg, patreon-dl, Node.js) have their own licenses — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
+Audio-track selection depends on Electron's non-default Blink `AudioVideoTracks` capability. `WindowManager` enables it only for the main playback renderer and detached movie window; onboarding/import and Patreon login windows retain their baseline sandboxed capabilities. Renderer code must still feature-detect `video.audioTracks`: if an Electron upgrade removes or changes the capability, the selector should hide while ordinary playback continues with Chromium's default track.
+
 ```bash
 git clone https://github.com/nizzyG/WatchAlong.git
 cd WatchAlong

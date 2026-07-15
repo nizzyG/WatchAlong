@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import type { MediaRole, OverlayGeometry, SyncState } from '@shared/types'
+import type { MediaRole, MovieAudioTrackSnapshot, OverlayGeometry, SyncState } from '@shared/types'
 import { SyncController } from '../sync/SyncController'
 import { RemoteVideoAdapter } from '../sync/RemoteVideoAdapter'
 
@@ -38,6 +38,11 @@ export function usePlayback() {
   const [pendingSyncSetup, setPendingSyncSetup] = useState(false)
   const [viewTransitioning, setViewTransitioning] = useState(false)
   const [movieWindowActive, setMovieWindowActive] = useState(false)
+  const [movieAudioTrackSnapshot, setMovieAudioTrackSnapshot] = useState<MovieAudioTrackSnapshot>({
+    tracks: [],
+    selected: null
+  })
+  const [movieAudioTrackChanging, setMovieAudioTrackChanging] = useState(false)
 
   return {
     reactionVideoRef, movieVideoRef, controllerRef, remoteMovieAdapterRef, setupModeRef,
@@ -48,7 +53,9 @@ export function usePlayback() {
     setSetupMode, setupPositions, setSetupPositions, setupPlayingRole, setSetupPlayingRole,
     controlsIdle, setControlsIdle, syncState, setSyncState, error, setError, restoreToken,
     setRestoreToken, pendingSyncSetup, setPendingSyncSetup, viewTransitioning,
-    setViewTransitioning, movieWindowActive, setMovieWindowActive
+    setViewTransitioning, movieWindowActive, setMovieWindowActive,
+    movieAudioTrackSnapshot, setMovieAudioTrackSnapshot,
+    movieAudioTrackChanging, setMovieAudioTrackChanging
   }
 }
 

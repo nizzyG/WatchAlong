@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { SyncController } from './sync/SyncController'
 import { keyboardShortcutHelpGroups } from './keyboardShortcuts'
+import type { BrowserAudioTrack, BrowserAudioTrackList } from './playback/audioTrackCapability'
 import type {
   AppPreferences,
   AutoSyncCompleteCallback,
@@ -23,7 +24,7 @@ const secondSession = createSession('s2', 'Second', 20)
 
 function createLibrary(activeSessionId: string | null = 's1', sessions: LibrarySession[] = [firstSession, secondSession]): SessionLibrary {
   return {
-    version: 5,
+    version: 6,
     activeSessionId,
     sessions
   }
@@ -398,6 +399,82 @@ describe('App', () => {
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
 
     await waitFor(() => expect(reaction.currentTime).toBe(37.5))
+  })
+
+  it('shows playable movie tracks and persists a switch only after Chromium confirms it', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('movie', 's1'))
+    const reaction = container.querySelector('video.reaction-video')!
+    const movie = container.querySelector('video.pip-video') as HTMLVideoElement
+    const audioTracks = new FakeAudioTrackList([
+      { enabled: true, label: 'English (5.1)', language: 'eng' },
+      { enabled: false, label: 'Indonesian (5.1)', language: 'ind' }
+    ])
+    Object.defineProperty(movie, 'audioTracks', { configurable: true, value: audioTracks })
+    fireEvent.loadedMetadata(reaction)
+    fireEvent.loadedMetadata(movie)
+
+    fireEvent.click(await screen.findByLabelText('Movie audio: English (5.1)'))
+    fireEvent.click(screen.getByRole('button', { name: /Indonesian \(5\.1\).*Indonesian/i }))
+    expect(api.saveActiveSession).not.toHaveBeenCalledWith(expect.objectContaining({
+      movieAudioTrackPreference: expect.anything()
+    }))
+
+    act(() => audioTracks.dispatchEvent(new Event('change')))
+    await waitFor(() => expect(api.saveActiveSession).toHaveBeenCalledWith({
+      movieAudioTrackPreference: { label: 'Indonesian (5.1)', language: 'ind', ordinal: 1 }
+    }))
+    expect(await screen.findByLabelText('Movie audio: Indonesian (5.1)')).toBeInTheDocument()
+  })
+
+  it('restores a semantic movie track without rewriting the saved preference', async () => {
+    const preferred = createSession('s1', 'First', 0, {
+      movieAudioTrackPreference: { label: 'Original audio', language: 'ind', ordinal: 1 }
+    })
+    const api = createApi(createLibrary('s1', [preferred]), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('movie', 's1'))
+    const movie = container.querySelector('video.pip-video') as HTMLVideoElement
+    const audioTracks = new FakeAudioTrackList([
+      { enabled: true, label: 'English dub', language: 'eng' },
+      { enabled: false, label: 'Original audio', language: 'ind' }
+    ])
+    Object.defineProperty(movie, 'audioTracks', { configurable: true, value: audioTracks })
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(movie)
+    act(() => audioTracks.dispatchEvent(new Event('change')))
+
+    expect(await screen.findByLabelText('Movie audio: Original audio')).toBeInTheDocument()
+    expect(api.saveActiveSession).not.toHaveBeenCalledWith(expect.objectContaining({
+      movieAudioTrackPreference: expect.anything()
+    }))
+  })
+
+  it('keeps Chromium’s default when the saved semantic track is no longer playable', async () => {
+    const preferred = createSession('s1', 'First', 0, {
+      movieAudioTrackPreference: { label: 'Missing French commentary', language: 'fra', ordinal: 2 }
+    })
+    const api = createApi(createLibrary('s1', [preferred]), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('movie', 's1'))
+    const movie = container.querySelector('video.pip-video') as HTMLVideoElement
+    const audioTracks = new FakeAudioTrackList([
+      { enabled: true, label: 'English dub', language: 'eng' },
+      { enabled: false, label: 'Original audio', language: 'ind' }
+    ])
+    Object.defineProperty(movie, 'audioTracks', { configurable: true, value: audioTracks })
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(movie)
+
+    expect(await screen.findByLabelText('Movie audio: English dub')).toBeInTheDocument()
+    expect(audioTracks.states()).toEqual([true, false])
   })
 
   it('changes and persists the library layout from the library header', async () => {
@@ -1449,6 +1526,72 @@ describe('App', () => {
     expect(document.querySelector('video.pip-video')).not.toBeInTheDocument()
   })
 
+  it('switches and persists audio through the detached movie command path', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    const movieMediaCallbacks = new Set<RemoteMediaEventCallback>()
+    api.onMovieMediaEvent = vi.fn((callback: RemoteMediaEventCallback) => {
+      movieMediaCallbacks.add(callback)
+      return () => movieMediaCallbacks.delete(callback)
+    })
+    api.sendMovieMediaCommand = vi.fn(async (command) => ({
+      id: command.id,
+      ok: true,
+      state: remoteState(),
+      ...(command.type === 'setAudioTrack'
+        ? {
+            audioTrackSnapshot: {
+              tracks: [
+                { label: 'English (5.1)', language: 'eng', ordinal: 0, displayLabel: 'English (5.1)', enabled: false },
+                { label: 'Indonesian (5.1)', language: 'ind', ordinal: 1, displayLabel: 'Indonesian (5.1)', enabled: true }
+              ],
+              selected: { label: 'Indonesian (5.1)', language: 'ind', ordinal: 1 }
+            }
+          }
+        : {})
+    }))
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('movie', 's1'))
+    const movie = container.querySelector('video.pip-video') as HTMLVideoElement
+    const audioTracks = new FakeAudioTrackList([
+      { enabled: true, label: 'English (5.1)', language: 'eng' },
+      { enabled: false, label: 'Indonesian (5.1)', language: 'ind' }
+    ])
+    Object.defineProperty(movie, 'audioTracks', { configurable: true, value: audioTracks })
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(movie)
+    await screen.findByLabelText('Movie audio: English (5.1)')
+
+    popOutFromOverlay()
+    await waitFor(() => expect(document.querySelector('video.pip-video')).not.toBeInTheDocument())
+    expect(screen.queryByLabelText('Movie audio: English (5.1)')).not.toBeInTheDocument()
+    expect(movieMediaCallbacks.size).toBeGreaterThan(0)
+    act(() => {
+      for (const callback of movieMediaCallbacks) callback({
+        type: 'loadedmetadata',
+        state: remoteState(),
+        audioTrackSnapshot: {
+          tracks: [
+            { label: 'English (5.1)', language: 'eng', ordinal: 0, displayLabel: 'English (5.1)', enabled: true },
+            { label: 'Indonesian (5.1)', language: 'ind', ordinal: 1, displayLabel: 'Indonesian (5.1)', enabled: false }
+          ],
+          selected: { label: 'English (5.1)', language: 'eng', ordinal: 0 }
+        }
+      })
+    })
+    fireEvent.click(await screen.findByLabelText('Movie audio: English (5.1)'))
+    fireEvent.click(screen.getByRole('button', { name: /Indonesian \(5\.1\).*Indonesian/i }))
+
+    await waitFor(() => expect(api.sendMovieMediaCommand).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'setAudioTrack',
+      value: { label: 'Indonesian (5.1)', language: 'ind', ordinal: 1 }
+    })))
+    await waitFor(() => expect(api.saveActiveSession).toHaveBeenCalledWith({
+      movieAudioTrackPreference: { label: 'Indonesian (5.1)', language: 'ind', ordinal: 1 }
+    }))
+  })
+
   it('pauses and resumes a playing popped-out movie around a cancelled wizard', async () => {
     const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
     let movieMediaCallback: RemoteMediaEventCallback | null = null
@@ -1901,6 +2044,23 @@ describe('App', () => {
   })
 })
 
+class FakeAudioTrackList extends EventTarget implements BrowserAudioTrackList {
+  readonly length: number
+  readonly [index: number]: BrowserAudioTrack | undefined
+
+  constructor(tracks: BrowserAudioTrack[]) {
+    super()
+    this.length = tracks.length
+    tracks.forEach((track, index) => {
+      Object.defineProperty(this, index, { enumerable: true, value: track })
+    })
+  }
+
+  states(): boolean[] {
+    return Array.from({ length: this.length }, (_, index) => this[index]!.enabled)
+  }
+}
+
 function createSession(
   id: string,
   title: string,
@@ -1918,6 +2078,7 @@ function createSession(
     reactionDurationSeconds: 120,
     moviePath: `C:\\Videos\\${id}-movie.mp4`,
     moviePosterPath: null,
+    movieAudioTrackPreference: null,
     subtitlePath: null,
     offsetSeconds: 0,
     lastReactionTimeSeconds,

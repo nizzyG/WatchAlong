@@ -50,7 +50,7 @@ describe('LibraryHome', () => {
     const manual = session('manual', 'Anchorman — Second Reactor', 'Anchorman.mp4', 'second - Second Reactor')
     manual.moviePosterPath = 'C:\\Art\\anchorman-custom.png'
     const library: SessionLibrary = {
-      version: 5,
+      version: 6,
       activeSessionId: automatic.id,
       sessions: [automatic, manual]
     }
@@ -80,7 +80,7 @@ describe('LibraryHome', () => {
     const withManualPoster = session('alien', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia')
     withManualPoster.moviePosterPath = 'C:\\Art\\alien.jpg'
     const library: SessionLibrary = {
-      version: 5,
+      version: 6,
       activeSessionId: withManualPoster.id,
       sessions: [withManualPoster]
     }
@@ -131,7 +131,7 @@ describe('LibraryHome', () => {
     window.localStorage.setItem('watchalong-library-mode', mode)
     const alien = session('alien', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia')
     alien.moviePosterPath = 'C:\\Art\\alien.jpg'
-    const library: SessionLibrary = { version: 5, activeSessionId: alien.id, sessions: [alien] }
+    const library: SessionLibrary = { version: 6, activeSessionId: alien.id, sessions: [alien] }
     const onRename = vi.fn()
     const onEditReactor = vi.fn()
     const onDelete = vi.fn()
@@ -203,7 +203,7 @@ describe('LibraryHome', () => {
     alpha.createdAt = '2026-07-12T12:00:00.000Z'
     bravo.createdAt = '2026-07-13T12:00:00.000Z'
     zulu.createdAt = '2026-07-14T12:00:00.000Z'
-    const library: SessionLibrary = { version: 5, activeSessionId: zulu.id, sessions: [alpha, zulu, bravo] }
+    const library: SessionLibrary = { version: 6, activeSessionId: zulu.id, sessions: [alpha, zulu, bravo] }
 
     const first = renderLibrary(vi.fn(), { library })
     const pairingTitles = (): string[] => [...first.container.querySelectorAll('.pairing-library-grid .library-card-copy strong')]
@@ -232,7 +232,7 @@ describe('LibraryHome', () => {
 
   it('provides a welcoming empty state for every organization view', () => {
     const onNew = vi.fn()
-    const library: SessionLibrary = { version: 5, activeSessionId: null, sessions: [] }
+    const library: SessionLibrary = { version: 6, activeSessionId: null, sessions: [] }
     renderLibrary(vi.fn(), { library, onNew })
 
     expect(screen.getByRole('heading', { name: 'No WatchAlong pairings yet' })).toBeInTheDocument()
@@ -248,7 +248,7 @@ describe('LibraryHome', () => {
   it('uses a balanced shelf treatment for a single reactor pairing', () => {
     window.localStorage.setItem('watchalong-library-mode', 'reactors')
     const onlySession = session('alien', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia')
-    const library: SessionLibrary = { version: 5, activeSessionId: onlySession.id, sessions: [onlySession] }
+    const library: SessionLibrary = { version: 6, activeSessionId: onlySession.id, sessions: [onlySession] }
 
     const { container } = renderLibrary(vi.fn(), { library })
 
@@ -325,7 +325,7 @@ function renderLibrary(
   } = {}
 ) {
   const library: SessionLibrary = options.library ?? {
-    version: 5,
+    version: 6,
     activeSessionId: 'alien',
     sessions: [
       session('alien', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia'),

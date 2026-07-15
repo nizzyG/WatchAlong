@@ -158,7 +158,8 @@ export class SessionStore {
       ...(role === 'movie'
         ? {
             detectedMovieFps: null,
-            moviePosterPath: moviePosterPathAfterMovieChange(library.sessions, active, filePath)
+            moviePosterPath: moviePosterPathAfterMovieChange(library.sessions, active, filePath),
+            movieAudioTrackPreference: movieAudioTrackPreferenceAfterMovieChange(active, filePath)
           }
         : {}),
       ...resetAutoSyncMetadata,
@@ -216,10 +217,18 @@ export class SessionStore {
     const nextMoviePosterPath = role === 'movie'
       ? moviePosterPathAfterMovieChange(library.sessions, target, filePath)
       : target.moviePosterPath
+    const nextMovieAudioTrackPreference = role === 'movie'
+      ? movieAudioTrackPreferenceAfterMovieChange(target, filePath)
+      : target.movieAudioTrackPreference
     const nextSession = normalizeSession({
       ...target,
       ...(role === 'movie'
-        ? { moviePath: filePath, moviePosterPath: nextMoviePosterPath, detectedMovieFps: null }
+        ? {
+            moviePath: filePath,
+            moviePosterPath: nextMoviePosterPath,
+            movieAudioTrackPreference: nextMovieAudioTrackPreference,
+            detectedMovieFps: null
+          }
         : { reactionPath: filePath, reactionSource }),
       ...reactorIdentityAfterReactionChange(target, role, reactorName),
       title: completedDraftTitle(target, role, suggestedTitle) ?? target.title,
@@ -316,12 +325,21 @@ export class SessionStore {
     const timingPatch = isManualTimingPatch(patch) && patch.timingOrigin !== 'automatic'
       ? resetAutoSyncMetadata
       : {}
+    const movieAudioTrackPatch = Object.prototype.hasOwnProperty.call(patch, 'moviePath')
+      ? {
+          movieAudioTrackPreference: movieAudioTrackPreferenceAfterMovieChange(
+            target,
+            typeof patch.moviePath === 'string' ? patch.moviePath : null
+          )
+        }
+      : {}
     const sessions = library.sessions.map((session) =>
       session.id === target.id
         ? normalizeSession({
             ...session,
             ...patch,
             ...timingPatch,
+            ...movieAudioTrackPatch,
             titleOrigin: !Object.prototype.hasOwnProperty.call(patch, 'title')
               ? session.titleOrigin
               : patch.titleOrigin === 'generated' ? 'generated' : 'custom',
@@ -671,6 +689,16 @@ function movieFileNameIdentity(filePath: string | null): string | null {
   if (!fileName || fileName === '.' || fileName === '..') return null
 
   return `${isWindowsPath ? 'win' : 'posix'}:${isWindowsPath ? fileName.toLowerCase() : fileName}`
+}
+
+function movieAudioTrackPreferenceAfterMovieChange(
+  session: LibrarySession,
+  nextMoviePath: string | null
+): LibrarySession['movieAudioTrackPreference'] {
+  const currentFileName = movieFileNameIdentity(session.moviePath)
+  return currentFileName !== null && currentFileName === movieFileNameIdentity(nextMoviePath)
+    ? session.movieAudioTrackPreference
+    : null
 }
 
 function applyMoviePosterToPath(

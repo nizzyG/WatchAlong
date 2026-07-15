@@ -4495,6 +4495,187 @@ body.wizard-body,
   background-size: 120px 80px, auto;
 }
 
+/* Playable movie audio appears only when Chromium exposes a real choice. */
+.audio-track-selector {
+  position: relative;
+  flex: 0 1 240px;
+  min-width: 190px;
+  color: var(--wa-paper);
+}
+
+.audio-track-selector summary {
+  list-style: none;
+}
+
+.audio-track-selector summary::-webkit-details-marker {
+  display: none;
+}
+
+.audio-track-selector-summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 12px;
+  border: 1px solid var(--wa-line-soft);
+  border-radius: 11px;
+  cursor: pointer;
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-inset);
+  background-image: var(--wa-wood-sheen);
+  box-shadow: inset 0 1px 0 var(--wa-surface-highlight);
+}
+
+.audio-track-selector-summary[aria-disabled='true'] {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.audio-track-selector[open] .audio-track-selector-summary {
+  border-color: rgba(142, 226, 177, 0.62);
+  box-shadow:
+    inset 0 0 0 1px rgba(142, 226, 177, 0.16),
+    0 8px 20px var(--wa-shadow-soft);
+}
+
+.audio-track-selector-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.audio-track-selector-copy small {
+  color: var(--wa-paper-muted);
+  font-size: 9px;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.audio-track-selector-copy strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audio-track-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.audio-track-menu {
+  position: absolute;
+  z-index: 80;
+  right: 0;
+  bottom: calc(100% + 10px);
+  width: min(340px, calc(100vw - 32px));
+  max-height: min(420px, calc(100vh - 140px));
+  overflow: hidden auto;
+  padding: 10px;
+  border: 1px solid var(--wa-line);
+  border-radius: 14px;
+  background-color: var(--wa-panel-glass-strong);
+  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  box-shadow:
+    0 22px 54px var(--wa-shadow),
+    inset 0 1px 0 var(--wa-surface-highlight);
+  backdrop-filter: blur(22px) saturate(1.04);
+}
+
+.audio-track-menu > header {
+  display: grid;
+  gap: 2px;
+  padding: 5px 7px 10px;
+}
+
+.audio-track-menu > header strong {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 16px;
+}
+
+.audio-track-menu > header span {
+  color: var(--wa-paper-muted);
+  font-size: 11px;
+}
+
+.audio-track-options {
+  display: grid;
+  gap: 5px;
+}
+
+.audio-track-option {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--wa-paper);
+  text-align: left;
+  background: transparent;
+}
+
+.audio-track-option:hover,
+.audio-track-option:focus-visible {
+  border-color: var(--wa-line);
+  background: var(--wa-panel-raised);
+}
+
+.audio-track-option-active {
+  border-color: rgba(142, 226, 177, 0.54);
+  background: rgba(142, 226, 177, 0.1);
+}
+
+.audio-track-option > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.audio-track-option strong,
+.audio-track-option small {
+  overflow-wrap: anywhere;
+}
+
+.audio-track-option strong {
+  font-size: 12px;
+}
+
+.audio-track-option small {
+  color: var(--wa-paper-muted);
+  font-size: 10px;
+}
+
+.audio-track-option-active > svg {
+  flex: 0 0 auto;
+  color: var(--wa-green);
+}
+
+@media (max-width: 1100px) {
+  .audio-track-selector {
+    flex: 1 1 220px;
+    order: 2;
+  }
+
+  .control-meta .volume-bank {
+    order: 1;
+  }
+
+  .control-meta .find-sync-button {
+    order: 2;
+  }
+}
+
 @media (max-width: 380px) {
   .panel-cabinet-choices {
     grid-template-columns: 1fr;
@@ -4518,6 +4699,8 @@ body.wizard-body,
   .command-section,
   .panel-sync-overview,
   .panel-cabinet-setting,
+  .audio-track-selector-summary,
+  .audio-track-menu,
   .panel-cabinet-choices button {
     border-color: CanvasText;
     color: CanvasText;

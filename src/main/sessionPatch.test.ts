@@ -5,6 +5,7 @@ describe('renderer session patch allowlist', () => {
   it('keeps playback preferences and removes privileged session fields', () => {
     expect(pickRendererSessionPatch({
       offsetSeconds: 12.5,
+      movieAudioTrackPreference: { label: 'Indonesian (5.1)', language: 'ind', ordinal: 1 },
       reactorName: 'Cinema Therapy',
       reactorNameOrigin: 'metadata',
       isPipHidden: true,
@@ -21,6 +22,7 @@ describe('renderer session patch allowlist', () => {
       updatedAt: '2000-01-01T00:00:00.000Z'
     })).toEqual({
       offsetSeconds: 12.5,
+      movieAudioTrackPreference: { label: 'Indonesian (5.1)', language: 'ind', ordinal: 1 },
       reactorName: 'Cinema Therapy',
       isPipHidden: true,
       overlay: { x: 0.4, y: 0.3, width: 0.25, height: 0.25 }

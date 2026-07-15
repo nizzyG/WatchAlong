@@ -4,6 +4,9 @@ import {
   bindTrustedMovieSource,
   ensureVisibleWindowBounds,
   MOVIE_MEDIA_COMMAND_TIMEOUT_ERROR,
+  normalizeMovieAudioTrackSnapshot,
+  normalizeRemoteMediaCommandResult,
+  normalizeRemoteMediaEvent,
   PendingMovieCommandTracker,
   SerialTaskQueue
 } from './movieWindowHelpers'
@@ -160,17 +163,86 @@ describe('movie window operation boundary', () => {
       muted: false,
       subtitleText: null,
       mediaUrl: 'file:///C:/Users/user/private.txt',
-      title: 'Injected title'
+      title: 'Injected title',
+      audioTrackPreference: { label: 'Injected', language: 'xx', ordinal: 99 }
     } as unknown as MovieMediaCommandRequest
 
     expect(bindTrustedMovieSource(untrusted, {
       mediaUrl: 'watchalong://media/session-1/movie?updated=trusted',
-      title: 'Stored session'
+      title: 'Stored session',
+      audioTrackPreference: { label: 'Indonesian', language: 'ind', ordinal: 1 }
     })).toEqual({
       ...untrusted,
       mediaUrl: 'watchalong://media/session-1/movie?updated=trusted',
-      title: 'Stored session'
+      title: 'Stored session',
+      audioTrackPreference: { label: 'Indonesian', language: 'ind', ordinal: 1 }
     })
+  })
+})
+
+describe('detached renderer payload normalization', () => {
+  it('reconstructs audio snapshots and derives selection from the sole enabled track', () => {
+    expect(normalizeMovieAudioTrackSnapshot({
+      tracks: [
+        {
+          id: 'native-1',
+          label: 'English',
+          language: 'eng',
+          ordinal: 0,
+          displayLabel: 'Injected presentation',
+          enabled: false
+        },
+        {
+          id: 'native-2',
+          label: 'Indonesian',
+          language: 'ind',
+          ordinal: 1,
+          displayLabel: '<script>',
+          enabled: true
+        }
+      ],
+      selected: { label: 'Forged', language: 'xx', ordinal: 99 }
+    })).toEqual({
+      tracks: [
+        { label: 'English', language: 'eng', ordinal: 0, displayLabel: 'English', enabled: false },
+        { label: 'Indonesian', language: 'ind', ordinal: 1, displayLabel: 'Indonesian', enabled: true }
+      ],
+      selected: { label: 'Indonesian', language: 'ind', ordinal: 1 }
+    })
+  })
+
+  it('drops malformed snapshots while retaining a valid media event or command result', () => {
+    const malformedSnapshot = {
+      tracks: [
+        { label: 'English', language: 'eng', ordinal: 0, enabled: true },
+        { label: 'Commentary', language: 'eng', ordinal: 0, enabled: false }
+      ],
+      selected: null
+    }
+    const event = normalizeRemoteMediaEvent({
+      type: 'audiotrackchange',
+      state: remoteState(),
+      audioTrackSnapshot: malformedSnapshot
+    })
+    const result = normalizeRemoteMediaCommandResult({
+      id: 'audio-1',
+      ok: true,
+      state: remoteState(),
+      audioTrackSnapshot: { tracks: 'not-an-array' }
+    })
+
+    expect(normalizeMovieAudioTrackSnapshot(malformedSnapshot)).toBeUndefined()
+    expect(event).toEqual({ type: 'audiotrackchange', state: remoteState() })
+    expect(result).toEqual({ id: 'audio-1', ok: true, state: remoteState() })
+  })
+
+  it('rejects malformed outer media reports before application state can consume them', () => {
+    expect(normalizeRemoteMediaEvent({ type: 'audiotrackchange', state: null })).toBeNull()
+    expect(normalizeRemoteMediaCommandResult({
+      id: 'audio-1',
+      ok: true,
+      state: remoteState({ readyState: 99 })
+    })).toBeNull()
   })
 })
 

@@ -35,6 +35,7 @@ describe('PatreonLoginWindowManager', () => {
       nodeIntegration: false,
       sandbox: true
     })
+    expect(options[0]?.webPreferences).not.toHaveProperty('enableBlinkFeatures')
     expect(options[0]?.webPreferences?.partition).toMatch(/^patreon-login-/)
 
     const popupDecision = root.openHandler?.({

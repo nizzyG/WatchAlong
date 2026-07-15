@@ -1,4 +1,4 @@
-import { BrowserWindow, screen } from 'electron'
+import { BrowserWindow, screen, type WebContents, type WebPreferences } from 'electron'
 import { existsSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type {
@@ -14,7 +14,6 @@ import type {
   MovieWindowOpenResult,
   OverlayGeometry,
   RemoteMediaCommandResult,
-  RemoteMediaEvent,
   RemoteMediaState,
   WizardLifecycleEvent,
   WizardOutcome
@@ -24,6 +23,8 @@ import {
   ensureVisibleWindowBounds,
   MOVIE_WINDOW_MIN_HEIGHT,
   MOVIE_WINDOW_MIN_WIDTH,
+  normalizeRemoteMediaCommandResult,
+  normalizeRemoteMediaEvent,
   PendingMovieCommandTracker,
   SerialTaskQueue
 } from './movieWindowHelpers'
@@ -33,6 +34,21 @@ import { hardenRendererWindow, type RendererRole } from './ipc/security'
 import { createSessionMediaUrl } from './mediaProtocol'
 import { secureRendererWebPreferences } from './rendererSecurityPolicy'
 import { createRendererEntryUrl } from './rendererProtocolPolicy'
+
+const AUDIO_TRACKS_BLINK_FEATURE = 'AudioVideoTracks'
+
+/**
+ * Audio-track enumeration is a playback-only capability. Keep onboarding and
+ * import wizard renderers on the baseline sandboxed preferences; Patreon and
+ * other remote windows are created outside WindowManager and never use this
+ * helper.
+ */
+export function rendererWebPreferencesForRole(preload: string, role: RendererRole): WebPreferences {
+  const preferences = secureRendererWebPreferences(preload)
+  return role === 'main' || role === 'movie'
+    ? { ...preferences, enableBlinkFeatures: AUDIO_TRACKS_BLINK_FEATURE }
+    : preferences
+}
 
 export class WindowManager {
   private mainWindow: BrowserWindow | null = null
@@ -78,23 +94,38 @@ export class WindowManager {
     return this.importWizardContext
   }
 
-  getMovieWindowInit(): MovieWindowInit | null {
-    return this.movieWindowInit
+  getMovieWindowInit(sender: WebContents): MovieWindowInit | null {
+    return this.isCurrentMovieWindowSender(sender) ? this.movieWindowInit : null
   }
 
-  markMovieWindowReady(): void {
+  markMovieWindowReady(sender: WebContents): boolean {
+    if (!this.isCurrentMovieWindowSender(sender)) return false
     this.resolveMovieWindowReady?.()
     this.resolveMovieWindowReady = null
+    return true
   }
 
-  handleMovieMediaCommandResult(result: RemoteMediaCommandResult): void {
+  handleMovieMediaCommandResult(sender: WebContents, value: unknown): boolean {
+    if (!this.isCurrentMovieWindowSender(sender)) return false
+    const result = normalizeRemoteMediaCommandResult(value)
+    if (!result || !this.pendingMovieCommands.resolve(result)) return false
     this.lastMovieMediaState = result.state
-    this.pendingMovieCommands.resolve(result)
+    return true
   }
 
-  handleMovieMediaEvent(event: RemoteMediaEvent): void {
+  handleMovieMediaEvent(sender: WebContents, value: unknown): boolean {
+    if (!this.isCurrentMovieWindowSender(sender)) return false
+    const event = normalizeRemoteMediaEvent(value)
+    if (!event) return false
     this.lastMovieMediaState = event.state
     this.getMainWindow()?.webContents.send(`${IPC_PREFIX}:movie-media-event`, event)
+    return true
+  }
+
+  requestMovieWindowPopIn(sender: WebContents): boolean {
+    if (!this.isCurrentMovieWindowSender(sender)) return false
+    this.sendMovieWindowPopInRequest()
+    return true
   }
 
   public createMainWindow(): void {
@@ -105,7 +136,7 @@ export class WindowManager {
       minHeight: 560,
       backgroundColor: '#0c0b09',
       title: APP_NAME,
-      webPreferences: secureRendererWebPreferences(join(__dirname, '../preload/index.js'))
+      webPreferences: rendererWebPreferencesForRole(join(__dirname, '../preload/index.js'), 'main')
     })
   
     this.mainWindow.setMenuBarVisibility(false)
@@ -190,7 +221,7 @@ export class WindowManager {
       modal: true,
       title: 'Choose Your Movie',
       backgroundColor: '#0c0b09',
-      webPreferences: secureRendererWebPreferences(join(__dirname, '../preload/index.js'))
+      webPreferences: rendererWebPreferencesForRole(join(__dirname, '../preload/index.js'), 'wizard')
     })
   
     this.wizardWindow.setMenuBarVisibility(false)
@@ -366,7 +397,8 @@ export class WindowManager {
       currentTime,
       playbackRate,
       volume,
-      muted
+      muted,
+      audioTrackPreference: refreshedSource.session.movieAudioTrackPreference
     }
     this.lastMovieMediaState = {
       currentTime,
@@ -390,7 +422,7 @@ export class WindowManager {
       show: false,
       title: refreshedSource.session.title,
       backgroundColor: '#0c0b09',
-      webPreferences: secureRendererWebPreferences(join(__dirname, '../preload/index.js'))
+      webPreferences: rendererWebPreferencesForRole(join(__dirname, '../preload/index.js'), 'movie')
     })
     this.movieWindow = targetWindow
 
@@ -596,6 +628,14 @@ export class WindowManager {
       !targetWindow.isDestroyed()
   }
 
+  private isCurrentMovieWindowSender(sender: WebContents): boolean {
+    return Boolean(
+      this.movieWindow &&
+      !this.movieWindow.isDestroyed() &&
+      this.movieWindow.webContents === sender
+    )
+  }
+
   private movieWindowOpenFailure(geometry: OverlayGeometry, reason: string): MovieWindowOpenResult {
     return {
       opened: false,
@@ -611,7 +651,7 @@ export class WindowManager {
     }
   }
   
-  public sendMovieWindowPopInRequest(): void {
+  private sendMovieWindowPopInRequest(): void {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send(`${IPC_PREFIX}:movie-window-pop-in-requested`, {
         sessionId: this.movieWindowInit?.sessionId
@@ -657,7 +697,8 @@ export class WindowManager {
     }
     const trustedCommand = bindTrustedMovieSource(command, {
       mediaUrl: source.mediaUrl,
-      title: source.session.title
+      title: source.session.title,
+      audioTrackPreference: source.session.movieAudioTrackPreference
     })
   
     return new Promise((resolve) => {

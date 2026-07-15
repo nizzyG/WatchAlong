@@ -66,13 +66,19 @@ describe('SessionStore media drafts', () => {
         reactionPath: null,
         moviePosterPath: 'C:\\Art\\Film.jpg'
       })
+      store.updateSession(draftId, {
+        movieAudioTrackPreference: { label: 'Feature audio', language: 'eng', ordinal: 0 }
+      })
 
       const relocated = store.setSessionMedia('movie', 'D:\\Archive\\FILM.MKV')
       expect(relocated.sessions.find((session) => session.id === draftId)?.moviePosterPath)
         .toBe('C:\\Art\\Film.jpg')
+      expect(relocated.sessions.find((session) => session.id === draftId)?.movieAudioTrackPreference)
+        .toEqual({ label: 'Feature audio', language: 'eng', ordinal: 0 })
 
       const changedMovie = store.setSessionMedia('movie', 'D:\\Archive\\Heat.mkv')
       expect(changedMovie.sessions.find((session) => session.id === draftId)?.moviePosterPath).toBeNull()
+      expect(changedMovie.sessions.find((session) => session.id === draftId)?.movieAudioTrackPreference).toBeNull()
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -112,6 +118,9 @@ describe('SessionStore media drafts', () => {
       )
       const sourceId = source.activeSessionId!
       store.setMoviePosterPath(sourceId, 'C:\\Art\\Tombstone.jpg')
+      store.updateSession(sourceId, {
+        movieAudioTrackPreference: { label: 'English', language: 'eng', ordinal: 0 }
+      })
 
       const relocated = store.replaceSessionMedia(
         sourceId,
@@ -120,6 +129,8 @@ describe('SessionStore media drafts', () => {
       ).library
       expect(relocated.sessions.find((session) => session.id === sourceId)?.moviePosterPath)
         .toBe('C:\\Art\\Tombstone.jpg')
+      expect(relocated.sessions.find((session) => session.id === sourceId)?.movieAudioTrackPreference)
+        .toEqual({ label: 'English', language: 'eng', ordinal: 0 })
 
       const destination = store.createOrSwitchSession(
         'C:\\Reactions\\Heat.mp4',
@@ -133,6 +144,7 @@ describe('SessionStore media drafts', () => {
         .toBe('D:\\Art\\Heat.png')
       expect(adopted.sessions.find((session) => session.id === destinationId)?.moviePosterPath)
         .toBe('D:\\Art\\Heat.png')
+      expect(adopted.sessions.find((session) => session.id === sourceId)?.movieAudioTrackPreference).toBeNull()
 
       const changedMovie = store.replaceSessionMedia(
         sourceId,
@@ -504,7 +516,7 @@ describe('SessionStore media drafts', () => {
     }
   })
 
-  it('normalizes a version 4 library to version 5 and persists poster data on the next update', () => {
+  it('normalizes a version 4 library to version 6 and persists current session data on the next update', () => {
     const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
     try {
       const libraryPath = join(dir, 'library.json')
@@ -521,15 +533,26 @@ describe('SessionStore media drafts', () => {
 
       const migrated = store.read()
       expect(migrated).toMatchObject({
-        version: 5,
+        version: 6,
         activeSessionId: 'legacy-session',
-        sessions: [{ id: 'legacy-session', moviePosterPath: null }]
+        sessions: [{
+          id: 'legacy-session',
+          moviePosterPath: null,
+          movieAudioTrackPreference: null
+        }]
       })
 
-      store.setMoviePosterPath('legacy-session', 'C:\\Movies\\poster.png')
+      store.updateSession('legacy-session', {
+        moviePosterPath: 'C:\\Movies\\poster.png',
+        movieAudioTrackPreference: { label: 'Original', language: 'eng', ordinal: 0 }
+      })
       expect(JSON.parse(readFileSync(libraryPath, 'utf8'))).toMatchObject({
-        version: 5,
-        sessions: [{ id: 'legacy-session', moviePosterPath: 'C:\\Movies\\poster.png' }]
+        version: 6,
+        sessions: [{
+          id: 'legacy-session',
+          moviePosterPath: 'C:\\Movies\\poster.png',
+          movieAudioTrackPreference: { label: 'Original', language: 'eng', ordinal: 0 }
+        }]
       })
     } finally {
       rmSync(dir, { recursive: true, force: true })
@@ -548,7 +571,7 @@ describe('SessionStore media drafts', () => {
       const recovered = store.read()
 
       expect(recovered.sessions).toHaveLength(2)
-      expect(JSON.parse(readFileSync(libraryPath, 'utf8'))).toMatchObject({ version: 5 })
+      expect(JSON.parse(readFileSync(libraryPath, 'utf8'))).toMatchObject({ version: 6 })
       const quarantine = readdirSync(dir).find((name) => name.startsWith('library.json.corrupt-'))
       expect(quarantine).toBeTruthy()
       expect(readFileSync(join(dir, quarantine!), 'utf8')).toBe('{"sessions": [')

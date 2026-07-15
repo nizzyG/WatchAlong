@@ -11,6 +11,7 @@ export type RendererSessionPatch = Partial<Pick<
   | 'movieWindowGeometry'
   | 'reactionVolume'
   | 'movieVolume'
+  | 'movieAudioTrackPreference'
   | 'isReactionMuted'
   | 'isMovieMuted'
   | 'playbackRate'
@@ -30,6 +31,7 @@ const rendererWritableSessionKeys = new Set<keyof RendererSessionPatch>([
   'movieWindowGeometry',
   'reactionVolume',
   'movieVolume',
+  'movieAudioTrackPreference',
   'isReactionMuted',
   'isMovieMuted',
   'playbackRate',

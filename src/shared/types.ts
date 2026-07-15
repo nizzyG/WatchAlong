@@ -27,6 +27,28 @@ export interface OverlayGeometry {
   height: number
 }
 
+/**
+ * Identifies a playable movie audio track without relying on Chromium's
+ * generated track id, which is not stable across loads or runtime upgrades.
+ */
+export interface AudioTrackPreference {
+  label: string
+  language: string
+  /** Zero-based position in the playable audio track list. */
+  ordinal: number
+}
+
+/** Serializable renderer snapshot of one Chromium-playable audio track. */
+export interface MovieAudioTrackOption extends AudioTrackPreference {
+  displayLabel: string
+  enabled: boolean
+}
+
+export interface MovieAudioTrackSnapshot {
+  tracks: MovieAudioTrackOption[]
+  selected: AudioTrackPreference | null
+}
+
 export interface LibrarySession {
   id: string
   title: string
@@ -38,6 +60,7 @@ export interface LibrarySession {
   reactionDurationSeconds: number | null
   moviePath: string | null
   moviePosterPath: string | null
+  movieAudioTrackPreference: AudioTrackPreference | null
   subtitlePath: string | null
   offsetSeconds: number
   lastReactionTimeSeconds: number
@@ -64,7 +87,7 @@ export interface LibrarySession {
 export type SessionData = LibrarySession
 
 export interface SessionLibrary {
-  version: 5
+  version: 6
   activeSessionId: string | null
   sessions: LibrarySession[]
 }
@@ -194,6 +217,7 @@ export type RemoteMediaEventType =
   | 'volumechange'
   | 'loadeddata'
   | 'canplaythrough'
+  | 'audiotrackchange'
 
 export interface RemoteMediaState {
   currentTime: number
@@ -210,13 +234,14 @@ export interface RemoteMediaState {
 export interface RemoteMediaEvent {
   type: RemoteMediaEventType
   state: RemoteMediaState
+  audioTrackSnapshot?: MovieAudioTrackSnapshot
   error?: string
 }
 
 export type RemoteMediaEventCallback = (event: RemoteMediaEvent) => void
 
 export type RemoteMediaCommand =
-  | { id: string; type: 'setSource'; mediaUrl: string | null; currentTime: number; playbackRate: number; volume: number; muted: boolean; subtitleText: string | null; title: string }
+  | { id: string; type: 'setSource'; mediaUrl: string | null; currentTime: number; playbackRate: number; volume: number; muted: boolean; subtitleText: string | null; title: string; audioTrackPreference: AudioTrackPreference | null }
   | { id: string; type: 'play' }
   | { id: string; type: 'pause' }
   | { id: string; type: 'setCurrentTime'; value: number }
@@ -224,6 +249,7 @@ export type RemoteMediaCommand =
   | { id: string; type: 'setVolume'; value: number }
   | { id: string; type: 'setMuted'; value: boolean }
   | { id: string; type: 'setSubtitleText'; value: string | null }
+  | { id: string; type: 'setAudioTrack'; value: AudioTrackPreference }
   | { id: string; type: 'fadeOut' }
 
 type RemoteMediaCommandWithoutSource = Exclude<RemoteMediaCommand, { type: 'setSource' }>
@@ -240,6 +266,7 @@ export interface RemoteMediaCommandResult {
   id: string
   ok: boolean
   state: RemoteMediaState
+  audioTrackSnapshot?: MovieAudioTrackSnapshot
   error?: string
 }
 
@@ -296,6 +323,7 @@ export interface MovieWindowInit {
   playbackRate: number
   volume: number
   muted: boolean
+  audioTrackPreference: AudioTrackPreference | null
 }
 
 export type MovieWindowGeometryCallback = (event: MovieWindowGeometryEvent) => void

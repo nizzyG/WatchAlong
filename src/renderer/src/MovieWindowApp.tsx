@@ -1,6 +1,7 @@
 import { LogIn, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
+  AudioTrackPreference,
   MovieWindowInit,
   RemoteMediaCommand,
   RemoteMediaEventType,
@@ -11,6 +12,13 @@ import {
   isInteractiveShortcutTarget
 } from './keyboardShortcuts'
 import { useStoredCabinetTheme } from './hooks/useCabinetTheme'
+import {
+  selectAudioTrack,
+  toAudioTrackPreference,
+  type AudioTrackSelectionResult,
+  type BrowserAudioTrackList
+} from './playback/audioTrackCapability'
+import { snapshotAudioTracks } from './playback/movieAudioTrackSnapshot'
 
 const mediaEvents: RemoteMediaEventType[] = [
   'play',
@@ -23,7 +31,6 @@ const mediaEvents: RemoteMediaEventType[] = [
   'ended',
   'error',
   'timeupdate',
-  'loadedmetadata',
   'durationchange',
   'ratechange',
   'volumechange',
@@ -38,6 +45,24 @@ export function MovieWindowApp(): JSX.Element {
   const [init, setInit] = useState<MovieWindowInit | null>(null)
   const [subtitleText, setSubtitleText] = useState<string | null>(null)
   const [fadingOut, setFadingOut] = useState(false)
+  const audioTrackPreferenceRef = useRef<AudioTrackPreference | null>(null)
+  const audioTrackQueueRef = useRef<Promise<void> | null>(null)
+
+  const queueAudioTrackSelection = useCallback((
+    video: HTMLVideoElement,
+    preference: AudioTrackPreference
+  ): Promise<AudioTrackSelectionResult> => {
+    const previous = audioTrackQueueRef.current
+    const operation = previous
+      ? previous.catch(() => undefined).then(() => selectAudioTrack(video, preference))
+      : selectAudioTrack(video, preference)
+    const tail = operation.then(() => undefined, () => undefined)
+    audioTrackQueueRef.current = tail
+    void tail.then(() => {
+      if (audioTrackQueueRef.current === tail) audioTrackQueueRef.current = null
+    })
+    return operation
+  }, [])
 
   const toggleFullscreen = useCallback((): void => {
     if (document.fullscreenElement) {
@@ -54,12 +79,14 @@ export function MovieWindowApp(): JSX.Element {
       void executeCommand(command, videoRef.current, {
         setInit,
         setSubtitleText,
-        setFadingOut
+        setFadingOut,
+        setAudioTrackPreference: (preference) => { audioTrackPreferenceRef.current = preference },
+        selectAudioTrack: queueAudioTrackSelection
       })
     })
     void window.watchAlong.movieWindowReady()
     return unsubscribe
-  }, [])
+  }, [queueAudioTrackSelection])
 
   useEffect(() => {
     let mounted = true
@@ -70,6 +97,7 @@ export function MovieWindowApp(): JSX.Element {
 
       setInit(nextInit)
       setSubtitleText(nextInit.subtitleText)
+      audioTrackPreferenceRef.current = nextInit.audioTrackPreference
     })
 
     return () => {
@@ -86,6 +114,7 @@ export function MovieWindowApp(): JSX.Element {
     if (video.src !== init.mediaUrl) {
       video.src = init.mediaUrl
     }
+    audioTrackPreferenceRef.current = init.audioTrackPreference
     video.currentTime = init.currentTime
     video.playbackRate = init.playbackRate
     video.volume = init.volume
@@ -106,6 +135,46 @@ export function MovieWindowApp(): JSX.Element {
       })
     }
 
+    const sendAudioTrackEvent = (type: 'loadedmetadata' | 'audiotrackchange'): void => {
+      void window.watchAlong.reportMovieMediaEvent({
+        type,
+        state: stateFromVideo(video),
+        audioTrackSnapshot: snapshotAudioTracks(video),
+        error: video.error?.message ?? undefined
+      })
+    }
+
+    const onLoadedMetadata = (): void => {
+      void (async () => {
+        const preference = audioTrackPreferenceRef.current
+        if (preference) await queueAudioTrackSelection(video, preference)
+        sendAudioTrackEvent('loadedmetadata')
+      })()
+    }
+
+    let audioTrackChangeQueued = false
+    const onAudioTrackChange = (): void => {
+      if (audioTrackChangeQueued) return
+      audioTrackChangeQueued = true
+      queueMicrotask(() => {
+        audioTrackChangeQueued = false
+        sendAudioTrackEvent('audiotrackchange')
+      })
+    }
+
+    video.addEventListener('loadedmetadata', onLoadedMetadata)
+    let nativeAudioTracks: BrowserAudioTrackList | null = null
+    try {
+      const candidate = (video as unknown as { audioTracks?: unknown }).audioTracks as BrowserAudioTrackList | undefined
+      if (typeof candidate?.addEventListener === 'function' && typeof candidate.removeEventListener === 'function') {
+        nativeAudioTracks = candidate
+        nativeAudioTracks.addEventListener('change', onAudioTrackChange)
+      }
+    } catch {
+      // Future Electron versions may remove the draft API. Ordinary playback
+      // remains available and the main renderer will hide the selector.
+    }
+
     for (const eventName of mediaEvents) {
       video.addEventListener(eventName, sendEvent)
     }
@@ -114,8 +183,10 @@ export function MovieWindowApp(): JSX.Element {
       for (const eventName of mediaEvents) {
         video.removeEventListener(eventName, sendEvent)
       }
+      video.removeEventListener('loadedmetadata', onLoadedMetadata)
+      nativeAudioTracks?.removeEventListener('change', onAudioTrackChange)
     }
-  }, [])
+  }, [queueAudioTrackSelection])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -171,6 +242,8 @@ async function executeCommand(
     setInit(value: MovieWindowInit | null): void
     setSubtitleText(value: string | null): void
     setFadingOut(value: boolean): void
+    setAudioTrackPreference(value: AudioTrackPreference | null): void
+    selectAudioTrack(video: HTMLVideoElement, preference: AudioTrackPreference): Promise<AudioTrackSelectionResult>
   }
 ): Promise<void> {
   if (!video) {
@@ -194,9 +267,11 @@ async function executeCommand(
           currentTime: command.currentTime,
           playbackRate: command.playbackRate,
           volume: command.volume,
-          muted: command.muted
+          muted: command.muted,
+          audioTrackPreference: command.audioTrackPreference
         })
         setters.setSubtitleText(command.subtitleText)
+        setters.setAudioTrackPreference(command.audioTrackPreference)
         if (video.src !== (command.mediaUrl ?? '')) {
           video.src = command.mediaUrl ?? ''
         }
@@ -226,6 +301,17 @@ async function executeCommand(
       case 'setSubtitleText':
         setters.setSubtitleText(command.value)
         break
+      case 'setAudioTrack': {
+        const selection = await setters.selectAudioTrack(video, command.value)
+        if (
+          (selection.status !== 'selected' && selection.status !== 'already-selected')
+          || !selection.track
+        ) {
+          throw new Error('The requested movie audio track is not available.')
+        }
+        setters.setAudioTrackPreference(toAudioTrackPreference(selection.track))
+        break
+      }
       case 'fadeOut':
         setters.setFadingOut(true)
         await new Promise((resolve) => window.setTimeout(resolve, 220))
@@ -235,13 +321,15 @@ async function executeCommand(
     await window.watchAlong.acknowledgeMovieMediaCommand({
       id: command.id,
       ok: true,
-      state: stateFromVideo(video)
+      state: stateFromVideo(video),
+      audioTrackSnapshot: snapshotAudioTracks(video)
     })
   } catch (error) {
     await window.watchAlong.acknowledgeMovieMediaCommand({
       id: command.id,
       ok: false,
       state: stateFromVideo(video),
+      audioTrackSnapshot: snapshotAudioTracks(video),
       error: error instanceof Error ? error.message : 'Movie command failed.'
     })
   }

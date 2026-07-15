@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type {
+  AudioTrackPreference,
   AppPreferences,
   DownloadProgressEvent,
   ImportWizardLaunchOptions,
@@ -28,6 +29,7 @@ import type {
   ReactorSource
 } from '@shared/types'
 import { AutoSyncRollIn } from './AutoSyncRollIn'
+import { AudioTrackSelector } from './AudioTrackSelector'
 import { CommandPanel } from './CommandPanel'
 import { LibraryHome } from './LibraryHome'
 import { DownloadIndicator, SetupScrubber, StreamVolume } from './PlayerControls'
@@ -89,6 +91,7 @@ export interface WatchAlongViewActions {
   setMovieVolume: (value: number) => void
   toggleReactionMute: () => void
   toggleMovieMute: () => void
+  selectMovieAudioTrack: (preference: AudioTrackPreference) => Promise<boolean>
   setPlaybackRate: (playbackRate: PlaybackRate) => void
   detectSyncAgain: () => Promise<void>
   nudgeOffset: (deltaSeconds: number) => Promise<void>
@@ -173,7 +176,9 @@ export function WatchAlongView({
     syncState,
     error,
     viewTransitioning,
-    movieWindowActive
+    movieWindowActive,
+    movieAudioTrackSnapshot,
+    movieAudioTrackChanging
   } = playback
   const {
     appShellRef,
@@ -213,6 +218,7 @@ export function WatchAlongView({
     : autoSyncBusy ? 'Sync analysis in progress' : 'Find Sync Again'
 
   const toggleMovieWindow = (): void => {
+    if (movieAudioTrackChanging) return
     if (movieWindowActive) void actions.popInMovie()
     else void actions.popOutMovie()
   }
@@ -439,7 +445,7 @@ export function WatchAlongView({
               title={movieWindowControlLabel}
               aria-label={movieWindowControlLabel}
               aria-pressed={movieWindowActive}
-              disabled={!hasMedia}
+              disabled={!hasMedia || movieAudioTrackChanging}
               onClick={toggleMovieWindow}
             >
               {movieWindowActive
@@ -639,6 +645,13 @@ export function WatchAlongView({
                 onMute={actions.toggleMovieMute}
               />
             </div>
+            <AudioTrackSelector
+              tracks={movieAudioTrackSnapshot.tracks}
+              selected={movieAudioTrackSnapshot.selected}
+              changing={movieAudioTrackChanging}
+              disabled={autoSyncBusy}
+              onSelect={actions.selectMovieAudioTrack}
+            />
             <button
               className="secondary-button find-sync-button"
               type="button"
@@ -657,7 +670,7 @@ export function WatchAlongView({
             </button>
           </div>
           {error && (
-            <div className="error-banner">
+            <div className="error-banner" role="alert">
               {error === MOVIE_WINDOW_UNRESPONSIVE_MESSAGE && <ExternalLink size={15} aria-hidden />}
               <span>{error}</span>
             </div>

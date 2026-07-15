@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { createDefaultLibrary, getActiveSession } from '@shared/session'
 import type {
+  AudioTrackPreference,
   AppPreferences,
   LibrarySession,
   MediaRole,
@@ -26,6 +27,7 @@ import { useAutoSync } from './useAutoSync'
 import { calculateMovieRateCorrection, reactorSourceOptions } from './playerTiming'
 import { usePlayerControls } from './usePlayerControls'
 import { useMovieWindow } from './useMovieWindow'
+import { useMovieAudioTracks } from './useMovieAudioTracks'
 import { useSessionActions } from './useSessionActions'
 import { useAppSubscriptions } from './useAppSubscriptions'
 import { useCabinetTheme } from './useCabinetTheme'
@@ -66,7 +68,8 @@ export function useWatchAlongController({
     setSetupMode, setupPositions, setSetupPositions, setupPlayingRole, setSetupPlayingRole,
     controlsIdle, setControlsIdle, syncState, setSyncState, error, setError, restoreToken,
     setRestoreToken, pendingSyncSetup, setPendingSyncSetup, viewTransitioning,
-    setViewTransitioning, movieWindowActive, setMovieWindowActive
+    setViewTransitioning, movieWindowActive, setMovieWindowActive,
+    setMovieAudioTrackSnapshot
   } = playback
   const {
     appShellRef, sessionRef, activeSessionIdRef, commandPanelButtonRef, commandPanelReturnFocusRef,
@@ -361,6 +364,7 @@ export function useWatchAlongController({
   useEffect(() => {
     return window.watchAlong.onMovieMediaEvent((event) => {
       const state = event.state
+      if (event.audioTrackSnapshot) setMovieAudioTrackSnapshot(event.audioTrackSnapshot)
       if (event.type === 'loadedmetadata' || event.type === 'durationchange') {
         setDurations((current) => ({ ...current, movie: state.duration }))
         setMetadataReady((current) => ({ ...current, movie: true }))
@@ -721,6 +725,13 @@ export function useWatchAlongController({
     return commitLibrary(next)
   }
 
+  const { selectMovieAudioTrack } = useMovieAudioTracks({
+    playback,
+    sessionState,
+    activeSession,
+    persist
+  })
+
   const { closeMovieWindowForModeChange, stopDetachedMovie, popOutMovie, popInMovie } = useMovieWindow({
     playback, sessionState, activeSession, session, activeSubtitleText: activeSubtitle?.text ?? null,
     canPlay, hasMissingMedia, getMovieAdapter, buildController, destroyRemoteMovieAdapter,
@@ -774,6 +785,7 @@ export function useWatchAlongController({
     toggleSetupPreview, setIndependentSetupTime, nudgeSetupTime, togglePlayPause, seekBy, seekTo,
     syncNow, openSubtitle, toggleFullscreen, toggleReactionFullscreen, toggleCommandPanel,
     setReactionVolume, setMovieVolume, toggleReactionMute, toggleMovieMute, setPlaybackRate,
+    selectMovieAudioTrack,
     detectSyncAgain, nudgeOffset, setReactorSource, setMovieRateCorrection, clearSubtitle, closeCommandPanel,
     attachDownloadedReaction, updatePreference, chooseDownloadDirectory, forgetPatreonSession,
     cancelRenameSession, confirmRenameSession, cancelDeleteSession, confirmDeleteSession,

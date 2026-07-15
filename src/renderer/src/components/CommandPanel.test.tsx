@@ -155,7 +155,7 @@ function renderPanel(
 ): RenderResult & { props: CommandPanelProps } {
   const props: CommandPanelProps = {
     activeSession,
-    library: { version: 5, activeSessionId: activeSession.id, sessions: [] },
+    library: { version: 6, activeSessionId: activeSession.id, sessions: [] },
     position: 25,
     reactionDuration: 120,
     downloads: [],
@@ -207,6 +207,7 @@ function createSession(patch: Partial<LibrarySession> = {}): LibrarySession {
     reactionDurationSeconds: 120,
     moviePath: 'C:\\Videos\\tombstone.mkv',
     moviePosterPath: null,
+    movieAudioTrackPreference: null,
     subtitlePath: null,
     offsetSeconds: 0,
     lastReactionTimeSeconds: 25,

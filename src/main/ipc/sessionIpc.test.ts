@@ -198,8 +198,8 @@ describe('session media IPC capabilities', () => {
 
     expect(clearPoster({}, 'session-a')).toEqual({ ok: true })
     expect(sessionStore.setMoviePosterPath).toHaveBeenCalledWith('session-a', null)
-    expect(clearPoster({}, 'missing-session')).toEqual({ version: 5, activeSessionId: null, sessions: [] })
-    expect(clearPoster({}, 'bad/session')).toEqual({ version: 5, activeSessionId: null, sessions: [] })
+    expect(clearPoster({}, 'missing-session')).toEqual({ version: 6, activeSessionId: null, sessions: [] })
+    expect(clearPoster({}, 'bad/session')).toEqual({ version: 6, activeSessionId: null, sessions: [] })
     expect(sessionStore.setMoviePosterPath).toHaveBeenCalledTimes(1)
   })
 
@@ -252,7 +252,7 @@ function getHandler(channel: string): (...args: unknown[]) => any {
 
 function createSessionStore() {
   return {
-    read: vi.fn(() => ({ version: 5, activeSessionId: null, sessions: [] })),
+    read: vi.fn(() => ({ version: 6, activeSessionId: null, sessions: [] })),
     updateActive: vi.fn(() => ({ ok: true })),
     updateSession: vi.fn(() => ({ ok: true })),
     saveSessionPosition: vi.fn(() => ({ ok: true })),

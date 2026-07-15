@@ -64,7 +64,9 @@ export function useMovieWindow({
     syncState,
     setError,
     movieWindowActive,
-    setMovieWindowActive
+    setMovieWindowActive,
+    movieAudioTrackChanging,
+    setMovieAudioTrackSnapshot
   } = playback
   const { sessionRef, activeSessionIdRef } = sessionState
   const persistRef = useRef(persist)
@@ -75,6 +77,9 @@ export function useMovieWindow({
   const popOutQueueRef = useRef<Promise<void>>(Promise.resolve())
   const pendingPopOutRef = useRef<{ sessionId: string; promise: Promise<void> } | null>(null)
   const popOutGenerationRef = useRef(0)
+  const movieAudioTrackChangingRef = useRef(movieAudioTrackChanging)
+  const pendingPopInRequestRef = useRef(false)
+  movieAudioTrackChangingRef.current = movieAudioTrackChanging
 
   const persistMovieWindowState = async (
     sessionId: string,
@@ -138,6 +143,7 @@ export function useMovieWindow({
 
   const stopDetachedMovie = async (): Promise<void> => {
     if (!movieWindowActive) return
+    setMovieAudioTrackSnapshot({ tracks: [], selected: null })
     const detachedSessionId = movieWindowSessionIdRef.current ?? activeSessionIdRef.current
     await closeMovieWindowForModeChange()
     destroyRemoteMovieAdapter()
@@ -170,7 +176,7 @@ export function useMovieWindow({
   }
 
   const popOutMovie = (geometryMode: 'overlay' | 'screen' = 'overlay'): Promise<void> => {
-    if (!activeSession || !mediaUrls.movie) return Promise.resolve()
+    if (!activeSession || !mediaUrls.movie || movieAudioTrackChangingRef.current) return Promise.resolve()
     const initiatingSession = activeSession
     const initiatingSessionId = initiatingSession.id
     const initiatingMoviePath = initiatingSession.moviePath
@@ -194,6 +200,7 @@ export function useMovieWindow({
       const initialGeometry = geometryMode === 'screen'
         ? initiatingSession.movieWindowGeometry
         : initiatingSession.overlay
+      setMovieAudioTrackSnapshot({ tracks: [], selected: null })
       controllerRef.current?.pause()
       movieAdapter?.pause()
 
@@ -272,6 +279,12 @@ export function useMovieWindow({
   }
 
   const popInMovie = async (): Promise<void> => {
+    if (movieAudioTrackChangingRef.current) {
+      pendingPopInRequestRef.current = true
+      return
+    }
+    pendingPopInRequestRef.current = false
+    setMovieAudioTrackSnapshot({ tracks: [], selected: null })
     const detachedSessionId = movieWindowSessionIdRef.current ?? activeSessionIdRef.current
     const detachedSession = sessionRef.current
     if (!remoteMovieAdapterRef.current) {
@@ -345,11 +358,22 @@ export function useMovieWindow({
   handleGeometryRef.current = scheduleMovieWindowGeometryPersist
 
   useEffect(() => {
+    if (!movieAudioTrackChanging && pendingPopInRequestRef.current) {
+      pendingPopInRequestRef.current = false
+      void popInMovieRef.current()
+    }
+  }, [movieAudioTrackChanging])
+
+  useEffect(() => {
     const unsubscribeGeometry = window.watchAlong.onMovieWindowGeometry((event) => {
       handleGeometryRef.current(event)
     })
     const unsubscribePopIn = window.watchAlong.onMovieWindowPopInRequest((event) => {
       if (event?.sessionId && event.sessionId !== movieWindowSessionIdRef.current) return
+      if (movieAudioTrackChangingRef.current) {
+        pendingPopInRequestRef.current = true
+        return
+      }
       void popInMovieRef.current()
     })
     const unsubscribeClosed = window.watchAlong.onMovieWindowClosed((event) => {
@@ -367,6 +391,7 @@ export function useMovieWindow({
       movieWindowSessionIdRef.current = null
       destroyRemoteMovieAdapter()
       restoredPopOutSessionRef.current = closedSessionId
+      setMovieAudioTrackSnapshot({ tracks: [], selected: null })
       setMovieWindowActive(false)
       if (closedSessionId) {
         void persistMovieWindowState(closedSessionId, { isMoviePoppedOut: false })
@@ -390,6 +415,7 @@ export function useMovieWindow({
     popOutGenerationRef.current += 1
     if (movieWindowGeometryTimerRef.current !== null) window.clearTimeout(movieWindowGeometryTimerRef.current)
     pendingMovieWindowGeometryRef.current = null
+    pendingPopInRequestRef.current = false
   }, [])
 
   useEffect(() => {

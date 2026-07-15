@@ -5,6 +5,7 @@ import {
   createSessionFromPaths,
   findMatchingSession,
   mergeSession,
+  normalizeAudioTrackPreference,
   normalizeLibrary,
   normalizeSession
 } from './session'
@@ -19,6 +20,7 @@ describe('session helpers', () => {
     expect(session.overlay.height).toBe(180)
     expect(session.reactionPath).toBeNull()
     expect(session.moviePosterPath).toBeNull()
+    expect(session.movieAudioTrackPreference).toBeNull()
     expect(session.titleOrigin).toBe('generated')
     expect(session.reactorName).toBeNull()
     expect(session.reactorNameOrigin).toBe('metadata')
@@ -105,7 +107,7 @@ describe('session helpers', () => {
       lastReactionTimeSeconds: 90
     })
 
-    expect(library.version).toBe(5)
+    expect(library.version).toBe(6)
     expect(library.sessions).toHaveLength(1)
     expect(library.activeSessionId).toBe(library.sessions[0].id)
     expect(library.sessions[0]).toMatchObject({
@@ -115,6 +117,7 @@ describe('session helpers', () => {
       offsetSeconds: 12.5,
       lastReactionTimeSeconds: 90,
       moviePosterPath: null,
+      movieAudioTrackPreference: null,
       reactorName: null,
       reactorNameOrigin: 'metadata',
       timingOrigin: 'manual',
@@ -142,11 +145,82 @@ describe('session helpers', () => {
     })
 
     expect(migrated).toMatchObject({
-      version: 5,
+      version: 6,
       activeSessionId: 'legacy-session',
-      sessions: [{ moviePosterPath: null }]
+      sessions: [{ moviePosterPath: null, movieAudioTrackPreference: null }]
     })
     expect(withPoster.moviePosterPath).toBe('C:\\Movies\\poster.jpg')
+  })
+
+  it('migrates version 5 sessions with no audio preference and round-trips a semantic preference', () => {
+    const migrated = normalizeLibrary({
+      version: 5,
+      activeSessionId: 'legacy-session',
+      sessions: [{
+        id: 'legacy-session',
+        reactionPath: 'C:\\Reactions\\Legacy.mp4',
+        moviePath: 'C:\\Movies\\Legacy.mkv'
+      }]
+    })
+    const preference = {
+      label: 'Indonesian (5.1) (Original Score)',
+      language: 'ind',
+      ordinal: 1
+    }
+    const session = createDefaultSession(new Date('2026-07-15T00:00:00.000Z'), {
+      reactionPath: 'C:\\Reactions\\The Raid.mp4',
+      moviePath: 'C:\\Movies\\The Raid.mkv',
+      movieAudioTrackPreference: preference
+    })
+    const roundTripped = normalizeLibrary(JSON.parse(JSON.stringify({
+      version: 6,
+      activeSessionId: session.id,
+      sessions: [session]
+    })))
+
+    expect(migrated).toMatchObject({
+      version: 6,
+      sessions: [{ movieAudioTrackPreference: null }]
+    })
+    expect(roundTripped.sessions[0].movieAudioTrackPreference).toEqual(preference)
+  })
+
+  it('rejects malformed audio preferences atomically', () => {
+    const invalidPreferences = [
+      undefined,
+      'indonesian',
+      [],
+      {},
+      { label: 7, language: 'ind', ordinal: 1 },
+      { label: 'Indonesian', language: null, ordinal: 1 },
+      { label: 'Indonesian', language: 'ind', ordinal: -1 },
+      { label: 'Indonesian', language: 'ind', ordinal: 1.5 },
+      { label: 'Indonesian', language: 'ind', ordinal: Number.POSITIVE_INFINITY }
+    ]
+
+    expect(invalidPreferences.map(normalizeAudioTrackPreference)).toEqual(
+      invalidPreferences.map(() => null)
+    )
+  })
+
+  it('accepts metadata-free tracks and strips Chromium-generated ids and unknown fields', () => {
+    const normalized = normalizeSession({
+      movieAudioTrackPreference: {
+        id: '7',
+        label: '',
+        language: '',
+        ordinal: 5,
+        enabled: true
+      }
+    })
+
+    expect(normalized.movieAudioTrackPreference).toEqual({
+      label: '',
+      language: '',
+      ordinal: 5
+    })
+    expect(normalized.movieAudioTrackPreference).not.toHaveProperty('id')
+    expect(normalized.movieAudioTrackPreference).not.toHaveProperty('enabled')
   })
 
   it('deduplicates and finds sessions by media pair', () => {

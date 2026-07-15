@@ -1,6 +1,17 @@
-import type { LibrarySession, OverlayGeometry, PlaybackRate, ReactionSource, ReactorNameOrigin, ReactorSource, SessionLibrary, SessionData, SessionTitleOrigin } from './types'
+import type {
+  AudioTrackPreference,
+  LibrarySession,
+  OverlayGeometry,
+  PlaybackRate,
+  ReactionSource,
+  ReactorNameOrigin,
+  ReactorSource,
+  SessionData,
+  SessionLibrary,
+  SessionTitleOrigin
+} from './types'
 
-export const SESSION_LIBRARY_VERSION = 5
+export const SESSION_LIBRARY_VERSION = 6
 
 export const DEFAULT_OVERLAY: OverlayGeometry = {
   x: 24,
@@ -29,6 +40,7 @@ export function createDefaultSession(now = new Date(), patch: Partial<LibrarySes
     reactionDurationSeconds: nullableFinite(patch.reactionDurationSeconds),
     moviePath,
     moviePosterPath: stringOrNull(patch.moviePosterPath),
+    movieAudioTrackPreference: normalizeAudioTrackPreference(patch.movieAudioTrackPreference),
     subtitlePath: stringOrNull(patch.subtitlePath),
     offsetSeconds: finiteOr(patch.offsetSeconds, 0),
     lastReactionTimeSeconds: Math.max(0, finiteOr(patch.lastReactionTimeSeconds, 0)),
@@ -98,6 +110,7 @@ export function normalizeSession(value: unknown, now = new Date()): SessionData 
     reactionDurationSeconds: nullableFinite(source?.reactionDurationSeconds),
     moviePath,
     moviePosterPath: stringOrNull(source?.moviePosterPath),
+    movieAudioTrackPreference: normalizeAudioTrackPreference(source?.movieAudioTrackPreference),
     subtitlePath: stringOrNull(source?.subtitlePath),
     offsetSeconds: finiteOr(source?.offsetSeconds, fallback.offsetSeconds),
     lastReactionTimeSeconds: Math.max(0, finiteOr(source?.lastReactionTimeSeconds, fallback.lastReactionTimeSeconds)),
@@ -237,6 +250,24 @@ export function normalizeMovieRateCorrection(value: unknown): number {
 
 export function normalizeTimingOrigin(value: unknown): LibrarySession['timingOrigin'] {
   return value === 'automatic' ? 'automatic' : 'manual'
+}
+
+export function normalizeAudioTrackPreference(value: unknown): AudioTrackPreference | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+
+  const preference = value as Partial<AudioTrackPreference>
+  const { label, language, ordinal } = preference
+  if (
+    typeof label !== 'string' ||
+    typeof language !== 'string' ||
+    typeof ordinal !== 'number' ||
+    !Number.isSafeInteger(ordinal) ||
+    ordinal < 0
+  ) {
+    return null
+  }
+
+  return { label, language, ordinal }
 }
 
 function normalizeConfidence(value: unknown): number | null {
