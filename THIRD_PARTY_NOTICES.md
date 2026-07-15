@@ -2,6 +2,17 @@
 
 WatchAlong source code is MIT licensed. The installers bundle the following third-party tools, each distributed under its own license.
 
+## Cabinet wood textures
+
+WatchAlong includes transformed diffuse maps from two Poly Haven assets:
+
+- **Mahogany:** [Dark Wood](https://polyhaven.com/a/dark_wood), with contributions by Dimitrios Savva (photography), Rico Cilliers (tiling), and Dario Barresi (baking).
+- **Oak:** [Oak Veneer 01](https://polyhaven.com/a/oak_veneer_01), by Jenelle van Heerden.
+
+Both assets are provided under the [Creative Commons CC0 1.0 Universal license](https://polyhaven.com/license). CC0 permits copying, modification, redistribution, and commercial use without permission or required attribution. WatchAlong nevertheless credits the artists here.
+
+The 4096 x 4096 diffuse maps were center-cropped to 16:9, downsampled to 2560 x 1440, stripped of source metadata, and encoded as WebP. The exact source URLs, source and derivative SHA-256 checksums, and transformation details are included with the app in [CABINET_TEXTURE_PROVENANCE.md](CABINET_TEXTURE_PROVENANCE.md).
+
 ## FFmpeg
 
 - **Version:** 8.1.1

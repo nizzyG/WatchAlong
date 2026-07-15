@@ -47,8 +47,7 @@
   --wa-success-ink: #dff8e8;
   --wa-wood-glow: rgba(222, 133, 59, 0.12);
   --wa-vignette: rgba(8, 2, 2, 0.52);
-  --wa-wood-grain: url('./assets/wood-grain-mahogany.svg');
-  --wa-wood-figure: url('./assets/wood-figure-mahogany.svg');
+  --wa-wood-texture: url('./assets/wood/cabinet-mahogany-cc0.webp');
   --wa-wood-sheen: linear-gradient(148deg, var(--wa-surface-highlight), transparent 38%, rgba(0, 0, 0, 0.08));
   --wa-bevel-highlight: rgba(255, 249, 233, 0.1);
   --wa-bevel-shadow: rgba(4, 1, 1, 0.38);
@@ -112,8 +111,7 @@
   --wa-success-ink: #315f45;
   --wa-wood-glow: rgba(255, 245, 215, 0.36);
   --wa-vignette: rgba(92, 59, 28, 0.2);
-  --wa-wood-grain: url('./assets/wood-grain-oak.svg');
-  --wa-wood-figure: url('./assets/wood-figure-oak.svg');
+  --wa-wood-texture: url('./assets/wood/cabinet-oak-cc0.webp');
   --wa-wood-sheen: linear-gradient(148deg, var(--wa-surface-highlight), transparent 40%, rgba(105, 67, 30, 0.035));
   --wa-bevel-highlight: rgba(255, 252, 239, 0.46);
   --wa-bevel-shadow: rgba(86, 55, 29, 0.19);
@@ -3981,20 +3979,20 @@ body.wizard-body,
 }
 
 .app-shell {
-  background-image: var(--wa-wood-figure), var(--wa-wood-grain), var(--wa-wood-sheen);
-  background-position: center, 0 0, 0 0;
-  background-repeat: no-repeat, repeat, no-repeat;
-  background-size: cover, 960px 640px, auto;
+  background-image: var(--wa-wood-texture), var(--wa-wood-sheen);
+  background-position: center, 0 0;
+  background-repeat: no-repeat;
+  background-size: cover, auto;
 }
 
 .wizard-window,
 .onboarding-window {
   color: var(--wa-paper);
   background-color: var(--wa-ink);
-  background-image: var(--wa-wood-figure), var(--wa-wood-grain), var(--wa-wood-sheen);
-  background-position: center, 0 0, 0 0;
-  background-repeat: no-repeat, repeat, no-repeat;
-  background-size: cover, 960px 640px, auto;
+  background-image: var(--wa-wood-texture), var(--wa-wood-sheen);
+  background-position: center, 0 0;
+  background-repeat: no-repeat;
+  background-size: cover, auto;
   box-shadow: inset 0 0 0 1px var(--wa-shadow-inset);
 }
 
@@ -4005,7 +4003,7 @@ body.wizard-body,
   border-color: var(--wa-line);
   color: var(--wa-paper-dim);
   background-color: var(--wa-panel-glass-strong);
-  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  background-image: var(--wa-wood-sheen);
 }
 
 .wizard-card,
@@ -4022,7 +4020,7 @@ body.wizard-body,
   border-radius: 16px;
   color: var(--wa-paper);
   background-color: var(--wa-panel-glass-strong);
-  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  background-image: var(--wa-wood-sheen);
   box-shadow:
     0 24px 64px var(--wa-shadow),
     inset 0 1px 0 var(--wa-bevel-highlight),
@@ -4047,7 +4045,7 @@ body.wizard-body,
   border-color: var(--wa-line);
   color: var(--wa-paper);
   background-color: var(--wa-panel-glass-soft);
-  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  background-image: var(--wa-wood-sheen);
 }
 
 .expanded-form input,
@@ -4212,7 +4210,7 @@ body.wizard-body,
   border-color: var(--wa-line);
   color: var(--wa-paper);
   background-color: var(--wa-panel-glass-strong);
-  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  background-image: var(--wa-wood-sheen);
   box-shadow:
     0 24px 58px var(--wa-shadow),
     inset 0 1px 0 var(--wa-bevel-highlight),
@@ -4264,12 +4262,11 @@ body.wizard-body,
   background-color: var(--wa-panel-glass-strong);
   background-image:
     radial-gradient(circle at 18% 2%, var(--wa-wood-glow), transparent 31%),
-    var(--wa-wood-figure),
-    var(--wa-wood-grain),
+    var(--wa-wood-texture),
     var(--wa-wood-sheen);
-  background-position: 0 0, center, 0 0, 0 0;
-  background-repeat: no-repeat, no-repeat, repeat, no-repeat;
-  background-size: auto, cover, 960px 640px, auto;
+  background-position: 0 0, center, 0 0;
+  background-repeat: no-repeat;
+  background-size: auto, cover, auto;
   box-shadow:
     -32px 0 80px var(--wa-shadow),
     inset 1px 0 0 var(--wa-surface-highlight);
@@ -4278,7 +4275,7 @@ body.wizard-body,
 .command-panel-titlebar {
   border-color: var(--wa-line-soft);
   background-color: var(--wa-panel-glass-strong);
-  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  background-image: var(--wa-wood-sheen);
 }
 
 .command-panel-content {
@@ -4300,7 +4297,7 @@ body.wizard-body,
 .command-section {
   border-color: var(--wa-line);
   background-color: var(--wa-panel-glass-soft);
-  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  background-image: var(--wa-wood-sheen);
   box-shadow:
     0 7px 18px var(--wa-shadow-soft),
     inset 0 1px 0 var(--wa-bevel-highlight),
@@ -4332,8 +4329,7 @@ body.wizard-body,
   border-color: var(--wa-line);
   background-color: var(--wa-panel-glass);
   background-image:
-    linear-gradient(145deg, var(--wa-surface-highlight), transparent 58%),
-    var(--wa-wood-grain);
+    linear-gradient(145deg, var(--wa-surface-highlight), transparent 58%);
   box-shadow:
     0 10px 24px var(--wa-shadow-soft),
     inset 0 1px 0 var(--wa-bevel-highlight),
@@ -4540,18 +4536,20 @@ body.wizard-body,
 
 .cabinet-swatch-mahogany {
   background-image:
-    url('./assets/wood-grain-mahogany.svg'),
+    url('./assets/wood/cabinet-mahogany-cc0.webp'),
     linear-gradient(145deg, #54281f, #210e0d);
-  background-repeat: repeat, no-repeat;
-  background-size: 120px 80px, auto;
+  background-position: center, 0 0;
+  background-repeat: no-repeat;
+  background-size: cover, auto;
 }
 
 .cabinet-swatch-oak {
   background-image:
-    url('./assets/wood-grain-oak.svg'),
+    url('./assets/wood/cabinet-oak-cc0.webp'),
     linear-gradient(145deg, #f0ddb8, #c3a574);
-  background-repeat: repeat, no-repeat;
-  background-size: 120px 80px, auto;
+  background-position: center, 0 0;
+  background-repeat: no-repeat;
+  background-size: cover, auto;
 }
 
 /* Playable movie audio appears only when Chromium exposes a real choice. */
@@ -4640,7 +4638,7 @@ body.wizard-body,
   border: 1px solid var(--wa-line);
   border-radius: 14px;
   background-color: var(--wa-panel-glass-strong);
-  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  background-image: var(--wa-wood-sheen);
   box-shadow:
     0 22px 54px var(--wa-shadow),
     inset 0 1px 0 var(--wa-bevel-highlight),
@@ -4745,6 +4743,7 @@ body.wizard-body,
 @media (forced-colors: active) {
   .app-shell,
   .wizard-window,
+  .onboarding-window,
   .wizard-card,
   .smart-input,
   .onboarding-shell,
@@ -4761,6 +4760,7 @@ body.wizard-body,
   .panel-cabinet-setting,
   .audio-track-selector-summary,
   .audio-track-menu,
+  .cabinet-swatch,
   .panel-cabinet-choices button {
     border-color: CanvasText;
     color: CanvasText;

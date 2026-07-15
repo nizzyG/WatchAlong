@@ -50,6 +50,14 @@
       {
         "from": "ATTRIBUTION.md",
         "to": "ATTRIBUTION.md"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "CABINET_TEXTURE_PROVENANCE.md",
+        "to": "CABINET_TEXTURE_PROVENANCE.md"
       }
     ],
     "win": {

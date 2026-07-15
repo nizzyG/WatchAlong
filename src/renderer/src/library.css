@@ -111,11 +111,12 @@
 }
 
 .library-home-header h1 {
+  overflow: visible;
   font-family: var(--wa-font-sans);
   font-size: clamp(32px, 2.8vw, 44px);
   font-weight: 600;
   letter-spacing: -0.035em;
-  line-height: 0.98;
+  line-height: 1.1;
 }
 
 .library-home-header p {
@@ -1390,10 +1391,10 @@
 
 .library-home::before {
   opacity: 1;
-  background-image: var(--wa-wood-figure), var(--wa-wood-grain);
-  background-position: center, 0 0;
-  background-repeat: no-repeat, repeat;
-  background-size: cover, 960px 640px;
+  background-image: var(--wa-wood-texture);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
   mix-blend-mode: normal;
 }
 
@@ -1404,7 +1405,7 @@
 .library-home-header {
   border-color: var(--wa-line);
   background-color: var(--wa-panel-glass-soft);
-  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  background-image: var(--wa-wood-sheen);
   box-shadow:
     0 24px 58px var(--wa-shadow-soft),
     inset 0 1px 0 var(--wa-bevel-highlight),
@@ -1478,7 +1479,7 @@
   border-color: var(--wa-line);
   color: var(--wa-paper);
   background-color: var(--wa-panel-glass-soft);
-  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  background-image: var(--wa-wood-sheen);
   box-shadow:
     0 20px 48px var(--wa-shadow-soft),
     inset 0 1px 0 var(--wa-bevel-highlight),
@@ -1536,7 +1537,6 @@
   background-color: var(--wa-panel-glass-soft);
   background-image:
     radial-gradient(circle at 50% 8%, var(--wa-wood-glow), transparent 38%),
-    var(--wa-wood-grain),
     var(--wa-wood-sheen);
 }
 
@@ -1566,7 +1566,6 @@
   background-color: var(--wa-panel);
   background-image:
     radial-gradient(circle at 22% 16%, var(--wa-wood-glow), transparent 34%),
-    var(--wa-wood-grain),
     var(--wa-wood-sheen);
 }
 
@@ -1578,7 +1577,7 @@
   border-color: var(--wa-line-strong);
   color: var(--wa-paper);
   background-color: var(--wa-panel-raised);
-  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  background-image: var(--wa-wood-sheen);
   box-shadow:
     0 12px 28px var(--wa-shadow-soft),
     inset 0 1px 0 var(--wa-bevel-highlight),
@@ -1588,9 +1587,7 @@
 .library-card-thumbnail {
   color: var(--wa-paper-dim);
   background-color: var(--wa-panel-inset);
-  background-image:
-    radial-gradient(circle at 50% 15%, var(--wa-wood-glow), transparent 42%),
-    var(--wa-wood-grain);
+  background-image: radial-gradient(circle at 50% 15%, var(--wa-wood-glow), transparent 42%);
 }
 
 .library-card-progress {
@@ -1615,7 +1612,7 @@
   border-color: var(--wa-line-strong);
   color: var(--wa-paper);
   background-color: var(--wa-panel-glass-strong);
-  background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
+  background-image: var(--wa-wood-sheen);
   box-shadow:
     0 22px 54px var(--wa-shadow),
     inset 0 1px 0 var(--wa-bevel-highlight),
