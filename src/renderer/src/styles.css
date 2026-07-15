@@ -50,10 +50,16 @@
   --wa-wood-grain: url('./assets/wood-grain-mahogany.svg');
   --wa-wood-figure: url('./assets/wood-figure-mahogany.svg');
   --wa-wood-sheen: linear-gradient(148deg, var(--wa-surface-highlight), transparent 38%, rgba(0, 0, 0, 0.08));
+  --wa-bevel-highlight: rgba(255, 249, 233, 0.1);
+  --wa-bevel-shadow: rgba(4, 1, 1, 0.38);
+  --wa-engrave-highlight: rgba(255, 249, 233, 0.14);
+  --wa-engrave-shadow: rgba(3, 1, 1, 0.68);
+  --wa-poster-title-shadow: 0 2px 8px rgba(3, 1, 1, 0.62);
+  --wa-font-sans:
+    "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--wa-paper);
   background: var(--wa-ink);
-  font-family:
-    "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--wa-font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -109,6 +115,11 @@
   --wa-wood-grain: url('./assets/wood-grain-oak.svg');
   --wa-wood-figure: url('./assets/wood-figure-oak.svg');
   --wa-wood-sheen: linear-gradient(148deg, var(--wa-surface-highlight), transparent 40%, rgba(105, 67, 30, 0.035));
+  --wa-bevel-highlight: rgba(255, 252, 239, 0.46);
+  --wa-bevel-shadow: rgba(86, 55, 29, 0.19);
+  --wa-engrave-highlight: rgba(255, 252, 239, 0.68);
+  --wa-engrave-shadow: rgba(86, 55, 29, 0.28);
+  --wa-poster-title-shadow: 0 1px 1px rgba(86, 55, 29, 0.22);
 }
 
 * {
@@ -117,8 +128,8 @@
 
 body {
   margin: 0;
-  min-width: 960px;
-  min-height: 560px;
+  min-width: 1280px;
+  min-height: 720px;
   overflow: hidden;
   background: var(--wa-ink);
 }
@@ -2989,7 +3000,7 @@ summary:focus-visible,
 }
 
 .auto-sync-rollin-copy h2 {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--wa-font-sans);
   font-size: 27px;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -3338,7 +3349,7 @@ summary:focus-visible,
 }
 
 .playback-settings-header strong {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--wa-font-sans);
   font-size: 22px;
   font-weight: 600;
 }
@@ -3516,7 +3527,7 @@ summary:focus-visible,
 }
 
 .command-panel-titlebar strong {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--wa-font-sans);
   font-size: 19px;
   font-weight: 600;
   letter-spacing: -0.015em;
@@ -3636,7 +3647,7 @@ summary:focus-visible,
 .panel-sync-status h3 {
   margin: 0;
   color: var(--wa-paper);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--wa-font-sans);
   font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.015em;
@@ -4008,12 +4019,14 @@ body.wizard-body,
 .auto-sync-rollin-card,
 .playback-settings-body {
   border-color: var(--wa-line-strong);
+  border-radius: 16px;
   color: var(--wa-paper);
   background-color: var(--wa-panel-glass-strong);
   background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
   box-shadow:
     0 24px 64px var(--wa-shadow),
-    inset 0 1px 0 var(--wa-surface-highlight);
+    inset 0 1px 0 var(--wa-bevel-highlight),
+    inset 0 -2px 2px -1px var(--wa-bevel-shadow);
 }
 
 .wizard-summary div,
@@ -4202,7 +4215,8 @@ body.wizard-body,
   background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
   box-shadow:
     0 24px 58px var(--wa-shadow),
-    inset 0 1px 0 var(--wa-surface-highlight);
+    inset 0 1px 0 var(--wa-bevel-highlight),
+    inset 0 -2px 2px -1px var(--wa-bevel-shadow);
 }
 
 .control-meta,
@@ -4289,7 +4303,8 @@ body.wizard-body,
   background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
   box-shadow:
     0 7px 18px var(--wa-shadow-soft),
-    inset 0 1px 0 var(--wa-surface-highlight);
+    inset 0 1px 0 var(--wa-bevel-highlight),
+    inset 0 -2px 2px -1px var(--wa-bevel-shadow);
 }
 
 .command-section-expanded {
@@ -4321,7 +4336,8 @@ body.wizard-body,
     var(--wa-wood-grain);
   box-shadow:
     0 10px 24px var(--wa-shadow-soft),
-    inset 0 1px 0 var(--wa-surface-highlight);
+    inset 0 1px 0 var(--wa-bevel-highlight),
+    inset 0 -2px 2px -1px var(--wa-bevel-shadow);
 }
 
 .panel-sync-status-icon {
@@ -4349,6 +4365,46 @@ body.wizard-body,
   color: rgba(16, 32, 24, 0.78);
 }
 
+.wizard-summary div,
+.reaction-card,
+.patreon-connect,
+.download-status,
+.tool-row,
+.first-movie-prompt,
+.first-ready,
+.library-panel,
+.panel-download-item,
+.panel-setting-row,
+.panel-toggle-row {
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px 0 var(--wa-bevel-highlight),
+    inset 0 -2px 2px -1px var(--wa-bevel-shadow);
+}
+
+.setup-panel {
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px 0 var(--wa-bevel-highlight),
+    inset 0 -2px 2px -1px var(--wa-bevel-shadow);
+}
+
+.reaction-card-active {
+  box-shadow:
+    inset 4px 0 0 var(--wa-green),
+    inset 0 1px 0 var(--wa-bevel-highlight),
+    inset 0 -2px 2px -1px var(--wa-bevel-shadow);
+}
+
+.auto-sync-rollin-copy h2,
+.playback-settings-header strong,
+.command-panel-titlebar strong,
+.panel-sync-status h3 {
+  text-shadow:
+    0 -1px 0 var(--wa-engrave-highlight),
+    0 1px 0 var(--wa-engrave-shadow);
+}
+
 @media (prefers-contrast: more) {
   .wizard-card,
   .smart-input,
@@ -4369,6 +4425,9 @@ body.wizard-body,
   border-radius: 10px;
   background-color: var(--wa-panel-inset);
   background-image: var(--wa-wood-sheen);
+  box-shadow:
+    inset 0 1px 0 var(--wa-bevel-highlight),
+    inset 0 -2px 2px -1px var(--wa-bevel-shadow);
 }
 
 .panel-cabinet-copy {
@@ -4584,7 +4643,8 @@ body.wizard-body,
   background-image: var(--wa-wood-grain), var(--wa-wood-sheen);
   box-shadow:
     0 22px 54px var(--wa-shadow),
-    inset 0 1px 0 var(--wa-surface-highlight);
+    inset 0 1px 0 var(--wa-bevel-highlight),
+    inset 0 -2px 2px -1px var(--wa-bevel-shadow);
   backdrop-filter: blur(22px) saturate(1.04);
 }
 
@@ -4595,7 +4655,7 @@ body.wizard-body,
 }
 
 .audio-track-menu > header strong {
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: var(--wa-font-sans);
   font-size: 16px;
 }
 
@@ -4705,6 +4765,14 @@ body.wizard-body,
     border-color: CanvasText;
     color: CanvasText;
     background: Canvas;
+    box-shadow: none;
+  }
+
+  .auto-sync-rollin-copy h2,
+  .playback-settings-header strong,
+  .command-panel-titlebar strong,
+  .panel-sync-status h3 {
+    text-shadow: none;
   }
 
   .primary-button,

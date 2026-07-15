@@ -350,6 +350,7 @@ export interface SavedPatreonSessionStatus {
 export type CabinetTheme = 'mahogany' | 'oak'
 export type CabinetThemePreference = 'system' | CabinetTheme
 export type CabinetThemePreferenceCallback = (preference: CabinetThemePreference) => void
+export type MediaPlayPauseCallback = () => void
 
 export interface AppPreferences {
   hasCompletedOnboarding: boolean
@@ -450,6 +451,8 @@ export interface WatchAlongApi {
   onWizardCloseRequest(callback: WizardCloseRequestCallback): () => void
   confirmMainWindowClose(): Promise<void>
   onMainWindowCloseRequest(callback: MainWindowCloseCallback): () => void
+  setMediaPlayPauseEnabled(enabled: boolean): Promise<boolean>
+  onMediaPlayPause(callback: MediaPlayPauseCallback): () => void
   getPreferences(): Promise<AppPreferences>
   getCabinetThemePreference(): Promise<CabinetThemePreference>
   onCabinetThemePreference(callback: CabinetThemePreferenceCallback): () => void

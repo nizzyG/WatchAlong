@@ -6,6 +6,7 @@ import type {
   ImportWizardLaunchOptions,
   LibrarySession,
   MainWindowCloseCallback,
+  MediaPlayPauseCallback,
   MediaRole,
   MovieWindowCommandCallback,
   MovieWindowGeometryCallback,
@@ -151,6 +152,13 @@ const api: WatchAlongApi = {
     }
     ipcRenderer.on(`${IPC_PREFIX}:main-window-close-request`, listener)
     return () => ipcRenderer.removeListener(`${IPC_PREFIX}:main-window-close-request`, listener)
+  },
+  setMediaPlayPauseEnabled: (enabled) =>
+    ipcRenderer.invoke(`${IPC_PREFIX}:set-media-play-pause-enabled`, enabled),
+  onMediaPlayPause: (callback: MediaPlayPauseCallback) => {
+    const listener = (): void => callback()
+    ipcRenderer.on(`${IPC_PREFIX}:media-play-pause`, listener)
+    return () => ipcRenderer.removeListener(`${IPC_PREFIX}:media-play-pause`, listener)
   },
   getPreferences: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-preferences`),
   getCabinetThemePreference: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-cabinet-theme-preference`),

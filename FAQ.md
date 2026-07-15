@@ -49,6 +49,7 @@ MKV is a container — the video and audio streams inside might use codecs Chrom
 | Shortcut | Action |
 | :--- | :--- |
 | `Space` | Play / Pause both videos |
+| Earbud tap or system Play/Pause | Play / Pause both videos, even when WatchAlong is not focused |
 | `←` / `→` | Seek backward / forward 5 seconds |
 | `R` | Toggle reaction mute |
 | `M` | Toggle movie mute |
@@ -58,7 +59,7 @@ MKV is a container — the video and audio streams inside might use codecs Chrom
 | `Ctrl+Shift+P` | Open / close the Command Panel from the library or player |
 | `↑` / `↓` / `Tab` / `Shift+Tab` / `Enter` / `Esc` | Navigate inside the Command Panel without leaving it |
 
-Playback shortcuts work in the player and are ignored while you're typing or using a control. Fullscreen is player-only and exits automatically when you return to the library.
+Playback shortcuts work in the player and are ignored while you're typing or using a control. WatchAlong claims the system Play/Pause key only while a ready pairing is open, then releases it when you return to the library or enter Sync Setup. Fullscreen works in both the library and player, and exits automatically when you leave those primary surfaces.
 
 ## Patreon & YouTube Downloading
 

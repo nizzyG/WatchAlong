@@ -2,14 +2,49 @@ import { describe, expect, it, vi } from 'vitest'
 import type { BrowserWindow, WebContents } from 'electron'
 import type { MovieWindowInit, RemoteMediaCommandResult } from '@shared/types'
 
+const electronMocks = vi.hoisted(() => ({
+  browserWindowOptions: [] as Array<Record<string, unknown>>
+}))
+
 vi.mock('electron', () => ({
-  BrowserWindow: class BrowserWindow {},
+  BrowserWindow: class BrowserWindow {
+    readonly webContents = {
+      on: vi.fn(),
+      send: vi.fn(),
+      setWindowOpenHandler: vi.fn()
+    }
+
+    constructor(options: Record<string, unknown>) {
+      electronMocks.browserWindowOptions.push(options)
+    }
+
+    setMenuBarVisibility = vi.fn()
+    on = vi.fn()
+    loadURL = vi.fn(async () => undefined)
+  },
   ipcMain: { handle: vi.fn() },
   screen: {},
   shell: { openExternal: vi.fn(async () => undefined) }
 }))
 
 import { rendererWebPreferencesForRole, WindowManager } from './WindowManager'
+
+describe('WindowManager main window sizing', () => {
+  it('keeps the application at or above a comfortable 1280 by 720 viewport', () => {
+    electronMocks.browserWindowOptions.length = 0
+
+    const manager = new WindowManager({} as never)
+    manager.createMainWindow()
+
+    expect(electronMocks.browserWindowOptions).toHaveLength(1)
+    expect(electronMocks.browserWindowOptions[0]).toMatchObject({
+      width: 1280,
+      height: 780,
+      minWidth: 1280,
+      minHeight: 720
+    })
+  })
+})
 
 describe('WindowManager renderer capabilities', () => {
   const preload = 'C:\\WatchAlong\\preload.js'

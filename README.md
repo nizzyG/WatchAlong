@@ -15,7 +15,7 @@ WatchAlong replaces that with one app. Load your movie. Add the reaction. The ap
 - **Download reactions directly.** Paste a Patreon post URL or a YouTube link and WatchAlong grabs the full-length reaction for you.
 - **Your library, remembered.** Every pairing is saved. Sync, position, PiP layout — everything comes back.
 - **Subtitles.** Load SRT or VTT files. They display over the movie.
-- **Keyboard shortcuts for everything.** Space to play or pause. Arrows to skip. R and M for mute. Full list in the [FAQ](FAQ.md).
+- **Playback controls that follow you.** Space, earbud taps, and system media play/pause keys control both videos. Arrows skip; R and M mute. Full list in the [FAQ](FAQ.md).
 
 ## Our principles
 

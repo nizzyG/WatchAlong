@@ -1,4 +1,4 @@
-import { useEffect, type MutableRefObject } from 'react'
+import { useEffect, useRef, type MutableRefObject } from 'react'
 import type { LibrarySession, SessionLibrary, WizardLifecycleEvent } from '@shared/types'
 import { mediaPathIdentity } from '@shared/session'
 import { TimelineMapping } from '../sync/timeline'
@@ -37,6 +37,8 @@ export function useAppSubscriptions({
     controllerRef,
     canPlayRef,
     isPlayingRef,
+    setupMode,
+    setupModeRef,
     restoredPopOutSessionRef,
     setPosition,
     setMoviePosition,
@@ -53,6 +55,7 @@ export function useAppSubscriptions({
     setAppView,
     setShowWelcome,
     setWizardDimmed,
+    wizardDimmed,
     setCommandPanelOpen
   } = sessionState
   const {
@@ -62,6 +65,27 @@ export function useAppSubscriptions({
     setDownloadIndicator,
     setDownloadEvents
   } = downloads
+
+  const mediaPlayPauseEnabled = canPlay && !setupMode && !wizardDimmed
+  const mediaPlayPauseEnabledRef = useRef(mediaPlayPauseEnabled)
+  mediaPlayPauseEnabledRef.current = mediaPlayPauseEnabled
+
+  useEffect(() => {
+    void window.watchAlong.setMediaPlayPauseEnabled(mediaPlayPauseEnabled).catch(() => undefined)
+    return () => {
+      if (mediaPlayPauseEnabled) {
+        void window.watchAlong.setMediaPlayPauseEnabled(false).catch(() => undefined)
+      }
+    }
+  }, [mediaPlayPauseEnabled])
+
+  useEffect(() => window.watchAlong.onMediaPlayPause(() => {
+    // Main already releases the global key when playback becomes unavailable;
+    // refs provide a final synchronous guard while that IPC update is in flight.
+    if (!mediaPlayPauseEnabledRef.current || !canPlayRef.current || setupModeRef.current) return
+    if (isPlayingRef.current) controllerRef.current?.pause()
+    else controllerRef.current?.play()
+  }), [])
 
   useEffect(() => {
     const handleWizardLifecycle = async (event: WizardLifecycleEvent): Promise<void> => {

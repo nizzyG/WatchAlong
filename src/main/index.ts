@@ -11,6 +11,7 @@ import {
 import { registerDownloadIpc } from './ipc/downloadIpc'
 import { registerAutoSyncIpc } from './ipc/autoSyncIpc'
 import { registerMovieWindowIpc } from './ipc/movieWindowIpc'
+import { registerMediaKeyIpc } from './ipc/mediaKeyIpc'
 import { registerPatreonIpc } from './ipc/patreonIpc'
 import { registerPreferencesIpc } from './ipc/preferencesIpc'
 import { registerSessionIpc } from './ipc/sessionIpc'
@@ -29,6 +30,7 @@ import { ToolResolver } from './services/toolResolution'
 import { AutoSyncService } from './services/autosync/AutoSyncService'
 import { FfmpegAutoSyncBackend } from './services/autosync/ffmpegBackend'
 import { WindowManager } from './WindowManager'
+import { MediaKeyController } from './mediaKeyController'
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -89,6 +91,7 @@ if (!ownsSingleInstance) {
         })
       : null
     const mainWindowGetter = () => windowManager.getMainWindow()
+    const mediaKeys = new MediaKeyController(mainWindowGetter)
 
     registerMediaProtocol(sessionStore)
     if (!developmentRendererUrl) {
@@ -99,6 +102,7 @@ if (!ownsSingleInstance) {
     registerDownloadIpc({ downloadManager })
     registerAutoSyncIpc({ autoSyncService })
     registerMovieWindowIpc({ windowManager })
+    registerMediaKeyIpc({ mediaKeys })
     const patreonIpcLifecycle = registerPatreonIpc({ toolResolver, patreonVault, downloadManager, mainWindowGetter })
     registerToolsIpc({ toolResolver, sessionStore })
     registerWindowIpc({ windowManager })
@@ -107,6 +111,7 @@ if (!ownsSingleInstance) {
       downloadManager.dispose()
       void patreonIpcLifecycle.dispose()
     })
+    app.on('will-quit', () => mediaKeys.dispose())
 
     windowManager.createMainWindow()
     app.on('activate', () => {

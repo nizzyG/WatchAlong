@@ -47,6 +47,7 @@ function createApi(
   emitMovieWindowGeometry(event: Parameters<MovieWindowGeometryCallback>[0]): void
   emitMovieWindowClosed(event?: MovieWindowClosedEvent): void
   emitMainWindowCloseRequest(): void
+  emitMediaPlayPause(): void
   emitAutoSyncProgress(event: Parameters<AutoSyncProgressCallback>[0]): void
   emitAutoSyncComplete(event: Parameters<AutoSyncCompleteCallback>[0]): void
   emitDownloadProgress(event: Parameters<DownloadProgressCallback>[0]): void
@@ -58,6 +59,7 @@ function createApi(
   let movieWindowGeometryCallback: MovieWindowGeometryCallback | null = null
   let movieWindowClosedCallback: MovieWindowLifecycleCallback | null = null
   let mainWindowCloseCallback: (() => void) | null = null
+  let mediaPlayPauseCallback: (() => void) | null = null
   let autoSyncProgressCallback: AutoSyncProgressCallback | null = null
   let autoSyncCompleteCallback: AutoSyncCompleteCallback | null = null
   const downloadProgressCallbacks = new Set<DownloadProgressCallback>()
@@ -265,6 +267,13 @@ function createApi(
     onMainWindowCloseRequest: vi.fn((callback: () => void) => {
       mainWindowCloseCallback = callback
       return vi.fn()
+    }),
+    setMediaPlayPauseEnabled: vi.fn(async (enabled: boolean) => enabled),
+    onMediaPlayPause: vi.fn((callback: () => void) => {
+      mediaPlayPauseCallback = callback
+      return () => {
+        if (mediaPlayPauseCallback === callback) mediaPlayPauseCallback = null
+      }
     })
   }
 
@@ -284,6 +293,9 @@ function createApi(
     emitMainWindowCloseRequest() {
       mainWindowCloseCallback?.()
     },
+    emitMediaPlayPause() {
+      mediaPlayPauseCallback?.()
+    },
     emitAutoSyncProgress(event: Parameters<AutoSyncProgressCallback>[0]) {
       autoSyncProgressCallback?.(event)
     },
@@ -299,6 +311,7 @@ function createApi(
     emitMovieWindowGeometry(event: Parameters<MovieWindowGeometryCallback>[0]): void
     emitMovieWindowClosed(event?: MovieWindowClosedEvent): void
     emitMainWindowCloseRequest(): void
+    emitMediaPlayPause(): void
     emitAutoSyncProgress(event: Parameters<AutoSyncProgressCallback>[0]): void
     emitAutoSyncComplete(event: Parameters<AutoSyncCompleteCallback>[0]): void
     emitDownloadProgress(event: Parameters<DownloadProgressCallback>[0]): void
@@ -399,6 +412,36 @@ describe('App', () => {
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
 
     await waitFor(() => expect(reaction.currentTime).toBe(37.5))
+  })
+
+  it('owns the system play/pause key only while playback is ready and toggles both videos', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container, unmount } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('movie', 's1'))
+    expect(api.setMediaPlayPauseEnabled).not.toHaveBeenCalledWith(true)
+
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+    await waitFor(() => expect(api.setMediaPlayPauseEnabled).toHaveBeenLastCalledWith(true))
+
+    playMock.mockClear()
+    pauseMock.mockClear()
+    act(() => api.emitMediaPlayPause())
+    await waitFor(() => expect(playMock).toHaveBeenCalledTimes(2))
+    await screen.findByLabelText('Playback status: playing')
+
+    const pauseCallsBeforeMediaKey = pauseMock.mock.calls.length
+    act(() => api.emitMediaPlayPause())
+    await waitFor(() => expect(pauseMock).toHaveBeenCalledTimes(pauseCallsBeforeMediaKey + 2))
+
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    fireEvent.click(await screen.findByRole('button', { name: /Close Session/i }))
+    await waitFor(() => expect(api.setMediaPlayPauseEnabled).toHaveBeenLastCalledWith(false))
+
+    unmount()
+    expect(api.setMediaPlayPauseEnabled).toHaveBeenLastCalledWith(false)
   })
 
   it('shows playable movie tracks and persists a switch only after Chromium confirms it', async () => {

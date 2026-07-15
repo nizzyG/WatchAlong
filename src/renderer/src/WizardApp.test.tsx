@@ -391,6 +391,8 @@ function createApi(): WatchAlongApi {
     onWizardCloseRequest: vi.fn(() => vi.fn()),
     confirmMainWindowClose: vi.fn(async () => undefined),
     onMainWindowCloseRequest: vi.fn(() => vi.fn()),
+    setMediaPlayPauseEnabled: vi.fn(async () => false),
+    onMediaPlayPause: vi.fn(() => vi.fn()),
     getPreferences: vi.fn(),
     getCabinetThemePreference: vi.fn(async () => 'system' as const),
     onCabinetThemePreference: vi.fn(() => vi.fn()),

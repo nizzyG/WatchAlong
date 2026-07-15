@@ -132,8 +132,8 @@ export class WindowManager {
     this.mainWindow = new BrowserWindow({
       width: 1280,
       height: 780,
-      minWidth: 960,
-      minHeight: 560,
+      minWidth: 1280,
+      minHeight: 720,
       backgroundColor: '#0c0b09',
       title: APP_NAME,
       webPreferences: rendererWebPreferencesForRole(join(__dirname, '../preload/index.js'), 'main')
