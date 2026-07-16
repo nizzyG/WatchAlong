@@ -43,6 +43,7 @@
     "directories": {
       "output": "release"
     },
+    "icon": "assets/icons/icon.png",
     "nodeGypRebuild": false,
     "npmRebuild": false,
     "files": [
@@ -65,10 +66,15 @@
       {
         "from": "TOOL_PROVENANCE.md",
         "to": "TOOL_PROVENANCE.md"
+      },
+      {
+        "from": "assets/icons/icon.png",
+        "to": "icons/icon.png"
       }
     ],
     "win": {
       "target": "nsis",
+      "icon": "assets/icons/icon.ico",
       "extraResources": [
         {
           "from": "resources/tools/yt-dlp",
@@ -104,6 +110,7 @@
     "mac": {
       "target": "dmg",
       "category": "public.app-category.video",
+      "icon": "assets/icons/icon.icns",
       "extraResources": [
         {
           "from": "resources/tools/yt-dlp",

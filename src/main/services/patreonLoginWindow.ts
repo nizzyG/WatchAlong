@@ -6,6 +6,7 @@ import {
 import { randomUUID } from 'node:crypto'
 import { isAllowedPatreonLoginUrl } from '../patreonLoginUrls'
 import { hardenPatreonLoginSession } from '../webContentsSecurity'
+import { appIconPath } from '../constants'
 import { findPatreonSessionCookieValue } from './cookieExtraction'
 import { PatreonSessionVault } from './patreonSessionVault'
 
@@ -55,6 +56,7 @@ export class PatreonLoginWindowManager {
         title: 'Sign in to Patreon',
         backgroundColor: '#05070a',
         autoHideMenuBar: true,
+        icon: appIconPath(),
         webPreferences: secureLoginWebPreferences(partition)
       })
       hardenPatreonLoginSession(loginWindow.webContents.session)

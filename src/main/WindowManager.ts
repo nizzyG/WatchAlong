@@ -1,6 +1,7 @@
 import { BrowserWindow, screen, type WebContents, type WebPreferences } from 'electron'
 import { existsSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { appIconPath } from './constants'
 import type {
   ImportWizardContext,
   ImportWizardLaunchOptions,
@@ -136,6 +137,7 @@ export class WindowManager {
       minHeight: 720,
       backgroundColor: '#0c0b09',
       title: APP_NAME,
+      icon: appIconPath(),
       webPreferences: rendererWebPreferencesForRole(join(__dirname, '../preload/index.js'), 'main')
     })
   
@@ -221,6 +223,7 @@ export class WindowManager {
       modal: true,
       title: 'Choose Your Movie',
       backgroundColor: '#0c0b09',
+      icon: appIconPath(),
       webPreferences: rendererWebPreferencesForRole(join(__dirname, '../preload/index.js'), 'wizard')
     })
   
@@ -422,6 +425,7 @@ export class WindowManager {
       show: false,
       title: refreshedSource.session.title,
       backgroundColor: '#0c0b09',
+      icon: appIconPath(),
       webPreferences: rendererWebPreferencesForRole(join(__dirname, '../preload/index.js'), 'movie')
     })
     this.movieWindow = targetWindow
