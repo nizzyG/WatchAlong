@@ -163,12 +163,36 @@ export function generateGeometryCandidates(reactionAspectRatio: number, movieAsp
   return dedupeRects(result)
 }
 
+export function generateCompactCornerCandidates(reactionAspectRatio: number, movieAspectRatio: number): NormalizedRect[] {
+  const result: NormalizedRect[] = []
+  // Some watchalong editors keep a deliberately blurred movie reference in a
+  // tiny corner window. Keep this as a fallback search so ordinary reactions
+  // retain the faster, higher-information geometry pass above.
+  for (const width of [0.2, 0.24, 0.28]) {
+    for (const contentAspectRatio of [movieAspectRatio, reactionAspectRatio, 16 / 9]) {
+      const height = Math.min(1, width * reactionAspectRatio / contentAspectRatio)
+      for (const horizontal of [0, 1]) {
+        for (const vertical of [0, 1]) {
+          result.push({
+            x: (1 - width) * horizontal,
+            y: (1 - height) * vertical,
+            width,
+            height
+          })
+        }
+      }
+    }
+  }
+  return dedupeRects(result)
+}
+
 export function refineGeometryCandidates(base: InsetGeometry, reactionAspectRatio: number, movieAspectRatio: number): NormalizedRect[] {
   const candidates: NormalizedRect[] = [{ x: 0, y: 0, width: 1, height: 1 }]
   const detectedAspectRatio = base.width * reactionAspectRatio / Math.max(0.01, base.height)
   const contentAspectRatio = Number.isFinite(detectedAspectRatio) && detectedAspectRatio > 0 ? detectedAspectRatio : movieAspectRatio
+  const minimumWidth = base.width < 0.32 ? 0.18 : 0.32
   for (const widthDelta of [-0.08, -0.04, 0, 0.04, 0.08]) {
-    const width = clamp(base.width + widthDelta, 0.32, 1)
+    const width = clamp(base.width + widthDelta, minimumWidth, 1)
     const height = Math.min(1, width * reactionAspectRatio / contentAspectRatio)
     for (const xDelta of [-0.05, 0, 0.05]) for (const yDelta of [-0.05, 0, 0.05]) {
       candidates.push({

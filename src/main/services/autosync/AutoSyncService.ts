@@ -14,7 +14,13 @@ import {
   type FitConsensusEvidence
 } from './fitting'
 import { voteForTemporalConsensus, type HoughConsensus, type HoughVotingOptions } from './houghVoting'
-import { findInsetGeometry, refineGeometryCandidates, type InsetGeometry, type TimedPixelFrame } from './insetGeometry'
+import {
+  findInsetGeometry,
+  generateCompactCornerCandidates,
+  refineGeometryCandidates,
+  type InsetGeometry,
+  type TimedPixelFrame
+} from './insetGeometry'
 import {
   applyBurstinessReweighting,
   findSequenceMatchCandidates,
@@ -185,10 +191,17 @@ export class AutoSyncService {
       this.extractPixelFrames(session.moviePath!, 0, movieDuration, fps, 64, 36, signal)
     ])
     const movie = movieFrames.map((frame) => ({ time: frame.time, signature: createFrameSignature(frame, { gridSize: 6 }) }))
-    const first = findInsetGeometry(reactionFrames, movie, {
+    const geometryOptions = {
       movieAspectRatio: movieInfo.width / movieInfo.height,
       gridSize: 6,
       minimumConfidence: 0.4
+    }
+    const first = findInsetGeometry(reactionFrames, movie, geometryOptions) ?? findInsetGeometry(reactionFrames, movie, {
+      ...geometryOptions,
+      candidates: generateCompactCornerCandidates(
+        reactionInfo.width / reactionInfo.height,
+        movieInfo.width / movieInfo.height
+      )
     })
     if (!first) return null
     const refinedCandidates = refineGeometryCandidates(first.geometry, reactionInfo.width / reactionInfo.height, movieInfo.width / movieInfo.height)

@@ -35,6 +35,31 @@ describe('AutoSyncService', () => {
     })
   }, 20000)
 
+  it('uses compact corner geometry when the ordinary inset search cannot see the movie', async () => {
+    const session = createDefaultSession(new Date(), {
+      id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4'
+    })
+    const repository = new MemorySessions(session)
+    const backend = new SyntheticBackend(-40, 0.2)
+    const service = new AutoSyncService({
+      sessions: repository,
+      backend,
+      emitProgress: () => undefined,
+      emitComplete: () => undefined
+    })
+    const signal = new AbortController().signal
+    const [movieInfo, reactionInfo] = await Promise.all([
+      backend.probe(session.moviePath!),
+      backend.probe(session.reactionPath!)
+    ])
+    const findGeometry = (service as unknown as GeometryServiceInternals).findGeometry.bind(service)
+
+    const result = await findGeometry(session, movieInfo, reactionInfo, signal)
+
+    expect(result?.geometry.width).toBeLessThan(0.32)
+    expect(result?.initialOffsetSeconds).toBeCloseTo(-40, 0)
+  }, 30000)
+
   it('keeps known-good timing and automatic metadata when a recheck is only partial', async () => {
     const knownTiming = {
       offsetSeconds: 18.25,
@@ -115,6 +140,24 @@ describe('AutoSyncService', () => {
     expect((await completion).outcome).toBe('cancelled')
     expect(repository.updates).toHaveLength(0)
   })
+
+  it('does not save timing for an unrelated moving video with a static corner logo', async () => {
+    const session = createDefaultSession(new Date(), {
+      id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4'
+    })
+    const repository = new MemorySessions(session)
+    const service = new AutoSyncService({
+      sessions: repository,
+      backend: new UnrelatedVideoBackend(),
+      emitProgress: () => undefined,
+      emitComplete: () => undefined
+    })
+
+    const result = await service.analyze(session.id, { intent: 'initial', snapshot: session })
+
+    expect(result.outcome, JSON.stringify(result)).toBe('fallback')
+    expect(repository.updates).toHaveLength(0)
+  }, 120000)
 })
 
 function partialResultService(repository: MemorySessions, candidateOffset: number): AutoSyncService {
@@ -171,7 +214,7 @@ class ProbeOnlyBackend implements AutoSyncMediaBackend {
 }
 
 class SyntheticBackend implements AutoSyncMediaBackend {
-  constructor(private readonly offset: number) {}
+  constructor(private readonly offset: number, private readonly insetFraction = 0.78) {}
   async probe(filePath: string): Promise<MediaInfo> {
     return { duration: filePath.startsWith('reaction') ? 640 : 600, width: 96, height: 54, frameRate: 24 }
   }
@@ -182,7 +225,7 @@ class SyntheticBackend implements AutoSyncMediaBackend {
       const time = request.start + index / request.fps
       const storyTime = filePath.startsWith('reaction') ? time + this.offset : time
       onFrame(filePath.startsWith('reaction')
-        ? reactionFrameFor(storyTime, request.width, request.height)
+        ? reactionFrameFor(storyTime, request.width, request.height, this.insetFraction)
         : frameFor(storyTime, request.width, request.height), time)
     }
   }
@@ -193,6 +236,33 @@ class BlockingBackend implements AutoSyncMediaBackend {
     return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(abortError()), { once: true }))
   }
   async extractFrames(): Promise<void> { /* never reached */ }
+}
+
+interface GeometryServiceInternals {
+  findGeometry(
+    session: LibrarySession,
+    movieInfo: MediaInfo,
+    reactionInfo: MediaInfo,
+    signal: AbortSignal
+  ): Promise<{ geometry: { width: number }; initialOffsetSeconds: number } | null>
+}
+
+class UnrelatedVideoBackend implements AutoSyncMediaBackend {
+  async probe(filePath: string): Promise<MediaInfo> {
+    return { duration: filePath.startsWith('reaction') ? 640 : 600, width: 96, height: 54, frameRate: 24 }
+  }
+  async extractFrames(filePath: string, request: FrameExtractionRequest, signal: AbortSignal, onFrame: (frame: PixelFrame, time: number) => void): Promise<void> {
+    const count = Math.floor(request.duration * request.fps)
+    for (let index = 0; index < count; index += 1) {
+      if (signal.aborted) throw abortError()
+      const time = request.start + index / request.fps
+      const frame = filePath.startsWith('reaction')
+        ? unrelatedFrameFor(time, request.width, request.height)
+        : frameFor(time, request.width, request.height)
+      if (filePath.startsWith('reaction')) paintStaticCornerLogo(frame)
+      onFrame(frame, time)
+    }
+  }
 }
 
 function frameFor(time: number, width: number, height: number): PixelFrame {
@@ -212,13 +282,14 @@ function frameFor(time: number, width: number, height: number): PixelFrame {
   return { data, width, height, channels: 3 }
 }
 
-function reactionFrameFor(time: number, width: number, height: number): PixelFrame {
+function reactionFrameFor(time: number, width: number, height: number, insetFraction = 0.78): PixelFrame {
   const data = new Uint8Array(width * height * 3).fill(18)
-  const insetWidth = Math.max(1, Math.round(width * 0.78))
-  const insetHeight = Math.max(1, Math.round(height * 0.78))
+  const insetWidth = Math.max(1, Math.round(width * insetFraction))
+  const insetHeight = Math.max(1, Math.round(height * insetFraction))
   const inset = frameFor(time, insetWidth, insetHeight)
-  const startX = Math.round(width * 0.11)
-  const startY = Math.round(height * 0.11)
+  const compact = insetFraction < 0.32
+  const startX = compact ? 0 : Math.round((width - insetWidth) / 2)
+  const startY = compact ? height - insetHeight : Math.round((height - insetHeight) / 2)
   for (let y = 0; y < insetHeight && startY + y < height; y += 1) for (let x = 0; x < insetWidth && startX + x < width; x += 1) {
     const source = (y * insetWidth + x) * 3
     const target = ((startY + y) * width + startX + x) * 3
@@ -227,6 +298,34 @@ function reactionFrameFor(time: number, width: number, height: number): PixelFra
     data[target + 2] = inset.data[source + 2]
   }
   return { data, width, height, channels: 3 }
+}
+
+function unrelatedFrameFor(time: number, width: number, height: number): PixelFrame {
+  const data = new Uint8Array(width * height * 3)
+  const shot = Math.floor(time / 3)
+  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+    const index = (y * width + x) * 3
+    const nx = Math.floor(x / width * 32)
+    const ny = Math.floor(y / height * 18)
+    const wave = (nx * 7 + ny * 13 + shot * 19) & 255
+    const movingBand = Math.abs(nx - shot % 32) <= 2 ? 90 : 0
+    data[index] = (wave + movingBand) & 255
+    data[index + 1] = (shot * 11 + ny * 5 + movingBand) & 255
+    data[index + 2] = (255 - wave + nx * 3) & 255
+  }
+  return { data, width, height, channels: 3 }
+}
+
+function paintStaticCornerLogo(frame: PixelFrame): void {
+  const logoWidth = Math.max(1, Math.round(frame.width * 0.2))
+  const logoHeight = Math.max(1, Math.round(frame.height * 0.2))
+  for (let y = frame.height - logoHeight; y < frame.height; y += 1) for (let x = 0; x < logoWidth; x += 1) {
+    const index = (y * frame.width + x) * 3
+    const darkStripe = y % 4 === 0 || x % 6 === 0
+    frame.data[index] = darkStripe ? 28 : 226
+    frame.data[index + 1] = darkStripe ? 25 : 218
+    frame.data[index + 2] = darkStripe ? 22 : 196
+  }
 }
 
 function abortError(): Error {
