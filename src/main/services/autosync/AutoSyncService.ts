@@ -7,6 +7,7 @@ import type {
   StartAutoSyncResult
 } from '@shared/types'
 import { clamp } from '@shared/numeric'
+import { captureTimingSnapshot, isTimingSnapshotCurrent } from '@shared/sessionTiming'
 import {
   fitAnchors,
   isConfidentFit,
@@ -122,6 +123,7 @@ export class AutoSyncService {
     const sourceSession = options.snapshot ?? this.options.sessions.getSession(sessionId)
     const session = sourceSession ? snapshotSession(sourceSession) : null
     if (!session?.moviePath || !session.reactionPath) return fallback(sessionId, 'This watchalong needs both files before sync can be found.')
+    const timingSnapshot = captureTimingSnapshot(session)
     const effectiveSignal = options.signal ?? new AbortController().signal
     try {
       this.progress(sessionId, 'preparing', 3, 'Checking both videos…')
@@ -147,7 +149,7 @@ export class AutoSyncService {
       // This also prevents a marginal refined pass from hiding a valid coarse fit.
       const fit = choosePreferredFit(refinedFit, coarseFit)
       const current = this.options.sessions.getSession(sessionId)
-      if (!isAnalysisSnapshotCurrent(current, session)) return stale(sessionId)
+      if (!isTimingSnapshotCurrent(current, timingSnapshot)) return stale(sessionId)
 
       this.progress(sessionId, 'finishing', 94, 'Finishing the timing…')
       if (fit && isConfidentFit(fit)) {
@@ -157,7 +159,7 @@ export class AutoSyncService {
 
       const refinedIntro = await this.refineAnchors(session, intro.anchors, intro.geometry, intro.mask, effectiveSignal, false)
       const latest = this.options.sessions.getSession(sessionId)
-      if (!isAnalysisSnapshotCurrent(latest, session)) return stale(sessionId)
+      if (!isTimingSnapshotCurrent(latest, timingSnapshot)) return stale(sessionId)
       const introOffset = offsetStatsForRate(refinedIntro.anchors, latest.movieRateCorrection)
       const bodyOffset = offsetStatsForRate(refined.anchors, latest.movieRateCorrection)
       const partialOffset = introOffset && bodyOffset && Math.abs(bodyOffset.offsetSeconds - introOffset.offsetSeconds) <= 2
@@ -211,7 +213,7 @@ export class AutoSyncService {
         )
         if (openingOffset && hasRequiredCorroboration) {
           const currentAfterOpening = this.options.sessions.getSession(sessionId)
-          if (!isAnalysisSnapshotCurrent(currentAfterOpening, session)) return stale(sessionId)
+          if (!isTimingSnapshotCurrent(currentAfterOpening, timingSnapshot)) return stale(sessionId)
           return this.completeReadyOpeningPartial(sessionId, openingOffset.offsetSeconds,
             currentAfterOpening.movieRateCorrection, Math.min(0.69, Math.max(intro.confidence, 0.45)),
             openingOffset.count, movieInfo.frameRate)
@@ -676,25 +678,6 @@ function snapshotSession(session: LibrarySession): LibrarySession {
     overlay: { ...session.overlay },
     movieWindowGeometry: { ...session.movieWindowGeometry }
   }
-}
-
-function isAnalysisSnapshotCurrent(
-  current: LibrarySession | null,
-  snapshot: LibrarySession
-): current is LibrarySession {
-  return Boolean(
-    current &&
-    current.moviePath === snapshot.moviePath &&
-    current.reactionPath === snapshot.reactionPath &&
-    current.offsetSeconds === snapshot.offsetSeconds &&
-    current.movieRateCorrection === snapshot.movieRateCorrection &&
-    current.reactorSource === snapshot.reactorSource &&
-    current.detectedMovieFps === snapshot.detectedMovieFps &&
-    current.timingOrigin === snapshot.timingOrigin &&
-    current.autoSyncConfidence === snapshot.autoSyncConfidence &&
-    current.autoSyncAnalyzedAt === snapshot.autoSyncAnalyzedAt &&
-    current.autoSyncAlgorithmVersion === snapshot.autoSyncAlgorithmVersion
-  )
 }
 
 function friendlyError(error: unknown): string {

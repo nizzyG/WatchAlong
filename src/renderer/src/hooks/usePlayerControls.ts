@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { clamp } from '@shared/numeric'
+import { captureTimingSnapshot, isTimingSnapshotCurrent } from '@shared/sessionTiming'
 import type {
   LibrarySession,
   MediaRole,
@@ -209,7 +210,7 @@ export function usePlayerControls({
     if (movieFrameRateDetectionKeyRef.current === detectionKey) return
 
     movieFrameRateDetectionKeyRef.current = detectionKey
-    const detectionSnapshot = frameRateDetectionSnapshot(activeSession)
+    const detectionSnapshot = captureTimingSnapshot(activeSession)
     let cancelled = false
     void (async () => {
       let detectedMovieFps: number | null = null
@@ -223,10 +224,10 @@ export function usePlayerControls({
       const authoritativeLibrary = await window.watchAlong.getLibrary()
       if (cancelled) return
       const authoritativeSession = authoritativeLibrary.sessions.find((item) => item.id === activeSession.id) ?? null
-      if (!isFrameRateDetectionSnapshotCurrent(authoritativeSession, detectionSnapshot)) return
+      if (!isTimingSnapshotCurrent(authoritativeSession, detectionSnapshot)) return
 
       const currentSession = sessionRef.current
-      if (!isFrameRateDetectionSnapshotCurrent(currentSession, detectionSnapshot)) return
+      if (!isTimingSnapshotCurrent(currentSession, detectionSnapshot)) return
 
       const movieRateCorrection = calculateMovieRateCorrection(detectedMovieFps, authoritativeSession.reactorSource)
       if (movieRateCorrection === null) {
@@ -451,56 +452,6 @@ export function usePlayerControls({
     nudgeSetupTime,
     toggleSetupPreview
   }
-}
-
-type FrameRateDetectionSnapshot = Pick<LibrarySession,
-  | 'id'
-  | 'moviePath'
-  | 'reactionPath'
-  | 'offsetSeconds'
-  | 'movieRateCorrection'
-  | 'reactorSource'
-  | 'detectedMovieFps'
-  | 'timingOrigin'
-  | 'autoSyncConfidence'
-  | 'autoSyncAnalyzedAt'
-  | 'autoSyncAlgorithmVersion'
->
-
-function frameRateDetectionSnapshot(session: LibrarySession): FrameRateDetectionSnapshot {
-  return {
-    id: session.id,
-    moviePath: session.moviePath,
-    reactionPath: session.reactionPath,
-    offsetSeconds: session.offsetSeconds,
-    movieRateCorrection: session.movieRateCorrection,
-    reactorSource: session.reactorSource,
-    detectedMovieFps: session.detectedMovieFps,
-    timingOrigin: session.timingOrigin,
-    autoSyncConfidence: session.autoSyncConfidence,
-    autoSyncAnalyzedAt: session.autoSyncAnalyzedAt,
-    autoSyncAlgorithmVersion: session.autoSyncAlgorithmVersion
-  }
-}
-
-function isFrameRateDetectionSnapshotCurrent(
-  current: LibrarySession | null,
-  snapshot: FrameRateDetectionSnapshot
-): current is LibrarySession {
-  return Boolean(
-    current &&
-    current.id === snapshot.id &&
-    current.moviePath === snapshot.moviePath &&
-    current.reactionPath === snapshot.reactionPath &&
-    current.offsetSeconds === snapshot.offsetSeconds &&
-    current.movieRateCorrection === snapshot.movieRateCorrection &&
-    current.reactorSource === snapshot.reactorSource &&
-    current.detectedMovieFps === snapshot.detectedMovieFps &&
-    current.timingOrigin === snapshot.timingOrigin &&
-    current.autoSyncConfidence === snapshot.autoSyncConfidence &&
-    current.autoSyncAnalyzedAt === snapshot.autoSyncAnalyzedAt &&
-    current.autoSyncAlgorithmVersion === snapshot.autoSyncAlgorithmVersion
-  )
 }
 
 function observeRemoteMedia(state: RemoteMediaState, hasError: boolean): MediaPlaybackObservation {
