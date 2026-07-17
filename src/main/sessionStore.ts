@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { basename, dirname, join, posix, win32 } from 'node:path'
 import {
   createDefaultLibrary,
@@ -9,6 +10,7 @@ import {
   mediaPathIdentity,
   normalizeLibrary,
   normalizeSession,
+  sanitizeReactorId,
   sanitizeReactorName,
   sanitizeSuggestedSessionTitle
 } from '@shared/session'
@@ -16,9 +18,13 @@ import type {
   LibrarySession,
   MediaRole,
   ReactionSource,
+  ReactorAssignmentRequest,
+  ReactorProfile,
   ReplaceSessionMediaResult,
   SessionLibrary
 } from '@shared/types'
+import { normalizeReactorLabel } from '@shared/reactorIdentity'
+import { resolveReactorProfileAvatarPath } from './services/reactorAvatarFiles'
 
 export class LibraryRecoveryError extends Error {
   constructor(readonly preservedPath: string) {
@@ -423,7 +429,103 @@ export class SessionStore {
         : session
     )
 
-    return this.writeAndReturn({ ...library, sessions })
+    const renamed = this.writeAndReturn({ ...library, sessions })
+    const target = renamed.sessions.find((session) => session.id === sessionId)
+    const profile = target?.reactorId
+      ? renamed.reactors.find((candidate) => candidate.id === target.reactorId)
+      : null
+    if (
+      sanitizedReactorName &&
+      target &&
+      normalizeReactorLabel(sanitizedReactorName) !== normalizeReactorLabel(profile?.name ?? target.reactorName ?? '')
+    ) {
+      return this.assignSessionReactor(sessionId, {
+        target: { type: 'new', name: sanitizedReactorName },
+        scope: 'session'
+      })
+    }
+    return renamed
+  }
+
+  assignSessionReactor(sessionId: string, assignment: ReactorAssignmentRequest): SessionLibrary {
+    const library = this.read()
+    const sourceSession = library.sessions.find((session) => session.id === sessionId)
+    if (!sourceSession || !isReactorAssignmentRequest(assignment)) return library
+
+    const sourceProfile = sourceSession.reactorId
+      ? library.reactors.find((profile) => profile.id === sourceSession.reactorId) ?? null
+      : null
+    const movingSessionIds = new Set(
+      assignment.scope === 'reactor' && sourceProfile
+        ? library.sessions.filter((session) => session.reactorId === sourceProfile.id).map((session) => session.id)
+        : [sourceSession.id]
+    )
+
+    let targetProfile: ReactorProfile | null = null
+    let creatingProfile = false
+    if (assignment.target.type === 'existing') {
+      const targetReactorId = assignment.target.reactorId
+      targetProfile = library.reactors.find((profile) => profile.id === targetReactorId) ?? null
+      if (!targetProfile) return library
+    } else {
+      const name = sanitizeReactorName(assignment.target.name)
+      if (!name) return library
+      const exactMatches = library.reactors.filter((profile) =>
+        normalizeReactorLabel(profile.name) === normalizeReactorLabel(name))
+      if (exactMatches.length === 1) {
+        targetProfile = exactMatches[0]
+      } else {
+        const now = new Date().toISOString()
+        targetProfile = {
+          id: `reactor-${randomUUID()}`,
+          name,
+          avatarPath: null,
+          externalIdentityKeys: [],
+          createdAt: now,
+          updatedAt: now
+        }
+        creatingProfile = true
+      }
+    }
+
+    if (targetProfile.id === sourceProfile?.id && !creatingProfile) return library
+
+    const now = new Date().toISOString()
+    const sourceProfileSessionIds = sourceProfile
+      ? library.sessions.filter((session) => session.reactorId === sourceProfile.id).map((session) => session.id)
+      : []
+    const sourceProfileDrained = Boolean(sourceProfile) &&
+      sourceProfileSessionIds.every((id) => movingSessionIds.has(id))
+    const targetAvatarPath = creatingProfile
+      ? avatarForNewProfile(library, sourceProfile, sourceProfileDrained)
+      : targetProfile.avatarPath ?? resolveReactorProfileAvatarPath(library, targetProfile.id)
+    const transferredAliases = sourceProfileDrained && sourceProfile
+      ? sourceProfile.externalIdentityKeys
+      : []
+    const nextTarget: ReactorProfile = {
+      ...targetProfile,
+      avatarPath: targetAvatarPath,
+      externalIdentityKeys: uniqueValues([...targetProfile.externalIdentityKeys, ...transferredAliases]),
+      updatedAt: now
+    }
+
+    const sessions = library.sessions.map((session) =>
+      movingSessionIds.has(session.id)
+        ? normalizeSession({
+            ...session,
+            reactorId: nextTarget.id,
+            reactorName: nextTarget.name,
+            reactorNameOrigin: 'custom',
+            createdAt: session.createdAt,
+            updatedAt: now
+          })
+        : session
+    )
+    const reactors = library.reactors
+      .filter((profile) => !(sourceProfileDrained && profile.id === sourceProfile?.id) && profile.id !== nextTarget.id)
+      .concat(nextTarget)
+
+    return this.writeAndReturn({ ...library, sessions, reactors })
   }
 
   deleteSession(sessionId: string): SessionLibrary {
@@ -737,10 +839,34 @@ function reactorIdentityAfterReactionChange(
   session: LibrarySession,
   role: MediaRole,
   reactorName?: string
-): Partial<Pick<LibrarySession, 'reactorName' | 'reactorNameOrigin'>> {
+): Partial<Pick<LibrarySession, 'reactorId' | 'reactorName' | 'reactorNameOrigin'>> {
   if (role !== 'reaction' || session.reactorNameOrigin === 'custom') return {}
   return {
+    reactorId: null,
     reactorName: sanitizeReactorName(reactorName),
     reactorNameOrigin: 'metadata'
   }
+}
+
+function isReactorAssignmentRequest(value: unknown): value is ReactorAssignmentRequest {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const request = value as Partial<ReactorAssignmentRequest>
+  if (request.scope !== 'session' && request.scope !== 'reactor') return false
+  const target = request.target
+  if (!target || typeof target !== 'object' || Array.isArray(target)) return false
+  if (target.type === 'existing') return Boolean(sanitizeReactorId(target.reactorId))
+  return target.type === 'new' && Boolean(sanitizeReactorName(target.name))
+}
+
+function avatarForNewProfile(
+  library: SessionLibrary,
+  sourceProfile: ReactorProfile | null,
+  sourceProfileDrained: boolean
+): string | null {
+  if (!sourceProfile || !sourceProfileDrained) return null
+  return sourceProfile.avatarPath ?? resolveReactorProfileAvatarPath(library, sourceProfile.id)
+}
+
+function uniqueValues(values: string[]): string[] {
+  return [...new Set(values)]
 }

@@ -1,9 +1,10 @@
-import type { LibrarySession } from '@shared/types'
+import type { LibrarySession, ReactorProfile } from '@shared/types'
 import { LibrarySessionCard } from './LibrarySessionCard'
 import { deriveReactorIdentity, pairingDisplayTitle, sortPairings, type LibrarySort } from './libraryPresentation'
 
 export function PairingLibraryView({
   sessions,
+  reactors,
   sort,
   compact,
   onOpenSession,
@@ -14,6 +15,7 @@ export function PairingLibraryView({
   onDelete
 }: {
   sessions: LibrarySession[]
+  reactors: ReactorProfile[]
   sort: LibrarySort
   compact: boolean
   onOpenSession(sessionId: string): void
@@ -25,14 +27,14 @@ export function PairingLibraryView({
 }): JSX.Element {
   return (
     <div className={`pairing-library-grid ${compact ? 'pairing-library-grid-compact' : ''}`} aria-label="Pairings">
-      {sortPairings(sessions, sort).map((session) => {
-        const reactor = deriveReactorIdentity(session)
+      {sortPairings(sessions, sort, reactors).map((session) => {
+        const reactor = deriveReactorIdentity(session, reactors)
         return (
           <LibrarySessionCard
             key={session.id}
             session={session}
             compact={compact}
-            primaryLabel={pairingDisplayTitle(session)}
+            primaryLabel={pairingDisplayTitle(session, reactors)}
             artwork="movie"
             reactorLabel={reactor.label}
             showReactorBadge

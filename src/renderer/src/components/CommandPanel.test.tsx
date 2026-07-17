@@ -155,7 +155,7 @@ function renderPanel(
 ): RenderResult & { props: CommandPanelProps } {
   const props: CommandPanelProps = {
     activeSession,
-    library: { version: 6, activeSessionId: activeSession.id, sessions: [] },
+    library: { version: 7, activeSessionId: activeSession.id, sessions: [], reactors: [] },
     position: 25,
     reactionDuration: 120,
     downloads: [],
@@ -200,6 +200,7 @@ function createSession(patch: Partial<LibrarySession> = {}): LibrarySession {
     id: 'session-1',
     title: 'Tombstone',
     titleOrigin: 'custom',
+    reactorId: null,
     reactorName: 'Movie Night',
     reactorNameOrigin: 'custom',
     reactionPath: 'C:\\Videos\\tombstone-reaction.mp4',

@@ -37,7 +37,6 @@ export function useSession() {
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null)
   const [renameInitialFocus, setRenameInitialFocus] = useState<RenameSessionFocus>('title')
   const [renameDraft, setRenameDraft] = useState('')
-  const [renameReactorDraft, setRenameReactorDraft] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<{ sessionId: string; returnToLibrary: boolean } | null>(null)
 
   return {
@@ -49,7 +48,7 @@ export function useSession() {
     setWizardDimmed, commandPanelOpen, setCommandPanelOpen, expandedPanelSection,
     setExpandedPanelSection, patreonStatus, setPatreonStatus, renameTargetId, setRenameTargetId,
     renameInitialFocus, setRenameInitialFocus,
-    renameDraft, setRenameDraft, renameReactorDraft, setRenameReactorDraft, deleteTarget, setDeleteTarget
+    renameDraft, setRenameDraft, deleteTarget, setDeleteTarget
   }
 }
 

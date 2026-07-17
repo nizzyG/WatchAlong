@@ -5,13 +5,19 @@ import type {
   PlaybackRate,
   ReactionSource,
   ReactorNameOrigin,
+  ReactorProfile,
   ReactorSource,
   SessionData,
   SessionLibrary,
   SessionTitleOrigin
 } from './types'
+import {
+  deriveLegacyReactorIdentity,
+  normalizeReactorLabel,
+  providerIdentityKind
+} from './reactorIdentity'
 
-export const SESSION_LIBRARY_VERSION = 6
+export const SESSION_LIBRARY_VERSION = 7
 
 export const DEFAULT_OVERLAY: OverlayGeometry = {
   x: 24,
@@ -33,6 +39,7 @@ export function createDefaultSession(now = new Date(), patch: Partial<LibrarySes
     id: stringOrNull(patch.id) ?? createSessionId(now),
     title: stringOrDefault(patch.title, defaultSessionTitle(moviePath, reactionPath)),
     titleOrigin: normalizeTitleOrigin(patch.titleOrigin, hasExplicitTitle(patch.title) ? 'custom' : 'generated'),
+    reactorId: sanitizeReactorId(patch.reactorId),
     reactorName,
     reactorNameOrigin: normalizeReactorNameOrigin(patch.reactorNameOrigin, reactorName ? 'custom' : 'metadata'),
     reactionPath,
@@ -69,7 +76,8 @@ export function createDefaultLibrary(): SessionLibrary {
   return {
     version: SESSION_LIBRARY_VERSION,
     activeSessionId: null,
-    sessions: []
+    sessions: [],
+    reactors: []
   }
 }
 
@@ -101,6 +109,7 @@ export function normalizeSession(value: unknown, now = new Date()): SessionData 
     // existing title was generated. Treat it as custom so an upgrade can
     // never overwrite a name the user chose.
     titleOrigin: normalizeTitleOrigin(source?.titleOrigin, hasExplicitTitle(source?.title) ? 'custom' : 'generated'),
+    reactorId: sanitizeReactorId(source?.reactorId),
     reactorName,
     // A stored name without provenance may have been entered by a person.
     // Preserve it as custom so later metadata cannot silently replace it.
@@ -166,7 +175,15 @@ export function normalizeLibrary(value: unknown, now = new Date()): SessionLibra
     }
   }
 
-  const sessions = [...deduped.values()]
+  const normalizedProfiles = normalizeReactorProfiles(
+    Array.isArray(source?.reactors) ? source.reactors : [],
+    now
+  )
+  const { sessions, reactors } = attachSessionsToReactorProfiles(
+    [...deduped.values()],
+    normalizedProfiles,
+    now
+  )
   const requestedActiveId = stringOrNull(source?.activeSessionId)
   const activeSessionId =
     sessions.find((session) => session.id === requestedActiveId)?.id ?? sessions[0]?.id ?? null
@@ -174,7 +191,8 @@ export function normalizeLibrary(value: unknown, now = new Date()): SessionLibra
   return {
     version: SESSION_LIBRARY_VERSION,
     activeSessionId,
-    sessions
+    sessions,
+    reactors
   }
 }
 
@@ -326,6 +344,165 @@ export function sanitizeSuggestedSessionTitle(value: unknown): string | null {
 export function sanitizeReactorName(value: unknown): string | null {
   const sanitized = sanitizeSuggestedSessionTitle(value)
   return sanitized ? [...sanitized].slice(0, 120).join('').trim() || null : null
+}
+
+export function sanitizeReactorId(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim()
+  return normalized.length > 0 &&
+    normalized.length <= 160 &&
+    normalized !== '.' &&
+    normalized !== '..' &&
+    !/[\\/\u0000-\u001f\u007f]/.test(normalized)
+    ? normalized
+    : null
+}
+
+function normalizeReactorProfiles(values: unknown[], now: Date): ReactorProfile[] {
+  const profiles = new Map<string, ReactorProfile>()
+  for (const value of values) {
+    const source = value as Partial<ReactorProfile> | null
+    const id = sanitizeReactorId(source?.id)
+    const name = sanitizeReactorName(source?.name)
+    if (!id || !name) continue
+
+    const timestamp = now.toISOString()
+    const createdAt = typeof source?.createdAt === 'string' ? source.createdAt : timestamp
+    const updatedAt = typeof source?.updatedAt === 'string' ? source.updatedAt : createdAt
+    const externalIdentityKeys = normalizeExternalIdentityKeys(source?.externalIdentityKeys)
+    const current = profiles.get(id)
+    profiles.set(id, current
+      ? {
+          ...current,
+          externalIdentityKeys: uniqueStrings([...current.externalIdentityKeys, ...externalIdentityKeys]),
+          avatarPath: current.avatarPath ?? stringOrNull(source?.avatarPath),
+          updatedAt: latestTimestamp(current.updatedAt, updatedAt)
+        }
+      : {
+          id,
+          name,
+          avatarPath: stringOrNull(source?.avatarPath),
+          externalIdentityKeys,
+          createdAt,
+          updatedAt
+        })
+  }
+  return [...profiles.values()]
+}
+
+function attachSessionsToReactorProfiles(
+  sourceSessions: LibrarySession[],
+  sourceProfiles: ReactorProfile[],
+  now: Date
+): { sessions: LibrarySession[]; reactors: ReactorProfile[] } {
+  const reactors = sourceProfiles.map((profile) => ({
+    ...profile,
+    externalIdentityKeys: [...profile.externalIdentityKeys]
+  }))
+  const byId = new Map(reactors.map((profile) => [profile.id, profile]))
+  const usedIds = new Set(byId.keys())
+
+  const sessions = sourceSessions.map((session) => {
+    const linked = session.reactorId ? byId.get(session.reactorId) : null
+    if (linked) return session
+
+    const identity = deriveLegacyReactorIdentity(session)
+    if (!identity.known) return { ...session, reactorId: null }
+
+    let profile = reactors.find((candidate) =>
+      identity.externalIdentityKeys.some((key) => candidate.externalIdentityKeys.includes(key)))
+
+    if (!profile) {
+      const sameName = reactors.filter((candidate) =>
+        normalizeReactorLabel(candidate.name) === normalizeReactorLabel(identity.label) &&
+        !hasConflictingProviderIdentity(candidate, identity.externalIdentityKeys))
+      if (sameName.length === 1) profile = sameName[0]
+    }
+
+    if (!profile) {
+      const timestamp = session.createdAt || now.toISOString()
+      const id = uniqueReactorId(identity.key, usedIds)
+      profile = {
+        id,
+        name: identity.label,
+        avatarPath: null,
+        externalIdentityKeys: [...identity.externalIdentityKeys],
+        createdAt: timestamp,
+        updatedAt: session.updatedAt || timestamp
+      }
+      reactors.push(profile)
+      byId.set(id, profile)
+      usedIds.add(id)
+    } else {
+      profile.externalIdentityKeys = uniqueStrings([
+        ...profile.externalIdentityKeys,
+        ...identity.externalIdentityKeys.filter((key) => !hasProviderAliasConflict(profile!, key))
+      ])
+    }
+
+    return { ...session, reactorId: profile.id }
+  })
+
+  const referenced = new Set(sessions.map((session) => session.reactorId).filter(Boolean))
+  return {
+    sessions,
+    reactors: reactors.filter((profile) => referenced.has(profile.id))
+  }
+}
+
+function normalizeExternalIdentityKeys(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return uniqueStrings(value.flatMap((item) => {
+    if (typeof item !== 'string') return []
+    const normalized = item.trim()
+    return normalized && normalized.length <= 256 && !/[\u0000-\u001f\u007f]/.test(normalized)
+      ? [normalized]
+      : []
+  }))
+}
+
+function hasConflictingProviderIdentity(profile: ReactorProfile, keys: string[]): boolean {
+  return keys.some((key) => hasProviderAliasConflict(profile, key))
+}
+
+function hasProviderAliasConflict(profile: ReactorProfile, key: string): boolean {
+  const kind = providerIdentityKind(key)
+  return Boolean(kind && profile.externalIdentityKeys.some((candidate) =>
+    providerIdentityKind(candidate) === kind && candidate !== key))
+}
+
+function uniqueReactorId(identityKey: string, usedIds: Set<string>): string {
+  const base = deterministicReactorId(identityKey)
+  let candidate = base
+  let suffix = 2
+  while (usedIds.has(candidate)) {
+    candidate = `${base}-${suffix}`
+    suffix += 1
+  }
+  return candidate
+}
+
+function deterministicReactorId(identityKey: string): string {
+  let first = 0x811c9dc5
+  let second = 0x9e3779b9
+  for (const character of identityKey.normalize('NFKC')) {
+    const codePoint = character.codePointAt(0) ?? 0
+    first = Math.imul(first ^ codePoint, 0x01000193) >>> 0
+    second = Math.imul(second ^ (codePoint + 0x9e37), 0x85ebca6b) >>> 0
+  }
+  return `reactor-${first.toString(36)}-${second.toString(36)}`
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)]
+}
+
+function latestTimestamp(left: string, right: string): string {
+  const leftTime = Date.parse(left)
+  const rightTime = Date.parse(right)
+  if (!Number.isFinite(leftTime)) return right
+  if (!Number.isFinite(rightTime)) return left
+  return rightTime > leftTime ? right : left
 }
 
 function legacySessionsFromValue(value: unknown): unknown[] {

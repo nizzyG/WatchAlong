@@ -26,6 +26,7 @@ import type {
   MediaRole,
   OverlayGeometry,
   PlaybackRate,
+  ReactorAssignmentRequest,
   ReactorSource
 } from '@shared/types'
 import { AutoSyncRollIn } from './AutoSyncRollIn'
@@ -34,7 +35,7 @@ import { CommandPanel } from './CommandPanel'
 import { LibraryHome } from './LibraryHome'
 import { DownloadIndicator, SetupScrubber, StreamVolume } from './PlayerControls'
 import { PipOverlay } from './PipOverlay'
-import { DeleteSessionDialog, existingReactorNames, RenameSessionDialog } from './SessionDialogs'
+import { DeleteSessionDialog, EditReactorDialog, RenameSessionDialog } from './SessionDialogs'
 import type { RenameSessionFocus } from './SessionDialogs'
 import { PatreonStorageOffer, SmartReactionInput } from './SmartReactionInput'
 import type { DownloadedReactionMetadata } from './SmartReactionInput'
@@ -105,6 +106,7 @@ export interface WatchAlongViewActions {
   forgetPatreonSession: () => Promise<void>
   cancelRenameSession: () => void
   confirmRenameSession: () => Promise<void>
+  confirmReactorAssignment: (assignment: ReactorAssignmentRequest) => Promise<void>
   cancelDeleteSession: () => void
   confirmDeleteSession: () => Promise<void>
   useManualSyncDuringRollIn: () => Promise<void>
@@ -198,8 +200,6 @@ export function WatchAlongView({
     renameInitialFocus,
     renameDraft,
     setRenameDraft,
-    renameReactorDraft,
-    setRenameReactorDraft,
     deleteTarget
   } = sessionState
   const {
@@ -715,18 +715,26 @@ export function WatchAlongView({
         />
       )}
 
-      {renameTargetId && (
+      {renameTargetId && renameInitialFocus === 'title' && (
         <RenameSessionDialog
           title={renameDraft}
           onTitleChange={setRenameDraft}
-          reactorName={renameReactorDraft}
-          onReactorNameChange={setRenameReactorDraft}
-          reactorOptions={existingReactorNames(library.sessions)}
-          initialFocus={renameInitialFocus}
           onCancel={actions.cancelRenameSession}
           onConfirm={() => void actions.confirmRenameSession()}
         />
       )}
+
+      {renameTargetId && renameInitialFocus === 'reactor' && (() => {
+        const targetSession = library.sessions.find((item) => item.id === renameTargetId)
+        return targetSession ? (
+          <EditReactorDialog
+            library={library}
+            session={targetSession}
+            onCancel={actions.cancelRenameSession}
+            onConfirm={(assignment) => void actions.confirmReactorAssignment(assignment)}
+          />
+        ) : null
+      })()}
 
       {deleteTarget && (
         <DeleteSessionDialog

@@ -181,13 +181,14 @@ describe('WizardApp', () => {
     }))
     window.watchAlong.replaceSessionMedia = vi.fn(async () => ({
       status: 'conflict' as const,
-      library: { version: 6 as const, activeSessionId: 's1', sessions: [] },
+      library: { version: 7 as const, activeSessionId: 's1', sessions: [], reactors: [] },
       existingSessionId: 'existing'
     }))
     window.watchAlong.setActiveSession = vi.fn(async () => ({
-      version: 6 as const,
+      version: 7 as const,
       activeSessionId: 'existing',
-      sessions: []
+      sessions: [],
+      reactors: []
     }))
 
     render(<WizardApp />)
@@ -253,7 +254,7 @@ describe('WizardApp', () => {
     expect(window.watchAlong.finishOnboardingWizard).not.toHaveBeenCalled()
 
     await act(async () => {
-      finishSave?.({ version: 6, activeSessionId: 'session-1', sessions: [] })
+      finishSave?.({ version: 7, activeSessionId: 'session-1', sessions: [], reactors: [] })
     })
 
     await waitFor(() => expect(window.watchAlong.startSessionAutoSync).toHaveBeenCalledWith('session-1', 'initial'))
@@ -284,7 +285,7 @@ describe('WizardApp', () => {
     expect(window.watchAlong.startSessionAutoSync).not.toHaveBeenCalled()
 
     await act(async () => {
-      finishSave?.({ version: 6, activeSessionId: 'session-1', sessions: [] })
+      finishSave?.({ version: 7, activeSessionId: 'session-1', sessions: [], reactors: [] })
     })
     await waitFor(() => expect(window.watchAlong.finishOnboardingWizard).toHaveBeenCalledWith('completed-needs-review'))
     expect(window.watchAlong.startSessionAutoSync).not.toHaveBeenCalled()
@@ -308,32 +309,36 @@ function createApi(): WatchAlongApi {
     chooseMoviePoster: vi.fn(async () => null),
     clearMoviePoster: vi.fn(),
     createOrSwitchSessionFromPaths: vi.fn(async () => ({
-      version: 6 as const,
+      version: 7 as const,
       activeSessionId: 'session-1',
-      sessions: []
+      sessions: [],
+      reactors: []
     })),
     getLibrary: vi.fn(),
     getLibraryRecoveryStatus: vi.fn(async () => ({ available: false })),
     revealLibraryRecoveryFile: vi.fn(async () => false),
-    startFreshLibraryAfterRecovery: vi.fn(async () => ({ version: 6 as const, activeSessionId: null, sessions: [] })),
+    startFreshLibraryAfterRecovery: vi.fn(async () => ({ version: 7 as const, activeSessionId: null, sessions: [], reactors: [] })),
     saveActiveSession: vi.fn(),
     saveSessionPosition: vi.fn(async (sessionId: string, lastReactionTimeSeconds: number) => ({
-      version: 6 as const,
+      version: 7 as const,
       activeSessionId: sessionId,
-      sessions: []
+      sessions: [],
+      reactors: []
     })),
     setSessionMedia: vi.fn(),
     replaceSessionMedia: vi.fn(async () => ({
       status: 'replaced' as const,
       library: {
-        version: 6 as const,
+        version: 7 as const,
         activeSessionId: 'session-1',
-        sessions: []
+        sessions: [],
+        reactors: []
       }
     })),
     setActiveSession: vi.fn(),
     deleteSession: vi.fn(),
     renameSession: vi.fn(),
+    assignSessionReactor: vi.fn(),
     openSubtitle: vi.fn(),
     clearSubtitle: vi.fn(),
     getSubtitleText: vi.fn(),

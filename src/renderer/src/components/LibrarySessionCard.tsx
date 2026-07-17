@@ -159,7 +159,7 @@ export function LibrarySessionCard({
                   }}
                 >
                   <UserRoundPen size={14} aria-hidden />
-                  Edit reactor
+                  Change reactor…
                 </button>
               )}
               {onChoosePoster && (

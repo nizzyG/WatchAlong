@@ -1,10 +1,11 @@
-import type { LibrarySession } from '@shared/types'
+import type { LibrarySession, ReactorProfile } from '@shared/types'
 import { LibrarySessionCard } from './LibrarySessionCard'
 import { deriveMovieIdentity, deriveReactorIdentity, groupSessionsByReactor, type LibrarySort } from './libraryPresentation'
 import { ReactorAvatar } from './ReactorAvatar'
 
 export function ReactorLibraryView({
   sessions,
+  reactors,
   sort,
   compact,
   onOpenSession,
@@ -15,6 +16,7 @@ export function ReactorLibraryView({
   onDelete
 }: {
   sessions: LibrarySession[]
+  reactors: ReactorProfile[]
   sort: LibrarySort
   compact: boolean
   onOpenSession(sessionId: string): void
@@ -26,7 +28,7 @@ export function ReactorLibraryView({
 }): JSX.Element {
   return (
     <div className={`reactor-library ${sessions.length === 1 ? 'reactor-library-single' : ''} ${compact ? 'reactor-library-compact' : ''}`}>
-      {groupSessionsByReactor(sessions, sort).map((group, index) => {
+      {groupSessionsByReactor(sessions, sort, reactors).map((group, index) => {
         const headingId = `library-reactor-group-${index}`
         const representative = group.sessions[0]
         return (
@@ -41,7 +43,7 @@ export function ReactorLibraryView({
             <div className={`reactor-shelf-movies ${group.sessions.length === 1 ? 'reactor-shelf-movies-single' : ''}`}>
               {group.sessions.map((session) => {
                 const movie = deriveMovieIdentity(session)
-                const reactor = deriveReactorIdentity(session)
+                const reactor = deriveReactorIdentity(session, reactors)
                 return (
                   <LibrarySessionCard
                     key={session.id}

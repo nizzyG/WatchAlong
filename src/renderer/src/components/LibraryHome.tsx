@@ -59,7 +59,10 @@ export function LibraryHome({
   const [mode, setMode] = useState<LibraryMode>(readSavedLibraryMode)
   const [sortPreferences, setSortPreferences] = useState<LibrarySortPreferences>(readSavedSortPreferences)
   const [posterNotice, setPosterNotice] = useState<PosterNotice | null>(null)
-  const movieCount = useMemo(() => groupSessionsByMovie(library.sessions).length, [library.sessions])
+  const movieCount = useMemo(
+    () => groupSessionsByMovie(library.sessions, 'date-added', library.reactors).length,
+    [library.sessions, library.reactors]
+  )
   const sort = sortPreferences[mode]
 
   const runPosterAction = async (
@@ -183,6 +186,7 @@ export function LibraryHome({
         {hasSessions && mode === 'pairings' && (
           <PairingLibraryView
             sessions={library.sessions}
+            reactors={library.reactors}
             sort={sort}
             compact={view === 'list'}
             onOpenSession={onOpenSession}
@@ -197,6 +201,7 @@ export function LibraryHome({
         {hasSessions && mode === 'reactors' && (
           <ReactorLibraryView
             sessions={library.sessions}
+            reactors={library.reactors}
             sort={sort}
             compact={view === 'list'}
             onOpenSession={onOpenSession}
@@ -211,6 +216,7 @@ export function LibraryHome({
         {hasSessions && mode === 'movies' && (
           <MovieLibraryView
             sessions={library.sessions}
+            reactors={library.reactors}
             sort={sort}
             compact={view === 'list'}
             onOpenSession={onOpenSession}

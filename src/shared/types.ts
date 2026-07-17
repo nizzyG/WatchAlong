@@ -53,6 +53,8 @@ export interface LibrarySession {
   id: string
   title: string
   titleOrigin: SessionTitleOrigin
+  /** Stable link to the person behind this reaction, independent of platform or file path. */
+  reactorId: string | null
   reactorName: string | null
   reactorNameOrigin: ReactorNameOrigin
   reactionPath: string | null
@@ -86,10 +88,32 @@ export interface LibrarySession {
 
 export type SessionData = LibrarySession
 
+export interface ReactorProfile {
+  id: string
+  name: string
+  /** Main-process-owned local image path. Never renderer-writable. */
+  avatarPath: string | null
+  /** Stable provider/name aliases used to recognize later imports. */
+  externalIdentityKeys: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type ReactorAssignmentTarget =
+  | { type: 'existing'; reactorId: string }
+  | { type: 'new'; name: string }
+
+export interface ReactorAssignmentRequest {
+  target: ReactorAssignmentTarget
+  /** Move only this pairing, or consolidate its current reactor profile in one action. */
+  scope: 'session' | 'reactor'
+}
+
 export interface SessionLibrary {
-  version: 6
+  version: 7
   activeSessionId: string | null
   sessions: LibrarySession[]
+  reactors: ReactorProfile[]
 }
 
 export interface LibraryRecoveryStatus {
@@ -405,6 +429,7 @@ export interface WatchAlongApi {
   setActiveSession(sessionId: string): Promise<SessionLibrary>
   deleteSession(sessionId: string): Promise<SessionLibrary>
   renameSession(sessionId: string, title: string, reactorName?: string): Promise<SessionLibrary>
+  assignSessionReactor(sessionId: string, assignment: ReactorAssignmentRequest): Promise<SessionLibrary>
   chooseMoviePoster(sessionId: string): Promise<SessionLibrary | null>
   clearMoviePoster(sessionId: string): Promise<SessionLibrary>
   openSubtitle(): Promise<SessionLibrary | null>

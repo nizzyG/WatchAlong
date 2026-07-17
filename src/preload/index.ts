@@ -47,6 +47,8 @@ const api: WatchAlongApi = {
   deleteSession: (sessionId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:delete-session`, sessionId),
   renameSession: (sessionId: string, title: string, reactorName?: string) =>
     ipcRenderer.invoke(`${IPC_PREFIX}:rename-session`, sessionId, title, reactorName),
+  assignSessionReactor: (sessionId, assignment) =>
+    ipcRenderer.invoke(`${IPC_PREFIX}:assign-session-reactor`, sessionId, assignment),
   chooseMoviePoster: (sessionId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:choose-movie-poster`, sessionId),
   clearMoviePoster: (sessionId: string) => ipcRenderer.invoke(`${IPC_PREFIX}:clear-movie-poster`, sessionId),
   openSubtitle: () => ipcRenderer.invoke(`${IPC_PREFIX}:open-subtitle`),

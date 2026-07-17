@@ -1,5 +1,6 @@
-import type { LibrarySession } from '@shared/types'
+import type { LibrarySession, ReactorProfile } from '@shared/types'
 import { mediaPathIdentity } from '@shared/session'
+import { deriveProfileReactorIdentity } from '@shared/reactorIdentity'
 
 export type LibraryMode = 'pairings' | 'reactors' | 'movies'
 export type LibrarySort = 'date-added' | 'alphabetical'
@@ -22,12 +23,6 @@ export interface PairingTitleParts {
 const unknownMovie: LibraryIdentity = {
   key: 'unknown:movie',
   label: 'Movie not identified',
-  known: false
-}
-
-const unknownReactor: LibraryIdentity = {
-  key: 'unknown:reactor',
-  label: 'Reactor not identified',
   known: false
 }
 
@@ -69,63 +64,22 @@ export function deriveMovieIdentity(session: LibrarySession): LibraryIdentity {
   return unknownMovie
 }
 
-export function deriveReactorIdentity(session: LibrarySession): LibraryIdentity {
-  const storedName = cleanLabel(session.reactorName ?? '')
-  if (storedName && session.reactorNameOrigin === 'custom') {
-    return namedReactorIdentity(storedName)
-  }
-
-  const patreonIdentity = session.reactionPath ? derivePatreonIdentity(session.reactionPath) : null
-  if (patreonIdentity) {
-    return storedName ? { ...patreonIdentity, label: storedName } : patreonIdentity
-  }
-
-  const youtubeIdentity = session.reactionPath ? deriveYouTubeIdentity(session.reactionPath) : null
-  if (youtubeIdentity) {
-    return storedName ? { ...youtubeIdentity, label: storedName } : youtubeIdentity
-  }
-
-  if (storedName) return namedReactorIdentity(storedName)
-  return unknownReactor
+export function deriveReactorIdentity(
+  session: LibrarySession,
+  reactors: readonly ReactorProfile[] = []
+): LibraryIdentity {
+  const identity = deriveProfileReactorIdentity(session, reactors)
+  return { key: identity.key, label: identity.label, known: identity.known }
 }
 
-function namedReactorIdentity(name: string): LibraryIdentity {
-  return {
-    key: `named:${normalizeLabel(name)}`,
-    label: name,
-    known: true
-  }
-}
-
-function deriveYouTubeIdentity(reactionPath: string): LibraryIdentity | null {
-  const segments = reactionPath.split(/[\\/]/).filter(Boolean)
-  if (segments.length < 4) return null
-
-  const creatorFolder = cleanLabel(segments.at(-2) ?? '')
-  const sourceFolder = segments.at(-4)?.toLocaleLowerCase()
-  if (sourceFolder !== 'youtube') return null
-
-  const separatorIndex = creatorFolder.indexOf(' - ')
-  if (separatorIndex <= 0) return null
-  const channelId = cleanLabel(creatorFolder.slice(0, separatorIndex))
-  const channelName = cleanLabel(creatorFolder.slice(separatorIndex + 3))
-  if (!channelId || !channelName) return null
-
-  return {
-    key: `youtube:${normalizeLabel(channelId)}`,
-    label: channelName,
-    known: true
-  }
-}
-
-export function pairingDisplayTitle(session: LibrarySession): string {
+export function pairingDisplayTitle(session: LibrarySession, reactors: readonly ReactorProfile[] = []): string {
   const explicitTitle = cleanLabel(session.title)
   if (explicitTitle && session.titleOrigin === 'custom') {
     return stripMediaExtension(explicitTitle)
   }
 
   const movie = deriveMovieIdentity(session)
-  const reactor = deriveReactorIdentity(session)
+  const reactor = deriveReactorIdentity(session, reactors)
   if (movie.known && reactor.known) {
     return `${movie.label} — ${reactor.label}`
   }
@@ -144,23 +98,27 @@ export function pairingDisplayTitle(session: LibrarySession): string {
 
 export function sortPairings(
   sessions: LibrarySession[],
-  sort: LibrarySort = 'date-added'
+  sort: LibrarySort = 'date-added',
+  reactors: readonly ReactorProfile[] = []
 ): LibrarySession[] {
-  return [...sessions].sort((left, right) => compareSessions(left, right, pairingDisplayTitle, sort))
+  return [...sessions].sort((left, right) =>
+    compareSessions(left, right, (session) => pairingDisplayTitle(session, reactors), sort))
 }
 
 export function groupSessionsByMovie(
   sessions: LibrarySession[],
-  sort: LibrarySort = 'date-added'
+  sort: LibrarySort = 'date-added',
+  reactors: readonly ReactorProfile[] = []
 ): LibraryGroup[] {
-  return groupSessions(sessions, deriveMovieIdentity, deriveReactorIdentity, sort)
+  return groupSessions(sessions, deriveMovieIdentity, (session) => deriveReactorIdentity(session, reactors), sort)
 }
 
 export function groupSessionsByReactor(
   sessions: LibrarySession[],
-  sort: LibrarySort = 'date-added'
+  sort: LibrarySort = 'date-added',
+  reactors: readonly ReactorProfile[] = []
 ): LibraryGroup[] {
-  return groupSessions(sessions, deriveReactorIdentity, deriveMovieIdentity, sort)
+  return groupSessions(sessions, (session) => deriveReactorIdentity(session, reactors), deriveMovieIdentity, sort)
 }
 
 export function humanizeMediaName(pathOrName: string): string {
@@ -220,38 +178,6 @@ function compareSessions(
 
 function newestCreatedAt(group: LibraryGroup): number {
   return group.sessions.reduce((newest, session) => Math.max(newest, safeTimestamp(session.createdAt)), 0)
-}
-
-function derivePatreonIdentity(reactionPath: string): LibraryIdentity | null {
-  const segments = reactionPath.split(/[\\/]/).filter(Boolean)
-  let postsIndex = -1
-  for (let index = segments.length - 1; index >= 0; index -= 1) {
-    if (segments[index].toLocaleLowerCase() === 'posts') {
-      postsIndex = index
-      break
-    }
-  }
-  if (postsIndex < 1) {
-    return null
-  }
-
-  const campaignFolder = cleanLabel(segments[postsIndex - 1])
-  const separatorIndex = campaignFolder.indexOf(' - ')
-  if (separatorIndex <= 0) {
-    return null
-  }
-
-  const vanity = cleanLabel(campaignFolder.slice(0, separatorIndex))
-  const campaignName = cleanLabel(campaignFolder.slice(separatorIndex + 3))
-  if (!vanity || !campaignName) {
-    return null
-  }
-
-  return {
-    key: `patreon:${normalizeLabel(vanity)}`,
-    label: campaignName,
-    known: true
-  }
 }
 
 function normalizePath(value: string): string {

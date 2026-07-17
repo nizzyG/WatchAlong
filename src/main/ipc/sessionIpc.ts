@@ -1,6 +1,13 @@
 import { existsSync } from 'node:fs'
 import { shell, type BrowserWindow } from 'electron'
-import type { LibrarySession, MediaFile, MediaRole, OpenVideosResult, ReactionSource } from '@shared/types'
+import type {
+  LibrarySession,
+  MediaFile,
+  MediaRole,
+  OpenVideosResult,
+  ReactionSource,
+  ReactorAssignmentRequest
+} from '@shared/types'
 import { IPC_PREFIX } from '../constants'
 import { createSessionMediaUrl } from '../mediaProtocol'
 import { pickMovieWindowSessionPatch, pickRendererSessionPatch } from '../sessionPatch'
@@ -65,6 +72,12 @@ export function registerSessionIpc(deps: {
   handleTrustedIpc(`${IPC_PREFIX}:delete-session`, MAIN_RENDERER, (_event, id: string) => sessionStore.deleteSession(id))
   handleTrustedIpc(`${IPC_PREFIX}:rename-session`, MAIN_RENDERER, (_event, id: string, title: string, reactorName?: string) =>
     sessionStore.renameSession(id, title, reactorName))
+  handleTrustedIpc(
+    `${IPC_PREFIX}:assign-session-reactor`,
+    MAIN_RENDERER,
+    (_event, id: string, assignment: ReactorAssignmentRequest) =>
+      sessionStore.assignSessionReactor(id, assignment)
+  )
   handleTrustedIpc(`${IPC_PREFIX}:choose-movie-poster`, MAIN_RENDERER, async (event, sessionId: unknown) => {
     const session = isSafeSessionIdInput(sessionId) ? sessionStore.getSession(sessionId) : null
     if (!session?.moviePath) return null

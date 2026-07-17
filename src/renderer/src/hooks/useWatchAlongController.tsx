@@ -78,7 +78,7 @@ export function useWatchAlongController({
     showWelcome, setShowWelcome, wizardDimmed,
     setWizardDimmed, commandPanelOpen, setCommandPanelOpen, expandedPanelSection,
     setExpandedPanelSection, patreonStatus, setPatreonStatus, renameTargetId, setRenameTargetId,
-    renameDraft, setRenameDraft, renameReactorDraft, setRenameReactorDraft, deleteTarget, setDeleteTarget
+    renameDraft, setRenameDraft, deleteTarget, setDeleteTarget
   } = sessionState
   const { subtitleCues, setSubtitleCues } = subtitles
   const { setDownloadIndicator, setDownloadEvents } = downloads
@@ -746,7 +746,7 @@ export function useWatchAlongController({
     attachDownloadedReaction, closeCommandPanel, toggleCommandPanel, movePanelFocus,
     openLocalReaction, handleDownloadedReaction, switchSession, chooseMoviePoster, clearMoviePoster,
     requestRenameSession,
-    cancelRenameSession, confirmRenameSession, requestDeleteSession, cancelDeleteSession,
+    cancelRenameSession, confirmRenameSession, confirmReactorAssignment, requestDeleteSession, cancelDeleteSession,
     confirmDeleteSession, openSubtitle, clearSubtitle
   } = useSessionActions({
     playback, sessionState, subtitles, downloads, autoSync, activeSession, wizardSwapMovieMomentRef,
@@ -788,7 +788,7 @@ export function useWatchAlongController({
     selectMovieAudioTrack,
     detectSyncAgain, nudgeOffset, setReactorSource, setMovieRateCorrection, clearSubtitle, closeCommandPanel,
     attachDownloadedReaction, updatePreference, chooseDownloadDirectory, forgetPatreonSession,
-    cancelRenameSession, confirmRenameSession, cancelDeleteSession, confirmDeleteSession,
+    cancelRenameSession, confirmRenameSession, confirmReactorAssignment, cancelDeleteSession, confirmDeleteSession,
     useManualSyncDuringRollIn, startWelcomeImport
   }
 

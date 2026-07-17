@@ -198,8 +198,8 @@ describe('session media IPC capabilities', () => {
 
     expect(clearPoster({}, 'session-a')).toEqual({ ok: true })
     expect(sessionStore.setMoviePosterPath).toHaveBeenCalledWith('session-a', null)
-    expect(clearPoster({}, 'missing-session')).toEqual({ version: 6, activeSessionId: null, sessions: [] })
-    expect(clearPoster({}, 'bad/session')).toEqual({ version: 6, activeSessionId: null, sessions: [] })
+    expect(clearPoster({}, 'missing-session')).toEqual({ version: 7, activeSessionId: null, sessions: [], reactors: [] })
+    expect(clearPoster({}, 'bad/session')).toEqual({ version: 7, activeSessionId: null, sessions: [], reactors: [] })
     expect(sessionStore.setMoviePosterPath).toHaveBeenCalledTimes(1)
   })
 
@@ -252,7 +252,7 @@ function getHandler(channel: string): (...args: unknown[]) => any {
 
 function createSessionStore() {
   return {
-    read: vi.fn(() => ({ version: 6, activeSessionId: null, sessions: [] })),
+    read: vi.fn(() => ({ version: 7, activeSessionId: null, sessions: [], reactors: [] })),
     updateActive: vi.fn(() => ({ ok: true })),
     updateSession: vi.fn(() => ({ ok: true })),
     saveSessionPosition: vi.fn(() => ({ ok: true })),
@@ -262,6 +262,7 @@ function createSessionStore() {
     setActiveSession: vi.fn(() => ({ ok: true })),
     deleteSession: vi.fn(() => ({ ok: true })),
     renameSession: vi.fn(() => ({ ok: true })),
+    assignSessionReactor: vi.fn(() => ({ ok: true })),
     setMoviePosterPath: vi.fn(() => ({ ok: true })),
     getSession: vi.fn(() => null),
     getActiveSession: vi.fn(() => null),

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { SyncController } from './sync/SyncController'
 import { keyboardShortcutHelpGroups } from './keyboardShortcuts'
+import { normalizeLibrary } from '@shared/session'
 import type { BrowserAudioTrack, BrowserAudioTrackList } from './playback/audioTrackCapability'
 import type {
   AppPreferences,
@@ -23,11 +24,12 @@ const firstSession = createSession('s1', 'First', 0)
 const secondSession = createSession('s2', 'Second', 20)
 
 function createLibrary(activeSessionId: string | null = 's1', sessions: LibrarySession[] = [firstSession, secondSession]): SessionLibrary {
-  return {
-    version: 6,
+  return normalizeLibrary({
+    version: 7,
     activeSessionId,
-    sessions
-  }
+    sessions,
+    reactors: []
+  })
 }
 
 const defaultPreferences: AppPreferences = {
@@ -172,6 +174,31 @@ function createApi(
         sessions: currentLibrary.sessions.map((session) => (session.id === sessionId
           ? { ...session, title, reactorName: reactorName?.trim() || null, reactorNameOrigin: 'custom' as const }
           : session))
+      }
+      return currentLibrary
+    }),
+    assignSessionReactor: vi.fn(async (sessionId, assignment) => {
+      const targetProfile = assignment.target.type === 'existing'
+        ? currentLibrary.reactors.find((profile) => profile.id === assignment.target.reactorId) ?? null
+        : {
+            id: `reactor-test-${currentLibrary.reactors.length + 1}`,
+            name: assignment.target.name.trim(),
+            avatarPath: null,
+            externalIdentityKeys: [],
+            createdAt: '2026-07-17T00:00:00.000Z',
+            updatedAt: '2026-07-17T00:00:00.000Z'
+          }
+      if (!targetProfile) return currentLibrary
+      const source = currentLibrary.sessions.find((session) => session.id === sessionId)
+      const movingIds = new Set(assignment.scope === 'reactor' && source?.reactorId
+        ? currentLibrary.sessions.filter((session) => session.reactorId === source.reactorId).map((session) => session.id)
+        : [sessionId])
+      currentLibrary = {
+        ...currentLibrary,
+        reactors: [...currentLibrary.reactors.filter((profile) => profile.id !== targetProfile.id), targetProfile],
+        sessions: currentLibrary.sessions.map((session) => movingIds.has(session.id)
+          ? { ...session, reactorId: targetProfile.id, reactorName: targetProfile.name, reactorNameOrigin: 'custom' as const }
+          : session)
       }
       return currentLibrary
     }),
@@ -1911,12 +1938,9 @@ describe('App', () => {
     fireEvent.click(screen.getAllByRole('button', { name: /More actions for/ })[0])
     fireEvent.click(screen.getByRole('menuitem', { name: /Rename/i }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Renamed session' } })
-    fireEvent.change(screen.getByLabelText(/Reactor \(optional\)/i), { target: { value: 'Cinema Therapy' } })
-    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save title' }))
 
-    await waitFor(() => expect(api.renameSession).toHaveBeenCalledWith('s1', 'Renamed session', 'Cinema Therapy'))
-    fireEvent.click(screen.getByRole('button', { name: 'By Reactor' }))
-    expect(screen.getByRole('heading', { name: 'Cinema Therapy' })).toBeInTheDocument()
+    await waitFor(() => expect(api.renameSession).toHaveBeenCalledWith('s1', 'Renamed session'))
 
     fireEvent.click(screen.getAllByRole('button', { name: /More actions for/ })[0])
     fireEvent.click(screen.getByRole('menuitem', { name: /Delete/i }))
@@ -1996,7 +2020,7 @@ describe('App', () => {
     consoleError.mockRestore()
   })
 
-  it('submits an unchanged downloaded reactor name during a title-only rename', async () => {
+  it('keeps an unchanged downloaded reactor separate from a title-only rename', async () => {
     const session = createSession('s1', 'Movie — Downloaded Name', 0, {
       titleOrigin: 'generated',
       reactorName: 'Downloaded Name',
@@ -2010,12 +2034,11 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /More actions for/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: /Rename/i }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'My custom title' } })
-    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save title' }))
 
     await waitFor(() => expect(api.renameSession).toHaveBeenCalledWith(
       's1',
-      'My custom title',
-      'Downloaded Name'
+      'My custom title'
     ))
   })
 
@@ -2028,29 +2051,68 @@ describe('App', () => {
       reactorName: 'Cinema Therapy',
       reactorNameOrigin: 'custom'
     })
-    const api = createApi(createLibrary('s1', [target, familiarCreator]))
+    const library = createLibrary('s1', [target, familiarCreator])
+    const familiarProfile = library.reactors.find((profile) => profile.name === 'Cinema Therapy')!
+    const api = createApi(library)
     window.watchAlong = api
 
     render(<App />)
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
     const actionsTrigger = screen.getByRole('button', { name: 'More actions for Target pairing' })
     fireEvent.click(actionsTrigger)
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit reactor' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Change reactor…' }))
 
-    expect(screen.getByRole('dialog', { name: 'Edit reactor' })).toBeInTheDocument()
-    const creatorPicker = screen.getByRole('combobox', { name: 'Choose from your library' })
-    expect(creatorPicker).toHaveFocus()
-    expect(screen.getByRole('option', { name: 'Downloaded Name' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Cinema Therapy' })).toBeInTheDocument()
-    fireEvent.change(creatorPicker, { target: { value: 'Cinema Therapy' } })
-    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }))
+    expect(screen.getByRole('dialog', { name: 'Change reactor' })).toBeInTheDocument()
+    const creatorChoice = screen.getByRole('radio', { name: /Cinema Therapy/ })
+    expect(creatorChoice).toHaveFocus()
+    fireEvent.click(creatorChoice)
+    fireEvent.click(screen.getByRole('button', { name: 'Use this reactor' }))
 
-    await waitFor(() => expect(api.renameSession).toHaveBeenCalledWith(
+    await waitFor(() => expect(api.assignSessionReactor).toHaveBeenCalledWith(
       's1',
-      'Target pairing',
-      'Cinema Therapy'
+      { target: { type: 'existing', reactorId: familiarProfile.id }, scope: 'session' }
     ))
     await waitFor(() => expect(actionsTrigger).toHaveFocus())
+  })
+
+  it('merges every pairing on a split reactor shelf in one natural move', async () => {
+    const robinHood = createSession('robin', 'Robin Hood pairing', 0, {
+      reactorName: 'Hold Down A',
+      reactorNameOrigin: 'custom',
+      reactionSource: 'youtube',
+      reactionPath: 'C:\\Reactions\\youtube\\job-ames\\UC-AMES - Ames Video Store\\Robin Hood.mp4',
+      moviePath: 'C:\\Movies\\Robin Hood.mp4'
+    })
+    const lifeOfBrian = createSession('brian', 'Life of Brian pairing', 0, {
+      reactorName: 'Hold Down A',
+      reactorNameOrigin: 'custom',
+      reactionSource: 'youtube',
+      reactionPath: 'C:\\Reactions\\youtube\\job-ames\\UC-AMES - Ames Video Store\\Life of Brian.mp4',
+      moviePath: 'C:\\Movies\\Life of Brian.mp4'
+    })
+    const holyGrail = createSession('grail', 'Holy Grail pairing', 0, {
+      reactorName: 'Hold Down A',
+      reactorNameOrigin: 'metadata',
+      reactionSource: 'youtube',
+      reactionPath: 'C:\\Reactions\\youtube\\job-hda\\UC-HDA - Hold Down A\\Holy Grail.mp4',
+      moviePath: 'C:\\Movies\\Holy Grail.mp4'
+    })
+    const api = createApi(createLibrary(robinHood.id, [robinHood, lifeOfBrian, holyGrail]))
+    window.watchAlong = api
+
+    render(<App />)
+    expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'By Reactor' }))
+    expect(screen.getAllByRole('heading', { name: 'Hold Down A' })).toHaveLength(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'More actions for Robin Hood with Hold Down A' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Change reactor…' }))
+    fireEvent.click(screen.getByRole('radio', { name: /Hold Down A.*1 pairing/i }))
+    expect(screen.getByRole('checkbox', { name: /Move all 2 pairings together/i })).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Use this reactor' }))
+
+    await waitFor(() => expect(screen.getAllByRole('heading', { name: 'Hold Down A' })).toHaveLength(1))
+    expect(screen.getByText('3 pairings')).toBeInTheDocument()
   })
 
   it('renders unknown for invalid session timestamps', async () => {
@@ -2114,6 +2176,7 @@ function createSession(
     id,
     title,
     titleOrigin: 'custom',
+    reactorId: null,
     reactorName: null,
     reactorNameOrigin: 'metadata',
     reactionPath: `C:\\Videos\\${id}-reaction.mp4`,

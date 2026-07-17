@@ -98,6 +98,62 @@ describe('session helpers', () => {
     })
   })
 
+  it('migrates a local pairing into the one unambiguous matching downloaded reactor profile', () => {
+    const local = createDefaultSession(undefined, {
+      id: 'shanelle-local',
+      reactorName: "  Watch Along's with Shanelle  ",
+      reactorNameOrigin: 'custom',
+      reactionPath: 'C:\\Reactions\\Across the Universe local.mp4',
+      moviePath: 'C:\\Movies\\Across the Universe.mp4'
+    })
+    const youtube = createDefaultSession(undefined, {
+      id: 'shanelle-youtube',
+      reactorName: "Watch Along's with Shanelle",
+      reactorNameOrigin: 'metadata',
+      reactionSource: 'youtube',
+      reactionPath: "C:\\Reactions\\youtube\\job-1\\UC76BA - Watch Along's with Shanelle\\South Park.mp4",
+      moviePath: 'C:\\Movies\\South Park.mp4'
+    })
+
+    const migrated = normalizeLibrary({ version: 6, activeSessionId: local.id, sessions: [local, youtube] })
+
+    expect(migrated.reactors).toHaveLength(1)
+    expect(migrated.reactors[0]).toMatchObject({ name: "Watch Along's with Shanelle" })
+    expect(migrated.reactors[0].externalIdentityKeys).toEqual(expect.arrayContaining([
+      "named:watch along's with shanelle",
+      'youtube:uc76ba'
+    ]))
+    expect(new Set(migrated.sessions.map((session) => session.reactorId))).toEqual(
+      new Set([migrated.reactors[0].id])
+    )
+  })
+
+  it('keeps same-name channels separate when their stable provider ids conflict', () => {
+    const reassignedAmes = createDefaultSession(undefined, {
+      id: 'ames-as-hda',
+      reactorName: 'Hold Down A',
+      reactorNameOrigin: 'custom',
+      reactionSource: 'youtube',
+      reactionPath: 'C:\\Reactions\\youtube\\job-ames\\UC-AMES - Ames Video Store\\Robin Hood.mp4'
+    })
+    const realHoldDownA = createDefaultSession(undefined, {
+      id: 'real-hda',
+      reactorName: 'Hold Down A',
+      reactorNameOrigin: 'metadata',
+      reactionSource: 'youtube',
+      reactionPath: 'C:\\Reactions\\youtube\\job-hda\\UC-HDA - Hold Down A\\Holy Grail.mp4'
+    })
+
+    const migrated = normalizeLibrary({
+      version: 6,
+      activeSessionId: reassignedAmes.id,
+      sessions: [reassignedAmes, realHoldDownA]
+    })
+
+    expect(migrated.reactors.map((profile) => profile.name)).toEqual(['Hold Down A', 'Hold Down A'])
+    expect(new Set(migrated.sessions.map((session) => session.reactorId)).size).toBe(2)
+  })
+
   it('migrates legacy single-session data into a library', () => {
     const library = normalizeLibrary({
       reactionPath: 'C:\\Videos\\reaction.mp4',
@@ -107,7 +163,7 @@ describe('session helpers', () => {
       lastReactionTimeSeconds: 90
     })
 
-    expect(library.version).toBe(6)
+    expect(library.version).toBe(7)
     expect(library.sessions).toHaveLength(1)
     expect(library.activeSessionId).toBe(library.sessions[0].id)
     expect(library.sessions[0]).toMatchObject({
@@ -145,7 +201,7 @@ describe('session helpers', () => {
     })
 
     expect(migrated).toMatchObject({
-      version: 6,
+      version: 7,
       activeSessionId: 'legacy-session',
       sessions: [{ moviePosterPath: null, movieAudioTrackPreference: null }]
     })
@@ -173,13 +229,13 @@ describe('session helpers', () => {
       movieAudioTrackPreference: preference
     })
     const roundTripped = normalizeLibrary(JSON.parse(JSON.stringify({
-      version: 6,
+      version: 7,
       activeSessionId: session.id,
       sessions: [session]
     })))
 
     expect(migrated).toMatchObject({
-      version: 6,
+      version: 7,
       sessions: [{ movieAudioTrackPreference: null }]
     })
     expect(roundTripped.sessions[0].movieAudioTrackPreference).toEqual(preference)

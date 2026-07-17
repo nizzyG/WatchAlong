@@ -1,7 +1,8 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { createDefaultSession } from '@shared/session'
 import { SessionStore } from './sessionStore'
 
 describe('SessionStore media drafts', () => {
@@ -380,6 +381,73 @@ describe('SessionStore media drafts', () => {
     }
   })
 
+  it('consolidates a split cross-platform reactor and keeps the chosen profile picture', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'watchalong-reactor-merge-'))
+    try {
+      const libraryPath = join(dir, 'library.json')
+      const amesDirectory = join(dir, 'youtube', 'job-ames', 'UC-AMES - Ames Video Store')
+      const holdDownADirectory = join(dir, 'youtube', 'job-hda', 'UC-HDA - Hold Down A')
+      mkdirSync(amesDirectory, { recursive: true })
+      mkdirSync(holdDownADirectory, { recursive: true })
+      const amesAvatar = join(amesDirectory, 'reactor-avatar.jpg')
+      const holdDownAAvatar = join(holdDownADirectory, 'reactor-avatar.jpg')
+      writeFileSync(amesAvatar, 'ames-avatar')
+      writeFileSync(holdDownAAvatar, 'hold-down-a-avatar')
+
+      const customSessions = ['robin-hood', 'life-of-brian'].map((id) => createDefaultSession(undefined, {
+        id,
+        title: `${id} pairing`,
+        reactorName: 'Hold Down A',
+        reactorNameOrigin: 'custom',
+        reactionSource: 'youtube',
+        reactionPath: join(amesDirectory, `${id}.mp4`),
+        moviePath: join(dir, `${id}.mkv`)
+      }))
+      const trueSession = createDefaultSession(undefined, {
+        id: 'holy-grail',
+        title: 'Holy Grail pairing',
+        reactorName: 'Hold Down A',
+        reactorNameOrigin: 'metadata',
+        reactionSource: 'youtube',
+        reactionPath: join(holdDownADirectory, 'holy-grail.mp4'),
+        moviePath: join(dir, 'holy-grail.mkv')
+      })
+      writeFileSync(libraryPath, JSON.stringify({
+        version: 6,
+        activeSessionId: customSessions[0].id,
+        sessions: [...customSessions, trueSession]
+      }), 'utf8')
+      const store = new SessionStore(libraryPath, join(dir, 'session.json'))
+      const migrated = store.read()
+      const sourceProfile = migrated.reactors.find((profile) =>
+        profile.externalIdentityKeys.includes('youtube:uc-ames'))!
+      const targetProfile = migrated.reactors.find((profile) =>
+        profile.externalIdentityKeys.includes('youtube:uc-hda'))!
+
+      const merged = store.assignSessionReactor(customSessions[0].id, {
+        target: { type: 'existing', reactorId: targetProfile.id },
+        scope: 'reactor'
+      })
+
+      expect(sourceProfile.id).not.toBe(targetProfile.id)
+      expect(new Set(merged.sessions.map((session) => session.reactorId))).toEqual(new Set([targetProfile.id]))
+      expect(merged.reactors).toHaveLength(1)
+      expect(merged.reactors[0]).toMatchObject({
+        id: targetProfile.id,
+        name: 'Hold Down A',
+        avatarPath: holdDownAAvatar
+      })
+      expect(merged.reactors[0].externalIdentityKeys).toEqual(expect.arrayContaining([
+        'youtube:uc-hda',
+        'youtube:uc-ames'
+      ]))
+      expect(merged.reactors[0].avatarPath).not.toBe(amesAvatar)
+      expect(JSON.parse(readFileSync(libraryPath, 'utf8'))).toMatchObject({ version: 7 })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('resets automatic timing metadata when media is replaced', () => {
     const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
     try {
@@ -533,7 +601,7 @@ describe('SessionStore media drafts', () => {
 
       const migrated = store.read()
       expect(migrated).toMatchObject({
-        version: 6,
+        version: 7,
         activeSessionId: 'legacy-session',
         sessions: [{
           id: 'legacy-session',
@@ -547,7 +615,7 @@ describe('SessionStore media drafts', () => {
         movieAudioTrackPreference: { label: 'Original', language: 'eng', ordinal: 0 }
       })
       expect(JSON.parse(readFileSync(libraryPath, 'utf8'))).toMatchObject({
-        version: 6,
+        version: 7,
         sessions: [{
           id: 'legacy-session',
           moviePosterPath: 'C:\\Movies\\poster.png',
@@ -571,7 +639,7 @@ describe('SessionStore media drafts', () => {
       const recovered = store.read()
 
       expect(recovered.sessions).toHaveLength(2)
-      expect(JSON.parse(readFileSync(libraryPath, 'utf8'))).toMatchObject({ version: 6 })
+      expect(JSON.parse(readFileSync(libraryPath, 'utf8'))).toMatchObject({ version: 7 })
       const quarantine = readdirSync(dir).find((name) => name.startsWith('library.json.corrupt-'))
       expect(quarantine).toBeTruthy()
       expect(readFileSync(join(dir, quarantine!), 'utf8')).toBe('{"sessions": [')

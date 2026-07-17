@@ -16,6 +16,7 @@ import {
   resolveReactorAvatarPath
 } from './mediaProtocol'
 import { MAX_MOVIE_POSTER_BYTES } from './services/moviePosterFiles'
+import { resolveReactorProfileAvatarPath } from './services/reactorAvatarFiles'
 
 const tempDirs: string[] = []
 
@@ -90,7 +91,7 @@ describe('media protocol routing', () => {
       reactionSource: 'patreon'
     } as LibrarySession
     const sessionStore = {
-      getSession: (sessionId: string) => sessionId === session.id ? session : null
+      read: () => ({ version: 7 as const, activeSessionId: session.id, sessions: [session], reactors: [] })
     } as unknown as SessionStore
 
     registerMediaProtocol(sessionStore)
@@ -119,7 +120,7 @@ describe('media protocol routing', () => {
       moviePosterPath: null
     } as LibrarySession
     const sessionStore = {
-      getSession: (sessionId: string) => sessionId === session.id ? session : null
+      read: () => ({ version: 7 as const, activeSessionId: session.id, sessions: [session], reactors: [] })
     } as unknown as SessionStore
     const url = createSessionMediaUrl(session, 'movie-poster')
 
@@ -143,7 +144,7 @@ describe('media protocol routing', () => {
       moviePosterPath: null
     } as LibrarySession
     const sessionStore = {
-      getSession: (sessionId: string) => sessionId === session.id ? session : null
+      read: () => ({ version: 7 as const, activeSessionId: session.id, sessions: [session], reactors: [] })
     } as unknown as SessionStore
 
     registerMediaProtocol(sessionStore)
@@ -171,7 +172,7 @@ describe('media protocol routing', () => {
       moviePosterPath: null
     } as LibrarySession
     const sessionStore = {
-      getSession: (sessionId: string) => sessionId === session.id ? session : null
+      read: () => ({ version: 7 as const, activeSessionId: session.id, sessions: [session], reactors: [] })
     } as unknown as SessionStore
 
     registerMediaProtocol(sessionStore)
@@ -184,6 +185,84 @@ describe('media protocol routing', () => {
 })
 
 describe('reactor avatar resolution', () => {
+  it('shares a downloaded avatar with a local pairing in the same reactor profile', () => {
+    const tempDir = mkdtempSync(posix.join(tmpdir().replace(/\\/g, '/'), 'watchalong-shanelle-profile-'))
+    tempDirs.push(tempDir)
+    const youtubeDirectory = posix.join(
+      tempDir,
+      'youtube',
+      'job-shanelle',
+      "UC76 - Watch Along's with Shanelle"
+    )
+    const avatarPath = posix.join(youtubeDirectory, 'reactor-avatar.jpg')
+    mkdirSync(youtubeDirectory, { recursive: true })
+    writeFileSync(avatarPath, 'shanelle-avatar')
+    const profileId = 'reactor-shanelle'
+    const local = {
+      id: 'local-across',
+      reactorId: profileId,
+      reactionPath: posix.join(tempDir, 'Across local.mp4'),
+      reactionSource: 'local'
+    } as LibrarySession
+    const youtube = {
+      id: 'youtube-south-park',
+      reactorId: profileId,
+      reactionPath: posix.join(youtubeDirectory, 'South Park.mp4'),
+      reactionSource: 'youtube'
+    } as LibrarySession
+
+    expect(resolveReactorProfileAvatarPath({
+      sessions: [local, youtube],
+      reactors: [{
+        id: profileId,
+        name: "Watch Along's with Shanelle",
+        avatarPath: null,
+        externalIdentityKeys: ['youtube:uc76'],
+        createdAt: '2026-07-17T00:00:00.000Z',
+        updatedAt: '2026-07-17T00:00:00.000Z'
+      }]
+    }, profileId)).toBe(win32.normalize(avatarPath))
+  })
+
+  it('prefers a sidecar whose intrinsic source label matches the chosen profile', () => {
+    const tempDir = mkdtempSync(posix.join(tmpdir().replace(/\\/g, '/'), 'watchalong-hda-profile-'))
+    tempDirs.push(tempDir)
+    const amesDirectory = posix.join(tempDir, 'youtube', 'job-ames', 'UC-AMES - Ames Video Store')
+    const holdDownADirectory = posix.join(tempDir, 'youtube', 'job-hda', 'UC-HDA - Hold Down A')
+    mkdirSync(amesDirectory, { recursive: true })
+    mkdirSync(holdDownADirectory, { recursive: true })
+    const amesAvatar = posix.join(amesDirectory, 'reactor-avatar.jpg')
+    const holdDownAAvatar = posix.join(holdDownADirectory, 'reactor-avatar.jpg')
+    writeFileSync(amesAvatar, 'ames')
+    writeFileSync(holdDownAAvatar, 'hold-down-a')
+    const profileId = 'reactor-hda'
+    const reassignedAmes = {
+      id: 'newer-ames',
+      reactorId: profileId,
+      reactionPath: posix.join(amesDirectory, 'Robin Hood.mp4'),
+      reactionSource: 'youtube'
+    } as LibrarySession
+    const realHoldDownA = {
+      id: 'older-hda',
+      reactorId: profileId,
+      reactionPath: posix.join(holdDownADirectory, 'Holy Grail.mp4'),
+      reactionSource: 'youtube'
+    } as LibrarySession
+
+    expect(resolveReactorProfileAvatarPath({
+      sessions: [reassignedAmes, realHoldDownA],
+      reactors: [{
+        id: profileId,
+        name: 'Hold Down A',
+        avatarPath: null,
+        externalIdentityKeys: ['youtube:uc-ames', 'youtube:uc-hda'],
+        createdAt: '2026-07-17T00:00:00.000Z',
+        updatedAt: '2026-07-17T00:00:00.000Z'
+      }]
+    }, profileId)).toBe(win32.normalize(holdDownAAvatar))
+    expect(holdDownAAvatar).not.toBe(amesAvatar)
+  })
+
   it('derives Patreon campaign-info avatars from Windows paths', () => {
     const reactionPath = String.raw`C:\Users\viewer\Videos\WatchAlong\Reactions\patreon\job-1\creator - Creator Name\posts\123 - Post\video\reaction.mp4`
     const candidates = getReactorAvatarCandidates({ reactionPath, reactionSource: 'patreon' })

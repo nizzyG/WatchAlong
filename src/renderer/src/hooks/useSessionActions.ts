@@ -5,12 +5,12 @@ import type {
   ImportWizardLaunchOptions,
   LibrarySession,
   MediaRole,
+  ReactorAssignmentRequest,
   ReplaceSessionMediaResult,
   SessionLibrary
 } from '@shared/types'
 import type { DownloadedReactionMetadata } from '../components/SmartReactionInput'
 import type { RenameSessionFocus } from '../components/RenameSessionDialog'
-import { deriveReactorIdentity } from '../components/libraryPresentation'
 import { buildSuggestedPairingTitle } from '../components/pairingTitle'
 import type { MoviePosterActionResult } from '../moviePosterActions'
 import { TimelineMapping } from '../sync/timeline'
@@ -109,8 +109,6 @@ export function useSessionActions({
     setRenameInitialFocus,
     renameDraft,
     setRenameDraft,
-    renameReactorDraft,
-    setRenameReactorDraft,
     deleteTarget,
     setDeleteTarget
   } = sessionState
@@ -491,35 +489,30 @@ export function useSessionActions({
   ): void => {
     rememberSessionDialogReturnFocus(returnFocusTarget)
     const current = library.sessions.find((item) => item.id === sessionId)
-    const currentReactor = current ? deriveReactorIdentity(current) : null
     setRenameTargetId(sessionId)
     setRenameInitialFocus(initialFocus)
     setRenameDraft(current?.title ?? '')
-    setRenameReactorDraft(current?.reactorName ?? (currentReactor?.known ? currentReactor.label : ''))
   }
 
   const cancelRenameSession = (): void => {
     setRenameTargetId(null)
     setRenameInitialFocus('title')
     setRenameDraft('')
-    setRenameReactorDraft('')
     restoreSessionDialogFocus()
   }
 
   const confirmRenameSession = async (): Promise<void> => {
     if (!renameTargetId || !renameDraft.trim()) return
-    const current = library.sessions.find((item) => item.id === renameTargetId)
-    const currentReactor = current ? deriveReactorIdentity(current) : null
-    const reactorDraft = renameReactorDraft.trim()
-    const reactorUpdate = current?.reactorName == null && currentReactor?.known &&
-      normalizeReactorDraft(reactorDraft) === normalizeReactorDraft(currentReactor.label)
-      ? undefined
-      : reactorDraft
     commitLibrary(await window.watchAlong.renameSession(
       renameTargetId,
-      renameDraft.trim(),
-      reactorUpdate
+      renameDraft.trim()
     ))
+    cancelRenameSession()
+  }
+
+  const confirmReactorAssignment = async (assignment: ReactorAssignmentRequest): Promise<void> => {
+    if (!renameTargetId) return
+    commitLibrary(await window.watchAlong.assignSessionReactor(renameTargetId, assignment))
     cancelRenameSession()
   }
 
@@ -603,16 +596,13 @@ export function useSessionActions({
     requestRenameSession,
     cancelRenameSession,
     confirmRenameSession,
+    confirmReactorAssignment,
     requestDeleteSession,
     cancelDeleteSession,
     confirmDeleteSession,
     openSubtitle,
     clearSubtitle
   }
-}
-
-function normalizeReactorDraft(value: string): string {
-  return value.normalize('NFKC').toLocaleLowerCase()
 }
 
 function isVisibleCommandPanelControl(element: HTMLElement): boolean {

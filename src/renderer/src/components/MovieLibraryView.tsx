@@ -1,10 +1,11 @@
-import type { LibrarySession } from '@shared/types'
+import type { LibrarySession, ReactorProfile } from '@shared/types'
 import { LibrarySessionCard } from './LibrarySessionCard'
 import { MoviePoster } from './MoviePoster'
 import { deriveReactorIdentity, groupSessionsByMovie, type LibrarySort } from './libraryPresentation'
 
 export function MovieLibraryView({
   sessions,
+  reactors,
   sort,
   compact,
   onOpenSession,
@@ -15,6 +16,7 @@ export function MovieLibraryView({
   onDelete
 }: {
   sessions: LibrarySession[]
+  reactors: ReactorProfile[]
   sort: LibrarySort
   compact: boolean
   onOpenSession(sessionId: string): void
@@ -26,7 +28,7 @@ export function MovieLibraryView({
 }): JSX.Element {
   return (
     <div className={`movie-library-grid ${compact ? 'movie-library-grid-compact' : ''}`}>
-      {groupSessionsByMovie(sessions, sort).map((group, index) => {
+      {groupSessionsByMovie(sessions, sort, reactors).map((group, index) => {
         const headingId = `library-movie-group-${index}`
         const representative = group.sessions[0]
         const posterRepresentative = group.sessions.find((session) => session.moviePosterPath) ?? representative
@@ -41,7 +43,7 @@ export function MovieLibraryView({
             </header>
             <div className="movie-shelf-pairings" aria-label={`Reactions for ${group.label}`}>
               {group.sessions.map((session) => {
-                const reactor = deriveReactorIdentity(session)
+                const reactor = deriveReactorIdentity(session, reactors)
                 return (
                   <LibrarySessionCard
                     key={session.id}

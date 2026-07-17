@@ -8,6 +8,7 @@ describe('renderer session patch allowlist', () => {
       movieAudioTrackPreference: { label: 'Indonesian (5.1)', language: 'ind', ordinal: 1 },
       reactorName: 'Cinema Therapy',
       reactorNameOrigin: 'metadata',
+      reactorId: 'reactor-attacker-controlled',
       isPipHidden: true,
       overlay: { x: 0.4, y: 0.3, width: 0.25, height: 0.25 },
       id: 'replacement-id',
