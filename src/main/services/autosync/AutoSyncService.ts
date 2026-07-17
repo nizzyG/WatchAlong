@@ -20,27 +20,24 @@ import type { HoughConsensus } from './houghVoting'
 import {
   findInsetGeometry,
   generateCompactCornerCandidates,
-  generateGeometryCandidates,
   refineGeometryCandidates,
   type InsetGeometry,
-  type InsetGeometryResult,
   type TimedPixelFrame
 } from './insetGeometry'
 import {
   findSequenceMatchCandidates,
   matchSequence,
-  sequenceActivity,
-  selectBurstWeightedMatches,
   type AutoSyncAnchor,
   type SequenceMatchCandidate,
   type TimedSignature
 } from './matching'
 import {
-  detectSustainedOpeningMotion,
-  expandOpeningCandidatePositions,
-  generateOpeningInsetCandidates,
+  findOpeningMotionOffset as resolveOpeningMotionOffset,
+  findOpeningPrefixInset,
   openingEvidenceStats,
-  signatureWindow
+  offsetStatsForRate,
+  scanOpeningTimelines as scanOpeningTimelineEvidence,
+  type DetectedInset
 } from './openingFallback'
 import { applySignatureMask, createFrameSignature, type SignatureCellMask } from './signatures'
 import type { AutoSyncMediaBackend, MediaInfo } from './ffmpegBackend'
@@ -59,13 +56,8 @@ import {
   MIN_PARTIAL_GEOMETRY_CONFIDENCE,
   MIN_STRONG_OPENING_ANCHORS,
   MIN_STRONG_OPENING_SPAN_SECONDS,
-  OFFSET_DECIMAL_PLACES,
   OPENING_CORROBORATION_TOLERANCE_SECONDS,
-  OPENING_MOTION_SCAN,
   OPENING_PARTIAL_FLOOR,
-  OPENING_PREFIX_SCAN,
-  OPENING_PROBE_TIMES,
-  OPENING_SCAN,
   PARTIAL_CONFIDENCE_CAP,
   PARTIAL_OFFSET_AGREEMENT_SECONDS,
   PROBE_FRACTIONS,
@@ -96,20 +88,6 @@ export interface AutoSyncAnalysisOptions {
   intent: AutoSyncIntent
   snapshot?: LibrarySession
   signal?: AbortSignal
-}
-
-interface DetectedInset {
-  geometry: InsetGeometry
-  mask: SignatureCellMask | null
-  confidence: number
-  initialOffsetSeconds: number
-  referenceReactionTime: number
-  referenceMovieTime: number
-  anchors: AutoSyncAnchor[]
-  anchorCount: number
-  runnerUpScore: number
-  openingOnly: boolean
-  openingMotionOffset: number | null
 }
 
 export class AutoSyncService {
@@ -287,7 +265,7 @@ export class AutoSyncService {
       gridSize: GEOMETRY_SCAN.gridSize,
       minimumConfidence: GEOMETRY_SCAN.minimumConfidence
     }
-    let first: InsetGeometryResult | DetectedInset | null = findInsetGeometry(reactionFrames, movie, geometryOptions) ?? findInsetGeometry(reactionFrames, movie, {
+    const first = findInsetGeometry(reactionFrames, movie, geometryOptions) ?? findInsetGeometry(reactionFrames, movie, {
       ...geometryOptions,
       candidates: generateCompactCornerCandidates(
         reactionInfo.width / reactionInfo.height,
@@ -298,79 +276,18 @@ export class AutoSyncService {
     // near the opening timer. Retry on progressively tighter prefixes so the
     // limited honest evidence receives enough probes to identify its crop.
     if (!first) {
-      const openingCandidates = expandOpeningCandidatePositions(generateGeometryCandidates(
-        reactionInfo.width / reactionInfo.height,
-        movieInfo.width / movieInfo.height
-      ).filter((candidate) =>
-        candidate.width <= GEOMETRY_SCAN.openingCandidateMaximumWidth &&
-        candidate.height <= GEOMETRY_SCAN.openingCandidateMaximumHeight
-      ))
-      const [timerReactionFrames, timerMovieFrames] = await Promise.all([
-        this.extractPixelFrames(
-          session.reactionPath!, 0,
-          Math.min(OPENING_PREFIX_SCAN.timerReactionDurationSeconds, reactionInfo.duration), fps,
-          OPENING_PREFIX_SCAN.timerReactionWidth, OPENING_PREFIX_SCAN.timerReactionHeight, signal
-        ),
-        this.extractPixelFrames(
-          session.moviePath!, 0,
-          Math.min(OPENING_PREFIX_SCAN.timerMovieDurationSeconds, movieInfo.duration), fps,
-          OPENING_PREFIX_SCAN.timerMovieWidth, OPENING_PREFIX_SCAN.timerMovieHeight, signal
-        )
-      ])
-      const timerMovie = timerMovieFrames.map((frame) => ({
-        time: frame.time,
-        signature: createFrameSignature(frame, { gridSize: OPENING_PREFIX_SCAN.timerGridSize })
-      }))
-      for (const prefixSeconds of OPENING_PREFIX_SCAN.prefixSeconds) {
-        const prefixReaction = reactionFrames.filter((frame) => frame.time <= prefixSeconds)
-        const prefixMovie = movie.filter((frame) => frame.time <= Math.min(
-          OPENING_PREFIX_SCAN.prefixMovieMaximumSeconds,
-          prefixSeconds - OPENING_PREFIX_SCAN.prefixMovieLeadSeconds
-        ))
-        const prefixResults = [findInsetGeometry(prefixReaction, prefixMovie, {
-          ...geometryOptions,
-          candidates: openingCandidates
-        }), findInsetGeometry(prefixReaction, prefixMovie, {
-          ...geometryOptions,
-          candidates: generateCompactCornerCandidates(
-            reactionInfo.width / reactionInfo.height,
-            movieInfo.width / movieInfo.height
-          )
-        }), prefixSeconds === OPENING_PREFIX_SCAN.timerPrefixSeconds
-          ? findInsetGeometry(timerReactionFrames, timerMovie, {
-          ...geometryOptions,
-          gridSize: OPENING_PREFIX_SCAN.timerGridSize,
-          minimumConfidence: OPENING_PREFIX_SCAN.minimumConfidence,
-          minimumAnchors: OPENING_PREFIX_SCAN.minimumAnchors,
-            candidates: generateOpeningInsetCandidates()
-          })
-          : null].filter((result): result is NonNullable<typeof result> => Boolean(result))
-
-        const validated: DetectedInset[] = []
-        for (const result of prefixResults) {
-          const coarse = offsetStatsForRate(result.anchors, 1)
-          if (!coarse || coarse.count < OPENING_PREFIX_SCAN.minimumAnchors ||
-            coarse.maximumDeviation > OPENING_PREFIX_SCAN.maximumOffsetDeviationSeconds) continue
-          const candidate: DetectedInset = {
-            ...result,
-            openingOnly: true,
-            openingMotionOffset: null
-          }
-          const motionOffset = await this.findOpeningMotionOffset(session, candidate, signal)
-          if (motionOffset === null ||
-            Math.abs(motionOffset - coarse.offsetSeconds) > OPENING_PREFIX_SCAN.maximumMotionDisagreementSeconds) continue
-          validated.push({ ...candidate, openingMotionOffset: motionOffset })
-        }
-        validated.sort((left, right) =>
-          right.anchors.length - left.anchors.length ||
-          right.confidence - left.confidence
-        )
-        first = validated[0] ?? null
-        if (first) break
-      }
+      return findOpeningPrefixInset(
+        session,
+        movieInfo,
+        reactionInfo,
+        reactionFrames,
+        movie,
+        geometryOptions,
+        signal,
+        (...args) => this.extractPixelFrames(...args),
+        (...args) => this.findOpeningMotionOffset(...args)
+      )
     }
-    if (!first) return null
-    if ('openingOnly' in first && first.openingOnly) return first
     const refinedCandidates = refineGeometryCandidates(first.geometry, reactionInfo.width / reactionInfo.height, movieInfo.width / movieInfo.height)
     const refined = findInsetGeometry(reactionFrames, movie, {
       movieAspectRatio: movieInfo.width / movieInfo.height,
@@ -392,51 +309,14 @@ export class AutoSyncService {
     intro: DetectedInset,
     signal: AbortSignal
   ): Promise<AnchorMatchSet> {
-    const fps = OPENING_SCAN.fps
-    const openingMovieDuration = Math.min(OPENING_SCAN.maximumMovieDurationSeconds, movieInfo.duration)
-    const coarseOffset = offsetStatsForRate(intro.anchors, 1)?.offsetSeconds ?? intro.initialOffsetSeconds
-    const predictedReactionStart = Math.max(0, -coarseOffset - OPENING_SCAN.reactionPrerollSeconds)
-    const reactionDuration = Math.min(
-      openingMovieDuration + OPENING_SCAN.reactionTailSeconds,
-      Math.max(0, reactionInfo.duration - predictedReactionStart)
+    return scanOpeningTimelineEvidence(
+      session,
+      movieInfo,
+      reactionInfo,
+      intro,
+      signal,
+      (...args) => this.extractSignatures(...args)
     )
-    if (reactionDuration < OPENING_SCAN.minimumReactionDurationSeconds) return { anchors: [], consensus: null }
-
-    const [reaction, movie] = await Promise.all([
-      this.extractSignatures(
-        session.reactionPath!, predictedReactionStart, reactionDuration, fps,
-        OPENING_SCAN.reactionWidth, OPENING_SCAN.reactionHeight,
-        intro.geometry, signal, OPENING_SCAN.gridSize, intro.mask
-      ),
-      this.extractSignatures(
-        session.moviePath!, 0, openingMovieDuration, fps,
-        OPENING_SCAN.movieWidth, OPENING_SCAN.movieHeight,
-        undefined, signal, OPENING_SCAN.gridSize
-      )
-    ])
-    const candidateGroups: SequenceMatchCandidate[][] = []
-    for (const movieTime of OPENING_PROBE_TIMES) {
-      if (movieTime >= openingMovieDuration - OPENING_SCAN.probeEndMarginSeconds) continue
-      const window = signatureWindow(reaction, movieTime - coarseOffset, OPENING_SCAN.windowSize)
-      if (window.length < OPENING_SCAN.windowSize ||
-        sequenceActivity(window) < OPENING_SCAN.minimumSequenceActivity) continue
-      const candidates = findSequenceMatchCandidates(window, movie, {
-        candidateExclusionFrames: OPENING_SCAN.candidateExclusionFrames,
-        maximumCandidatesPerProbe: OPENING_SCAN.maximumCandidatesPerProbe
-      }).filter((candidate) =>
-        candidate.rawSimilarity >= OPENING_SCAN.minimumCandidateRawSimilarity &&
-        Math.abs((candidate.movieTime - candidate.reactionTime) - coarseOffset) <=
-          OPENING_SCAN.candidateOffsetToleranceSeconds
-      )
-      if (candidates.length) candidateGroups.push(candidates)
-    }
-    const anchors = selectBurstWeightedMatches(candidateGroups, {
-      runnerUpExclusionFrames: OPENING_SCAN.runnerUpExclusionFrames
-    }).filter((anchor) =>
-      anchor.confidence >= OPENING_SCAN.minimumAnchorConfidence &&
-      (anchor.rawSimilarity ?? 0) >= OPENING_SCAN.minimumAnchorRawSimilarity
-    )
-    return { anchors, consensus: null }
   }
 
   private async findOpeningMotionOffset(
@@ -444,16 +324,12 @@ export class AutoSyncService {
     intro: DetectedInset,
     signal: AbortSignal
   ): Promise<number | null> {
-    const predictedStart = -intro.initialOffsetSeconds
-    if (!Number.isFinite(predictedStart) || predictedStart < 0) return null
-    const start = Math.max(0, predictedStart - OPENING_MOTION_SCAN.prerollSeconds)
-    const signatures = await this.extractSignatures(
-      session.reactionPath!, start, OPENING_MOTION_SCAN.durationSeconds, OPENING_MOTION_SCAN.fps,
-      OPENING_MOTION_SCAN.width, OPENING_MOTION_SCAN.height,
-      intro.geometry, signal, OPENING_MOTION_SCAN.gridSize, intro.mask
+    return resolveOpeningMotionOffset(
+      session,
+      intro,
+      signal,
+      (...args) => this.extractSignatures(...args)
     )
-    const motionStart = detectSustainedOpeningMotion(signatures, predictedStart)
-    return motionStart === null ? null : Number((-motionStart).toFixed(OPENING_MOTION_SCAN.resultDecimalPlaces))
   }
 
   private async scanTimelines(
@@ -669,17 +545,6 @@ export class AutoSyncService {
       percent: Math.min(AUTO_SYNC_PROGRESS.maximum, Math.max(0, percent)),
       message
     })
-  }
-}
-
-function offsetStatsForRate(anchors: AutoSyncAnchor[], rate: number): { offsetSeconds: number; maximumDeviation: number; count: number } | null {
-  if (!anchors.length) return null
-  const values = anchors.map((anchor) => anchor.movieTime - rate * anchor.reactionTime).sort((a, b) => a - b)
-  const offsetSeconds = values[Math.floor(values.length / 2)]
-  return {
-    offsetSeconds: Number(offsetSeconds.toFixed(OFFSET_DECIMAL_PLACES)),
-    maximumDeviation: Math.max(...values.map((value) => Math.abs(value - offsetSeconds))),
-    count: values.length
   }
 }
 
