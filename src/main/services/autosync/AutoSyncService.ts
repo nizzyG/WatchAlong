@@ -8,14 +8,14 @@ import type {
 } from '@shared/types'
 import { clamp } from '@shared/numeric'
 import { captureTimingSnapshot, isTimingSnapshotCurrent } from '@shared/sessionTiming'
+import { isConfidentFit, type AutoSyncFit } from './fitting'
 import {
-  fitAnchors,
-  isConfidentFit,
-  isReliableConsensusEvidence,
-  type AutoSyncFit,
-  type FitConsensusEvidence
-} from './fitting'
-import { voteForTemporalConsensus, type HoughConsensus, type HoughVotingOptions } from './houghVoting'
+  choosePreferredFit,
+  fitMatchSet,
+  resolveCandidateGroups,
+  type AnchorMatchSet
+} from './fitResolution'
+import type { HoughConsensus } from './houghVoting'
 import {
   findInsetGeometry,
   generateCompactCornerCandidates,
@@ -26,7 +26,6 @@ import {
   type TimedPixelFrame
 } from './insetGeometry'
 import {
-  applyBurstinessReweighting,
   findSequenceMatchCandidates,
   matchSequence,
   sequenceActivity,
@@ -50,7 +49,6 @@ import {
   BODY_SCAN,
   COARSE_RATE_BAND,
   DEFAULT_SIGNATURE_GRID_SIZE,
-  FIT_DEFAULTS,
   GEOMETRY_SCAN,
   MAX_OPENING_ELIGIBLE_DEVIATION_SECONDS,
   MAX_PARTIAL_DEVIATION_SECONDS,
@@ -111,11 +109,6 @@ interface DetectedInset {
   runnerUpScore: number
   openingOnly: boolean
   openingMotionOffset: number | null
-}
-
-interface AnchorMatchSet {
-  anchors: AutoSyncAnchor[]
-  consensus: HoughConsensus | null
 }
 
 export class AutoSyncService {
@@ -749,50 +742,6 @@ function offsetStatsForRate(anchors: AutoSyncAnchor[], rate: number): { offsetSe
     maximumDeviation: Math.max(...values.map((value) => Math.abs(value - offsetSeconds))),
     count: values.length
   }
-}
-
-function resolveCandidateGroups(
-  candidateGroups: SequenceMatchCandidate[][],
-  houghOptions: HoughVotingOptions,
-  runnerUpExclusionFrames: number,
-  minimumConfidence: number
-): AnchorMatchSet {
-  const weighted = applyBurstinessReweighting(candidateGroups)
-  const consensus = voteForTemporalConsensus(weighted, houghOptions)
-  if (consensus && isReliableConsensusEvidence(consensusEvidence(consensus))) {
-    return { anchors: consensus.anchors, consensus }
-  }
-  return {
-    anchors: selectBurstWeightedMatches(candidateGroups, { runnerUpExclusionFrames })
-      .filter((match) => match.confidence >= minimumConfidence),
-    consensus: null
-  }
-}
-
-function fitMatchSet(matched: AnchorMatchSet, movieDuration: number): AutoSyncFit | null {
-  if (!matched.consensus || matched.anchors.length < FIT_DEFAULTS.minimumAnchors) return null
-  return fitAnchors(matched.anchors, {
-    movieDuration,
-    seedAnchors: matched.consensus.anchors,
-    consensusEvidence: consensusEvidence(matched.consensus)
-  })
-}
-
-function consensusEvidence(consensus: HoughConsensus): FitConsensusEvidence {
-  return {
-    peakMargin: consensus.peakMargin,
-    supportFraction: consensus.supportFraction,
-    meanSimilarity: consensus.meanSimilarity,
-    meanSeedResidual: consensus.meanSeedResidual,
-    maximumSeedResidual: consensus.maximumSeedResidual
-  }
-}
-
-function choosePreferredFit(...fits: Array<AutoSyncFit | null>): AutoSyncFit | null {
-  return fits.filter((fit): fit is AutoSyncFit => Boolean(fit)).sort((a, b) =>
-    Number(isConfidentFit(b)) - Number(isConfidentFit(a)) ||
-    b.confidence - a.confidence
-  )[0] ?? null
 }
 
 function fallback(sessionId: string, message: string): AutoSyncCompleteEvent {
