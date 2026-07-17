@@ -31,7 +31,7 @@ describe('AutoSyncService', () => {
       movieRateCorrection: result.movieRateCorrection,
       timingOrigin: 'automatic',
       autoSyncAnalyzedAt: '2026-07-13T12:00:00.000Z',
-      autoSyncAlgorithmVersion: 2
+      autoSyncAlgorithmVersion: 3
     })
   }, 20000)
 
@@ -68,7 +68,7 @@ describe('AutoSyncService', () => {
       timingOrigin: 'automatic' as const,
       autoSyncConfidence: 0.93,
       autoSyncAnalyzedAt: '2026-07-01T12:00:00.000Z',
-      autoSyncAlgorithmVersion: 2
+      autoSyncAlgorithmVersion: 3
     }
     const session = createDefaultSession(new Date(), {
       id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4', ...knownTiming
@@ -79,6 +79,7 @@ describe('AutoSyncService', () => {
     const result = await service.analyze(session.id, { intent: 'recheck', snapshot: session })
 
     expect(result).toMatchObject({ outcome: 'partial', offsetSeconds: -30, movieRateCorrection: 0.999 })
+    expect(result.readyToPlay).toBeUndefined()
     expect(result.message).toContain('kept your existing timing')
     expect(repository.updates).toHaveLength(0)
     expect(repository.session).toMatchObject(knownTiming)
@@ -94,14 +95,152 @@ describe('AutoSyncService', () => {
     const result = await service.analyze(session.id, { intent: 'initial', snapshot: session })
 
     expect(result).toMatchObject({ outcome: 'partial', offsetSeconds: -30, movieRateCorrection: 1.001 })
+    expect(result.readyToPlay).toBeUndefined()
     expect(repository.updates).toHaveLength(1)
     expect(repository.session).toMatchObject({
       offsetSeconds: -30,
       movieRateCorrection: 1.001,
       timingOrigin: 'automatic',
       autoSyncConfidence: 0.69,
-      autoSyncAlgorithmVersion: 2
+      autoSyncAlgorithmVersion: 3
     })
+  })
+
+  it('recovers an opening-only reaction from corroborating visual anchors', async () => {
+    const session = createDefaultSession(new Date(), {
+      id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4'
+    })
+    const repository = new MemorySessions(session)
+    const service = openingRecoveryService(repository, -56, -57, [-56.125, -56])
+
+    const result = await service.analyze(session.id, { intent: 'initial', snapshot: session })
+
+    expect(result).toMatchObject({
+      outcome: 'partial', readyToPlay: true, offsetSeconds: -56, movieRateCorrection: 1, anchorCount: 4
+    })
+    expect(repository.updates).toHaveLength(1)
+    expect(repository.session).toMatchObject({ offsetSeconds: -56, timingOrigin: 'automatic' })
+  })
+
+  it('commits a strong opening result when an existing session is rechecked', async () => {
+    const session = createDefaultSession(new Date(), {
+      id: 'session-1',
+      moviePath: 'movie.mp4',
+      reactionPath: 'reaction.mp4',
+      offsetSeconds: 9,
+      movieRateCorrection: 1.001,
+      timingOrigin: 'manual'
+    })
+    const repository = new MemorySessions(session)
+    const service = openingRecoveryService(repository, -56, -57, [-56.125, -56])
+
+    const result = await service.analyze(session.id, { intent: 'recheck', snapshot: session })
+
+    expect(result).toMatchObject({
+      outcome: 'partial', readyToPlay: true, movieRateCorrection: 1.001, anchorCount: 4
+    })
+    expect(result.offsetSeconds).toBeCloseTo(-56.064, 6)
+    expect(repository.updates).toHaveLength(1)
+    expect(repository.session).toMatchObject({
+      offsetSeconds: result.offsetSeconds,
+      movieRateCorrection: 1.001,
+      timingOrigin: 'automatic',
+      autoSyncAlgorithmVersion: 3
+    })
+  })
+
+  it('discards a strong opening result when timing changes during the opening scan', async () => {
+    const session = createDefaultSession(new Date(), {
+      id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4'
+    })
+    const repository = new MemorySessions(session)
+    const service = openingRecoveryService(repository, -56, -57, [-56.125, -56])
+    let markOpeningStarted!: () => void
+    let releaseOpening!: (value: unknown) => void
+    const openingStarted = new Promise<void>((resolve) => { markOpeningStarted = resolve })
+    const pendingOpening = new Promise<unknown>((resolve) => { releaseOpening = resolve })
+    type AsyncInternal = (...args: never[]) => Promise<unknown>
+    const internals = service as unknown as Record<'scanOpeningTimelines', AsyncInternal>
+    vi.spyOn(internals, 'scanOpeningTimelines').mockImplementationOnce(async () => {
+      markOpeningStarted()
+      return pendingOpening
+    })
+
+    const analysis = service.analyze(session.id, { intent: 'recheck', snapshot: session })
+    await openingStarted
+    repository.session = { ...repository.session, detectedMovieFps: 25 }
+    releaseOpening({
+      anchors: [59, 62].map((reactionTime, index) => ({
+        reactionTime,
+        movieTime: reactionTime + [-56.125, -56][index],
+        confidence: 0.62,
+        score: 0.14,
+        runnerUpScore: 0.35,
+        rawSimilarity: 0.82
+      })),
+      consensus: null
+    })
+
+    const result = await analysis
+
+    expect(result).toMatchObject({ outcome: 'stale' })
+    expect(result.readyToPlay).toBeUndefined()
+    expect(repository.updates).toHaveLength(0)
+    expect(repository.session.detectedMovieFps).toBe(25)
+  })
+
+  it('does not treat opening motion as timing evidence by itself', async () => {
+    const session = createDefaultSession(new Date(), {
+      id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4'
+    })
+    const repository = new MemorySessions(session)
+    const service = openingRecoveryService(repository, -56, -57, [])
+
+    const result = await service.analyze(session.id, { intent: 'initial', snapshot: session })
+
+    expect(result.outcome).toBe('fallback')
+    expect(repository.updates).toHaveLength(0)
+  })
+
+  it('rejects opening visual evidence that conflicts with the detected onset', async () => {
+    const session = createDefaultSession(new Date(), {
+      id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4'
+    })
+    const repository = new MemorySessions(session)
+    const service = openingRecoveryService(repository, -56, -63, [-56.125, -56])
+
+    const result = await service.analyze(session.id, { intent: 'initial', snapshot: session })
+
+    expect(result.outcome).toBe('fallback')
+    expect(repository.updates).toHaveLength(0)
+  })
+
+  it('does not count the same opening moment twice across analysis passes', async () => {
+    const session = createDefaultSession(new Date(), {
+      id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4'
+    })
+    const repository = new MemorySessions(session)
+    const service = openingRecoveryService(repository, -56, -57, [-56, -56], [64, 64.25])
+
+    const result = await service.analyze(session.id, { intent: 'initial', snapshot: session })
+
+    expect(result.outcome).toBe('fallback')
+    expect(repository.updates).toHaveLength(0)
+  })
+
+  it('accepts three tightly agreeing opening probes without relying on generic motion', async () => {
+    const session = createDefaultSession(new Date(), {
+      id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4'
+    })
+    const repository = new MemorySessions(session)
+    const service = openingRecoveryService(
+      repository, -108, -106.5, [-105.625, -105.5, -105.625], [112, 120, 128], false
+    )
+
+    const result = await service.analyze(session.id, { intent: 'initial', snapshot: session })
+
+    expect(result).toMatchObject({ outcome: 'partial', readyToPlay: true, offsetSeconds: -105.625, anchorCount: 3 })
+    expect(repository.updates).toHaveLength(1)
   })
 
   it('discards a result when the media paths changed during analysis', async () => {
@@ -177,7 +316,7 @@ function partialResultService(repository: MemorySessions, candidateOffset: numbe
     runnerUpScore: 0.7
   }))
   type AsyncInternal = (...args: never[]) => Promise<unknown>
-  const internals = service as unknown as Record<'findGeometry' | 'scanTimelines' | 'refineAnchors', AsyncInternal>
+  const internals = service as unknown as Record<'findGeometry' | 'scanTimelines' | 'scanOpeningTimelines' | 'refineAnchors', AsyncInternal>
   vi.spyOn(internals, 'findGeometry').mockResolvedValue({
     geometry,
     mask: null,
@@ -188,9 +327,59 @@ function partialResultService(repository: MemorySessions, candidateOffset: numbe
     anchors
   })
   vi.spyOn(internals, 'scanTimelines').mockResolvedValue({ anchors: [], consensus: null, geometry, mask: null })
+  vi.spyOn(internals, 'scanOpeningTimelines').mockResolvedValue({ anchors: [], consensus: null })
   vi.spyOn(internals, 'refineAnchors')
     .mockResolvedValueOnce({ anchors: [], consensus: null })
     .mockResolvedValueOnce({ anchors, consensus: null })
+  return service
+}
+
+function openingRecoveryService(
+  repository: MemorySessions,
+  coarseOffset: number,
+  openingMotionOffset: number,
+  openingOffsets: number[],
+  openingReactionTimes = openingOffsets.map((_, index) => 59 + index * 3),
+  openingOnly = true
+): AutoSyncService {
+  const service = new AutoSyncService({
+    sessions: repository,
+    backend: new ProbeOnlyBackend(),
+    emitProgress: () => undefined,
+    emitComplete: () => undefined
+  })
+  const geometry = { x: 0.34, y: 0.67, width: 0.4, height: 0.24, flipHorizontal: false }
+  const makeAnchor = (reactionTime: number, offset: number) => ({
+    reactionTime,
+    movieTime: reactionTime + offset,
+    confidence: 0.62,
+    score: 0.14,
+    runnerUpScore: 0.35,
+    rawSimilarity: 0.82
+  })
+  const introAnchors = [64, 144].map((reactionTime) => makeAnchor(reactionTime, coarseOffset))
+  const openingAnchors = openingOffsets.map((offset, index) => makeAnchor(openingReactionTimes[index], offset))
+  type AsyncInternal = (...args: never[]) => Promise<unknown>
+  const internals = service as unknown as Record<'findGeometry' | 'scanTimelines' | 'scanOpeningTimelines' | 'findOpeningMotionOffset' | 'refineAnchors', AsyncInternal>
+  vi.spyOn(internals, 'findGeometry').mockResolvedValue({
+    geometry,
+    mask: null,
+    confidence: 0.44,
+    initialOffsetSeconds: coarseOffset,
+    referenceReactionTime: introAnchors[0].reactionTime,
+    referenceMovieTime: introAnchors[0].movieTime,
+    anchors: introAnchors,
+    anchorCount: introAnchors.length,
+    runnerUpScore: 0.3,
+    openingOnly,
+    openingMotionOffset
+  })
+  vi.spyOn(internals, 'scanTimelines').mockResolvedValue({ anchors: [], consensus: null, geometry, mask: null })
+  vi.spyOn(internals, 'scanOpeningTimelines').mockResolvedValue({ anchors: openingAnchors, consensus: null })
+  vi.spyOn(internals, 'findOpeningMotionOffset').mockResolvedValue(openingMotionOffset)
+  vi.spyOn(internals, 'refineAnchors')
+    .mockResolvedValueOnce({ anchors: [], consensus: null })
+    .mockResolvedValueOnce({ anchors: introAnchors, consensus: null })
   return service
 }
 

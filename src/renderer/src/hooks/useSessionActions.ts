@@ -12,6 +12,7 @@ import type {
 import type { DownloadedReactionMetadata } from '../components/SmartReactionInput'
 import type { RenameSessionFocus } from '../components/RenameSessionDialog'
 import { buildSuggestedPairingTitle } from '../components/pairingTitle'
+import { isAutoSyncReady } from '../autoSyncReadiness'
 import type { MoviePosterActionResult } from '../moviePosterActions'
 import { TimelineMapping } from '../sync/timeline'
 import type { VideoAdapter } from '../sync/SyncController'
@@ -242,7 +243,8 @@ export function useSessionActions({
       let currentSession = commitLibrary(await window.watchAlong.getLibrary())
       if (currentSession?.id !== sessionId) return
 
-      if (result.outcome === 'confident' && preserveMovieMoment !== null) {
+      const readyToPlay = isAutoSyncReady(result)
+      if (readyToPlay && preserveMovieMoment !== null) {
         const mappedPosition = new TimelineMapping({
           offsetSeconds: currentSession.offsetSeconds,
           movieRateCorrection: currentSession.movieRateCorrection
@@ -250,7 +252,7 @@ export function useSessionActions({
         currentSession = commitLibrary(await window.watchAlong.saveSessionPosition(sessionId, mappedPosition))
         setPosition(currentSession?.lastReactionTimeSeconds ?? mappedPosition)
         controllerRef.current?.seekReaction(currentSession?.lastReactionTimeSeconds ?? mappedPosition)
-      } else if (result.outcome !== 'confident') {
+      } else if (!readyToPlay) {
         setPendingSyncSetup(Boolean(currentSession.reactionPath && currentSession.moviePath))
       }
     } catch {

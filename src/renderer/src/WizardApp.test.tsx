@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { WizardApp } from './WizardApp'
-import type { MediaFile, WatchAlongApi } from '@shared/types'
+import type { AutoSyncCompleteEvent, MediaFile, WatchAlongApi } from '@shared/types'
 
 const firstMovie: MediaFile = { path: 'C:\\Movies\\Movie.mp4', name: 'Movie.mp4' }
 const secondMovie: MediaFile = { path: 'C:\\Movies\\Second Movie.mp4', name: 'Second Movie.mp4' }
@@ -224,6 +224,50 @@ describe('WizardApp', () => {
     await waitFor(() => expect(window.watchAlong.finishOnboardingWizard).toHaveBeenCalledWith('completed-needs-review'))
   })
 
+  it('continues normally when a strong partial result is ready to play', async () => {
+    mockAutoSyncResult({
+      outcome: 'partial',
+      readyToPlay: true,
+      message: 'Starting point found.',
+      offsetSeconds: -56,
+      movieRateCorrection: 1,
+      confidence: 0.69,
+      anchorCount: 4
+    })
+
+    render(<WizardApp />)
+    await reachReadyStep()
+    fireEvent.click(screen.getByRole('button', { name: /Find My Sync/i }))
+
+    expect(await screen.findByRole('heading', { name: 'Your watchalong is ready' })).toBeInTheDocument()
+    await waitFor(
+      () => expect(window.watchAlong.finishOnboardingWizard).toHaveBeenCalledWith('completed'),
+      { timeout: 1500 }
+    )
+    expect(window.watchAlong.finishOnboardingWizard).not.toHaveBeenCalledWith('completed-needs-review')
+  })
+
+  it('still hands an ordinary partial result to manual review', async () => {
+    mockAutoSyncResult({
+      outcome: 'partial',
+      message: 'Please give the timing a quick check.',
+      offsetSeconds: -56,
+      movieRateCorrection: 1,
+      confidence: 0.55,
+      anchorCount: 2
+    })
+
+    render(<WizardApp />)
+    await reachReadyStep()
+    fireEvent.click(screen.getByRole('button', { name: /Find My Sync/i }))
+
+    expect(await screen.findByText('Please give the timing a quick check.')).toBeInTheDocument()
+    await waitFor(
+      () => expect(window.watchAlong.finishOnboardingWizard).toHaveBeenCalledWith('completed-needs-review'),
+      { timeout: 1500 }
+    )
+  })
+
   it('lets the user skip the scan and line up manually without losing the saved files', async () => {
     window.watchAlong.startSessionAutoSync = vi.fn(async () => ({ started: true }))
 
@@ -298,6 +342,18 @@ async function reachReadyStep(): Promise<void> {
   fireEvent.click(screen.getByRole('button', { name: 'Next' }))
   fireEvent.click(await screen.findByRole('button', { name: /Local file/i }))
   expect(await screen.findByText("Everything's loaded and safe. Now let's find the perfect sync point.")).toBeInTheDocument()
+}
+
+function mockAutoSyncResult(result: Omit<AutoSyncCompleteEvent, 'sessionId'>): void {
+  let complete: Parameters<WatchAlongApi['onAutoSyncComplete']>[0] | null = null
+  window.watchAlong.onAutoSyncComplete = vi.fn((callback) => {
+    complete = callback
+    return () => undefined
+  })
+  window.watchAlong.startSessionAutoSync = vi.fn(async (sessionId: string) => {
+    queueMicrotask(() => complete?.({ sessionId, ...result }))
+    return { started: true }
+  })
 }
 
 function createApi(): WatchAlongApi {

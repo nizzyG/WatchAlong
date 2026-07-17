@@ -16,6 +16,7 @@ import {
 } from '../playback/MediaPlaybackErrorMonitor'
 import { TimelineMapping } from '../sync/timeline'
 import type { VideoAdapter } from '../sync/SyncController'
+import { isAutoSyncReady } from '../autoSyncReadiness'
 import type { PlaybackHook } from './usePlayback'
 import type { SessionHook } from './useSession'
 import type { useAutoSync } from './useAutoSync'
@@ -191,21 +192,23 @@ export function usePlayerControls({
     const result = await autoSync.start(sessionId, 'recheck')
     const nextSession = commitLibrary(await window.watchAlong.getLibrary())
     if (nextSession?.id !== sessionId) return
-    if (result.outcome === 'confident' && nextSession && playback.canPlayRef.current) {
+    const readyToPlay = isAutoSyncReady(result)
+    if (readyToPlay && nextSession && playback.canPlayRef.current) {
       controllerRef.current?.seekReaction(getCurrentReactionTime())
-    } else if (result.outcome !== 'cancelled' && nextSession?.reactionPath && nextSession.moviePath) {
+    } else if (!readyToPlay && result.outcome !== 'cancelled' && nextSession?.reactionPath && nextSession.moviePath) {
       setPendingSyncSetup(true)
     }
   }
 
   useEffect(() => {
     const moviePath = activeSession?.moviePath
-    if (!activeSession || !moviePath || activeSession.detectedMovieFps !== null) return
+    if (!activeSession || !moviePath || activeSession.detectedMovieFps !== null || autoSyncBusy) return
 
     const detectionKey = `${activeSession.id}|${moviePath}`
     if (movieFrameRateDetectionKeyRef.current === detectionKey) return
 
     movieFrameRateDetectionKeyRef.current = detectionKey
+    const detectionSnapshot = frameRateDetectionSnapshot(activeSession)
     let cancelled = false
     void (async () => {
       let detectedMovieFps: number | null = null
@@ -216,10 +219,15 @@ export function usePlayerControls({
       }
       if (cancelled) return
 
-      const currentSession = sessionRef.current
-      if (currentSession.id !== activeSession.id || currentSession.moviePath !== moviePath) return
+      const authoritativeLibrary = await window.watchAlong.getLibrary()
+      if (cancelled) return
+      const authoritativeSession = authoritativeLibrary.sessions.find((item) => item.id === activeSession.id) ?? null
+      if (!isFrameRateDetectionSnapshotCurrent(authoritativeSession, detectionSnapshot)) return
 
-      const movieRateCorrection = calculateMovieRateCorrection(detectedMovieFps, currentSession.reactorSource)
+      const currentSession = sessionRef.current
+      if (!isFrameRateDetectionSnapshotCurrent(currentSession, detectionSnapshot)) return
+
+      const movieRateCorrection = calculateMovieRateCorrection(detectedMovieFps, authoritativeSession.reactorSource)
       if (movieRateCorrection === null) {
         await persist({ detectedMovieFps: null })
         return
@@ -229,8 +237,11 @@ export function usePlayerControls({
 
     return () => {
       cancelled = true
+      if (movieFrameRateDetectionKeyRef.current === detectionKey) {
+        movieFrameRateDetectionKeyRef.current = null
+      }
     }
-  }, [activeSession?.detectedMovieFps, activeSession?.id, activeSession?.moviePath])
+  }, [activeSession?.detectedMovieFps, activeSession?.id, activeSession?.moviePath, autoSyncBusy])
 
   const togglePipVisibility = (): void => {
     if (activeSession) void persist({ isPipHidden: !session.isPipHidden })
@@ -443,6 +454,56 @@ export function usePlayerControls({
 
 function roundSeconds(value: number): number {
   return Number(value.toFixed(6))
+}
+
+type FrameRateDetectionSnapshot = Pick<LibrarySession,
+  | 'id'
+  | 'moviePath'
+  | 'reactionPath'
+  | 'offsetSeconds'
+  | 'movieRateCorrection'
+  | 'reactorSource'
+  | 'detectedMovieFps'
+  | 'timingOrigin'
+  | 'autoSyncConfidence'
+  | 'autoSyncAnalyzedAt'
+  | 'autoSyncAlgorithmVersion'
+>
+
+function frameRateDetectionSnapshot(session: LibrarySession): FrameRateDetectionSnapshot {
+  return {
+    id: session.id,
+    moviePath: session.moviePath,
+    reactionPath: session.reactionPath,
+    offsetSeconds: session.offsetSeconds,
+    movieRateCorrection: session.movieRateCorrection,
+    reactorSource: session.reactorSource,
+    detectedMovieFps: session.detectedMovieFps,
+    timingOrigin: session.timingOrigin,
+    autoSyncConfidence: session.autoSyncConfidence,
+    autoSyncAnalyzedAt: session.autoSyncAnalyzedAt,
+    autoSyncAlgorithmVersion: session.autoSyncAlgorithmVersion
+  }
+}
+
+function isFrameRateDetectionSnapshotCurrent(
+  current: LibrarySession | null,
+  snapshot: FrameRateDetectionSnapshot
+): current is LibrarySession {
+  return Boolean(
+    current &&
+    current.id === snapshot.id &&
+    current.moviePath === snapshot.moviePath &&
+    current.reactionPath === snapshot.reactionPath &&
+    current.offsetSeconds === snapshot.offsetSeconds &&
+    current.movieRateCorrection === snapshot.movieRateCorrection &&
+    current.reactorSource === snapshot.reactorSource &&
+    current.detectedMovieFps === snapshot.detectedMovieFps &&
+    current.timingOrigin === snapshot.timingOrigin &&
+    current.autoSyncConfidence === snapshot.autoSyncConfidence &&
+    current.autoSyncAnalyzedAt === snapshot.autoSyncAnalyzedAt &&
+    current.autoSyncAlgorithmVersion === snapshot.autoSyncAlgorithmVersion
+  )
 }
 
 function observeRemoteMedia(state: RemoteMediaState, hasError: boolean): MediaPlaybackObservation {

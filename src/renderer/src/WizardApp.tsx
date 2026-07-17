@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { SmartReactionInput } from './components/SmartReactionInput'
 import type { DownloadedReactionMetadata } from './components/SmartReactionInput'
 import { buildSuggestedPairingTitle } from './components/pairingTitle'
+import { isAutoSyncReady } from './autoSyncReadiness'
 import { useAutoSync } from './hooks/useAutoSync'
 import { useStoredCabinetTheme } from './hooks/useCabinetTheme'
 import type { AutoSyncCompleteEvent, ImportWizardContext, MediaFile, ReactionDownloadSource, WizardOutcome } from '@shared/types'
@@ -271,7 +272,7 @@ export function WizardApp(): JSX.Element {
       setSyncResult(result)
       await new Promise((resolve) => window.setTimeout(resolve, 650))
       if (closingRef.current) return
-      closeWizard(result.outcome === 'confident' ? 'completed' : 'completed-needs-review')
+      closeWizard(isAutoSyncReady(result) ? 'completed' : 'completed-needs-review')
     } catch {
       if (closingRef.current) return
       finishingRef.current = false
@@ -286,7 +287,7 @@ export function WizardApp(): JSX.Element {
   const leaveForManualSync = async (): Promise<void> => {
     const settledResult = syncResultRef.current
     if (settledResult) {
-      closeWizard(settledResult.outcome === 'confident' ? 'completed' : 'completed-needs-review')
+      closeWizard(isAutoSyncReady(settledResult) ? 'completed' : 'completed-needs-review')
       return
     }
     if (!sessionSavedRef.current || manualFallbackRef.current || closingRef.current) return
@@ -454,12 +455,12 @@ export function WizardApp(): JSX.Element {
       {step === 'syncing' && (
         <section className="wizard-page wizard-syncing-step" aria-label="Finding Your Sync">
           <div className="wizard-card wizard-syncing-card">
-            <div className={`wizard-mark ${syncResult?.outcome === 'confident' ? 'wizard-ready-mark' : ''}`}>
+            <div className={`wizard-mark ${isAutoSyncReady(syncResult) ? 'wizard-ready-mark' : ''}`}>
               {syncResult ? <Check size={42} aria-hidden /> : <Loader2 size={42} aria-hidden className="spin" />}
             </div>
             <div className="wizard-copy">
               <p className="wizard-kicker">{syncResult ? 'All checked.' : 'This stays on your computer.'}</p>
-              <h1>{syncResult?.outcome === 'confident' ? 'Your watchalong is ready' : 'Finding Your Sync'}</h1>
+              <h1>{isAutoSyncReady(syncResult) ? 'Your watchalong is ready' : 'Finding Your Sync'}</h1>
               <p>{!sessionSaved ? notice ?? 'Saving your watchalong on this computer…' : syncResult?.message ?? autoSync.progress.message}</p>
             </div>
             <div

@@ -17,23 +17,33 @@ import { voteForTemporalConsensus, type HoughConsensus, type HoughVotingOptions 
 import {
   findInsetGeometry,
   generateCompactCornerCandidates,
+  generateGeometryCandidates,
   refineGeometryCandidates,
   type InsetGeometry,
+  type InsetGeometryResult,
   type TimedPixelFrame
 } from './insetGeometry'
 import {
   applyBurstinessReweighting,
   findSequenceMatchCandidates,
   matchSequence,
+  sequenceActivity,
   selectBurstWeightedMatches,
   type AutoSyncAnchor,
   type SequenceMatchCandidate,
   type TimedSignature
 } from './matching'
+import {
+  detectSustainedOpeningMotion,
+  expandOpeningCandidatePositions,
+  generateOpeningInsetCandidates,
+  openingEvidenceStats,
+  signatureWindow
+} from './openingFallback'
 import { applySignatureMask, createFrameSignature, type SignatureCellMask } from './signatures'
 import type { AutoSyncMediaBackend, MediaInfo } from './ffmpegBackend'
 
-export const AUTO_SYNC_ALGORITHM_VERSION = 2
+export const AUTO_SYNC_ALGORITHM_VERSION = 3
 
 export interface AutoSyncSessionRepository {
   getSession(sessionId: string): LibrarySession | null
@@ -66,6 +76,10 @@ interface DetectedInset {
   referenceReactionTime: number
   referenceMovieTime: number
   anchors: AutoSyncAnchor[]
+  anchorCount: number
+  runnerUpScore: number
+  openingOnly: boolean
+  openingMotionOffset: number | null
 }
 
 interface AnchorMatchSet {
@@ -120,7 +134,9 @@ export class AutoSyncService {
       if (!intro) return fallback(sessionId, 'WatchAlong couldn’t clearly see the movie in this reaction. You can line it up manually.')
 
       this.progress(sessionId, 'scanning', 30, 'Comparing moments across the watchalong…')
-      const scan = await this.scanTimelines(session, movieInfo, reactionInfo, intro, effectiveSignal)
+      const scan = intro.openingOnly
+        ? { anchors: [], consensus: null, geometry: intro.geometry, mask: intro.mask }
+        : await this.scanTimelines(session, movieInfo, reactionInfo, intro, effectiveSignal)
       const coarse = scan.anchors
       this.progress(sessionId, 'refining', 72, 'Double-checking the best matches…')
       const refined = await this.refineAnchors(session, coarse, scan.geometry, scan.mask, effectiveSignal)
@@ -147,24 +163,57 @@ export class AutoSyncService {
         ? bodyOffset.offsetSeconds
         : introOffset?.offsetSeconds
       const introOffsetIsReliable = Boolean(introOffset && introOffset.count >= 3 && introOffset.maximumDeviation <= 2)
-      if (intro.confidence >= 0.5 && introOffsetIsReliable && partialOffset !== undefined && Number.isFinite(partialOffset)) {
+      if (!intro.openingOnly && intro.confidence >= 0.5 && introOffsetIsReliable && partialOffset !== undefined && Number.isFinite(partialOffset)) {
         // A marginal drift estimate is useful evidence, but not safe to apply.
         // Keep the user's current rate and only prefill the well-supported start point.
-        const rate = latest.movieRateCorrection
-        const confidence = Math.min(0.69, fit?.confidence ?? intro.confidence)
-        if (options.intent === 'initial') {
-          this.commit(sessionId, partialOffset, rate, confidence, movieInfo.frameRate)
-        }
-        return {
-          sessionId,
-          outcome: 'partial',
-          message: options.intent === 'initial'
-            ? 'WatchAlong found the starting point. Please give the timing a quick check before you begin.'
-            : 'WatchAlong found a possible starting point, but kept your existing timing because the new result was not certain enough.',
-          offsetSeconds: partialOffset,
-          movieRateCorrection: rate,
-          confidence,
-          anchorCount: introOffset!.count
+        return this.completePartial(sessionId, options.intent, partialOffset, latest.movieRateCorrection,
+          Math.min(0.69, fit?.confidence ?? intro.confidence), introOffset!.count, movieInfo.frameRate)
+      }
+
+      // Preserve the established whole-runtime and partial paths above. Only
+      // when they cannot decide do we spend extra work on the opening. This
+      // recovers reactions that briefly show the movie and then blur or black
+      // it out, without letting those low-information later frames invent a
+      // drift fit.
+      const coarseIntroOffset = offsetStatsForRate(intro.anchors, latest.movieRateCorrection)
+      const openingEligible = Boolean(
+        coarseIntroOffset &&
+        coarseIntroOffset.count >= 2 &&
+        coarseIntroOffset.maximumDeviation <= 2.5
+      )
+      if (openingEligible) {
+        const opening = await this.scanOpeningTimelines(
+          session,
+          movieInfo,
+          reactionInfo,
+          intro,
+          effectiveSignal
+        )
+        const independentOpeningOffset = openingEvidenceStats(opening.anchors, latest.movieRateCorrection)
+        const openingOffset = independentOpeningOffset ?? (
+          intro.openingOnly && opening.anchors.length >= 2
+            ? openingEvidenceStats([...intro.anchors, ...opening.anchors], latest.movieRateCorrection)
+            : null
+        )
+        const strongIndependentVisualEvidence = Boolean(
+          independentOpeningOffset &&
+          independentOpeningOffset.count >= 3 &&
+          independentOpeningOffset.maximumDeviation <= 0.25 &&
+          independentOpeningOffset.spanSeconds >= 12
+        )
+        const openingMotionOffset = strongIndependentVisualEvidence
+          ? null
+          : intro.openingMotionOffset ?? await this.findOpeningMotionOffset(session, intro, effectiveSignal)
+        const hasRequiredCorroboration = strongIndependentVisualEvidence || (
+          openingMotionOffset !== null && openingOffset !== null &&
+          Math.abs(openingMotionOffset - openingOffset.offsetSeconds) <= 1.5
+        )
+        if (openingOffset && hasRequiredCorroboration) {
+          const currentAfterOpening = this.options.sessions.getSession(sessionId)
+          if (!isAnalysisSnapshotCurrent(currentAfterOpening, session)) return stale(sessionId)
+          return this.completeReadyOpeningPartial(sessionId, openingOffset.offsetSeconds,
+            currentAfterOpening.movieRateCorrection, Math.min(0.69, Math.max(intro.confidence, 0.45)),
+            openingOffset.count, movieInfo.frameRate)
         }
       }
 
@@ -196,14 +245,72 @@ export class AutoSyncService {
       gridSize: 6,
       minimumConfidence: 0.4
     }
-    const first = findInsetGeometry(reactionFrames, movie, geometryOptions) ?? findInsetGeometry(reactionFrames, movie, {
+    let first: InsetGeometryResult | DetectedInset | null = findInsetGeometry(reactionFrames, movie, geometryOptions) ?? findInsetGeometry(reactionFrames, movie, {
       ...geometryOptions,
       candidates: generateCompactCornerCandidates(
         reactionInfo.width / reactionInfo.height,
         movieInfo.width / movieInfo.height
       )
     })
+    // A whole-runtime probe undersamples reactions whose movie is visible only
+    // near the opening timer. Retry on progressively tighter prefixes so the
+    // limited honest evidence receives enough probes to identify its crop.
+    if (!first) {
+      const openingCandidates = expandOpeningCandidatePositions(generateGeometryCandidates(
+        reactionInfo.width / reactionInfo.height,
+        movieInfo.width / movieInfo.height
+      ).filter((candidate) => candidate.width <= 0.5 && candidate.height <= 0.45))
+      const [timerReactionFrames, timerMovieFrames] = await Promise.all([
+        this.extractPixelFrames(session.reactionPath!, 0, Math.min(160, reactionInfo.duration), fps, 192, 108, signal),
+        this.extractPixelFrames(session.moviePath!, 0, Math.min(120, movieInfo.duration), fps, 128, 72, signal)
+      ])
+      const timerMovie = timerMovieFrames.map((frame) => ({
+        time: frame.time,
+        signature: createFrameSignature(frame, { gridSize: 8 })
+      }))
+      for (const prefixSeconds of [160, 240]) {
+        const prefixReaction = reactionFrames.filter((frame) => frame.time <= prefixSeconds)
+        const prefixMovie = movie.filter((frame) => frame.time <= Math.min(180, prefixSeconds - 40))
+        const prefixResults = [findInsetGeometry(prefixReaction, prefixMovie, {
+          ...geometryOptions,
+          candidates: openingCandidates
+        }), findInsetGeometry(prefixReaction, prefixMovie, {
+          ...geometryOptions,
+          candidates: generateCompactCornerCandidates(
+            reactionInfo.width / reactionInfo.height,
+            movieInfo.width / movieInfo.height
+          )
+        }), prefixSeconds === 160 ? findInsetGeometry(timerReactionFrames, timerMovie, {
+          ...geometryOptions,
+          gridSize: 8,
+          minimumConfidence: 0.35,
+          minimumAnchors: 2,
+            candidates: generateOpeningInsetCandidates()
+        }) : null].filter((result): result is NonNullable<typeof result> => Boolean(result))
+
+        const validated: DetectedInset[] = []
+        for (const result of prefixResults) {
+          const coarse = offsetStatsForRate(result.anchors, 1)
+          if (!coarse || coarse.count < 2 || coarse.maximumDeviation > 2) continue
+          const candidate: DetectedInset = {
+            ...result,
+            openingOnly: true,
+            openingMotionOffset: null
+          }
+          const motionOffset = await this.findOpeningMotionOffset(session, candidate, signal)
+          if (motionOffset === null || Math.abs(motionOffset - coarse.offsetSeconds) > 3) continue
+          validated.push({ ...candidate, openingMotionOffset: motionOffset })
+        }
+        validated.sort((left, right) =>
+          right.anchors.length - left.anchors.length ||
+          right.confidence - left.confidence
+        )
+        first = validated[0] ?? null
+        if (first) break
+      }
+    }
     if (!first) return null
+    if ('openingOnly' in first && first.openingOnly) return first
     const refinedCandidates = refineGeometryCandidates(first.geometry, reactionInfo.width / reactionInfo.height, movieInfo.width / movieInfo.height)
     const refined = findInsetGeometry(reactionFrames, movie, {
       movieAspectRatio: movieInfo.width / movieInfo.height,
@@ -211,7 +318,73 @@ export class AutoSyncService {
       minimumConfidence: 0.38,
       candidates: refinedCandidates
     })
-    return refined && refined.confidence > first.confidence ? refined : first
+    return {
+      ...(refined && refined.confidence > first.confidence ? refined : first),
+      openingOnly: false,
+      openingMotionOffset: null
+    }
+  }
+
+  private async scanOpeningTimelines(
+    session: LibrarySession,
+    movieInfo: MediaInfo,
+    reactionInfo: MediaInfo,
+    intro: DetectedInset,
+    signal: AbortSignal
+  ): Promise<AnchorMatchSet> {
+    const fps = 8
+    const openingMovieDuration = Math.min(48, movieInfo.duration)
+    const coarseOffset = offsetStatsForRate(intro.anchors, 1)?.offsetSeconds ?? intro.initialOffsetSeconds
+    const predictedReactionStart = Math.max(0, -coarseOffset - 3)
+    const reactionDuration = Math.min(
+      openingMovieDuration + 6,
+      Math.max(0, reactionInfo.duration - predictedReactionStart)
+    )
+    if (reactionDuration < 12) return { anchors: [], consensus: null }
+
+    const [reaction, movie] = await Promise.all([
+      this.extractSignatures(
+        session.reactionPath!, predictedReactionStart, reactionDuration, fps,
+        256, 144, intro.geometry, signal, 16, intro.mask
+      ),
+      this.extractSignatures(
+        session.moviePath!, 0, openingMovieDuration, fps,
+        192, 108, undefined, signal, 16
+      )
+    ])
+    const candidateGroups: SequenceMatchCandidate[][] = []
+    for (const movieTime of [3, 6, 9, 12, 16, 20, 28, 36, 44]) {
+      if (movieTime >= openingMovieDuration - 2) continue
+      const window = signatureWindow(reaction, movieTime - coarseOffset, 9)
+      if (window.length < 9 || sequenceActivity(window) < 0.018) continue
+      const candidates = findSequenceMatchCandidates(window, movie, {
+        candidateExclusionFrames: 4,
+        maximumCandidatesPerProbe: 80
+      }).filter((candidate) =>
+        candidate.rawSimilarity >= 0.68 &&
+        Math.abs((candidate.movieTime - candidate.reactionTime) - coarseOffset) <= 3
+      )
+      if (candidates.length) candidateGroups.push(candidates)
+    }
+    const anchors = selectBurstWeightedMatches(candidateGroups, { runnerUpExclusionFrames: 24 })
+      .filter((anchor) => anchor.confidence >= 0.42 && (anchor.rawSimilarity ?? 0) >= 0.72)
+    return { anchors, consensus: null }
+  }
+
+  private async findOpeningMotionOffset(
+    session: LibrarySession,
+    intro: DetectedInset,
+    signal: AbortSignal
+  ): Promise<number | null> {
+    const predictedStart = -intro.initialOffsetSeconds
+    if (!Number.isFinite(predictedStart) || predictedStart < 0) return null
+    const start = Math.max(0, predictedStart - 4)
+    const signatures = await this.extractSignatures(
+      session.reactionPath!, start, 8, 8,
+      256, 144, intro.geometry, signal, 16, intro.mask
+    )
+    const motionStart = detectSustainedOpeningMotion(signatures, predictedStart)
+    return motionStart === null ? null : Number((-motionStart).toFixed(3))
   }
 
   private async scanTimelines(
@@ -359,6 +532,57 @@ export class AutoSyncService {
       autoSyncAnalyzedAt: this.now().toISOString(),
       autoSyncAlgorithmVersion: AUTO_SYNC_ALGORITHM_VERSION
     })
+  }
+
+  private completePartial(
+    sessionId: string,
+    intent: AutoSyncIntent,
+    offsetSeconds: number,
+    movieRateCorrection: number,
+    confidence: number,
+    anchorCount: number,
+    detectedMovieFps: number
+  ): AutoSyncCompleteEvent {
+    if (intent === 'initial') {
+      this.commit(sessionId, offsetSeconds, movieRateCorrection, confidence, detectedMovieFps)
+    }
+    return {
+      sessionId,
+      outcome: 'partial',
+      message: intent === 'initial'
+        ? 'WatchAlong found the starting point. Please give the timing a quick check before you begin.'
+        : 'WatchAlong found a possible starting point, but kept your existing timing because the new result was not certain enough.',
+      offsetSeconds,
+      movieRateCorrection,
+      confidence,
+      anchorCount
+    }
+  }
+
+  private completeReadyOpeningPartial(
+    sessionId: string,
+    offsetSeconds: number,
+    movieRateCorrection: number,
+    confidence: number,
+    anchorCount: number,
+    detectedMovieFps: number
+  ): AutoSyncCompleteEvent {
+    // The opening establishes a trustworthy intercept, but not enough
+    // full-runtime evidence to claim a drift-aware confident result. Commit
+    // that honest partial for both import and an explicit recheck so the UI
+    // can continue directly into playback without pretending it was a full
+    // timeline fit.
+    this.commit(sessionId, offsetSeconds, movieRateCorrection, confidence, detectedMovieFps)
+    return {
+      sessionId,
+      outcome: 'partial',
+      readyToPlay: true,
+      message: 'Ready — WatchAlong found the starting point from the visible opening.',
+      offsetSeconds,
+      movieRateCorrection,
+      confidence,
+      anchorCount
+    }
   }
 
   private progress(sessionId: string, phase: AutoSyncProgressEvent['phase'], percent: number, message: string): void {

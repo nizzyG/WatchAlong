@@ -1317,6 +1317,110 @@ describe('App', () => {
     expect(api.detectMovieFrameRate).toHaveBeenCalledTimes(1)
   })
 
+  it('cancels frame-rate persistence while AutoSync runs and retries after fallback', async () => {
+    const session = createSession('s1', 'First', 0, { detectedMovieFps: null })
+    const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
+    let finishFirstDetection!: (frameRate: number | null) => void
+    const firstDetection = new Promise<number | null>((resolve) => {
+      finishFirstDetection = resolve
+    })
+    api.detectMovieFrameRate = vi.fn()
+      .mockImplementationOnce(async () => firstDetection)
+      .mockResolvedValue(25)
+    window.watchAlong = api
+
+    render(<App />)
+
+    await waitFor(() => expect(api.detectMovieFrameRate).toHaveBeenCalledWith(session.id))
+    const playbackTools = screen.getByRole('group', { name: 'Playback tools' })
+    fireEvent.click(within(playbackTools).getByRole('button', { name: 'Find Sync Again' }))
+    await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith(session.id, 'recheck'))
+    await waitFor(() => expect(within(playbackTools).getByRole('button', { name: /Getting ready/i })).toBeDisabled())
+
+    await act(async () => {
+      finishFirstDetection(25)
+      await firstDetection
+    })
+    expect(api.saveActiveSession).not.toHaveBeenCalledWith(expect.objectContaining({ detectedMovieFps: 25 }))
+
+    act(() => api.emitAutoSyncComplete({
+      sessionId: session.id,
+      outcome: 'fallback',
+      message: 'Please line it up manually.'
+    }))
+
+    await waitFor(() => expect(api.detectMovieFrameRate).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(api.saveActiveSession).toHaveBeenCalledWith({
+      detectedMovieFps: 25,
+      movieRateCorrection: 0.959041,
+      offsetSeconds: 0
+    }))
+  })
+
+  it('does not let a restarted frame-rate probe clobber a ready AutoSync commit', async () => {
+    const session = createSession('s1', 'First', 0, { detectedMovieFps: null })
+    const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
+    let finishFirstDetection!: (frameRate: number | null) => void
+    const firstDetection = new Promise<number | null>((resolve) => {
+      finishFirstDetection = resolve
+    })
+    api.detectMovieFrameRate = vi.fn()
+      .mockImplementationOnce(async () => firstDetection)
+      .mockResolvedValue(25)
+    window.watchAlong = api
+
+    render(<App />)
+
+    await waitFor(() => expect(api.detectMovieFrameRate).toHaveBeenCalledWith(session.id))
+    const playbackTools = screen.getByRole('group', { name: 'Playback tools' })
+    fireEvent.click(within(playbackTools).getByRole('button', { name: 'Find Sync Again' }))
+    await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith(session.id, 'recheck'))
+    await waitFor(() => expect(within(playbackTools).getByRole('button', { name: /Getting ready/i })).toBeDisabled())
+    await act(async () => {
+      finishFirstDetection(25)
+      await firstDetection
+    })
+
+    const committedLibrary = createLibrary('s1', [{
+      ...session,
+      offsetSeconds: -56,
+      detectedMovieFps: 24,
+      timingOrigin: 'automatic',
+      autoSyncConfidence: 0.69,
+      autoSyncAnalyzedAt: '2026-07-17T20:00:00.000Z',
+      autoSyncAlgorithmVersion: 3
+    }])
+    let finishRendererRefresh!: (library: SessionLibrary) => void
+    const rendererRefresh = new Promise<SessionLibrary>((resolve) => {
+      finishRendererRefresh = resolve
+    })
+    vi.mocked(api.getLibrary).mockReset()
+    vi.mocked(api.getLibrary)
+      .mockImplementationOnce(async () => rendererRefresh)
+      .mockResolvedValue(committedLibrary)
+
+    act(() => api.emitAutoSyncComplete({
+      sessionId: session.id,
+      outcome: 'partial',
+      readyToPlay: true,
+      message: 'Starting point found.',
+      offsetSeconds: -56,
+      movieRateCorrection: 1,
+      confidence: 0.69,
+      anchorCount: 4
+    }))
+
+    await waitFor(() => expect(api.detectMovieFrameRate).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(api.getLibrary).toHaveBeenCalledTimes(2))
+    expect(api.saveActiveSession).not.toHaveBeenCalledWith(expect.objectContaining({ detectedMovieFps: 25 }))
+
+    await act(async () => {
+      finishRendererRefresh(committedLibrary)
+      await rendererRefresh
+    })
+    expect(screen.queryByLabelText('Sync setup')).not.toBeInTheDocument()
+  })
+
   it('preserves the current sync point when changing reactor source', async () => {
     const session = createSession('s1', 'First', 0, {
       detectedMovieFps: 25,
@@ -1412,7 +1516,7 @@ describe('App', () => {
     expect(screen.queryByText('Sync setup')).not.toBeInTheDocument()
   })
 
-  it('rolls an in-player reaction download directly into automatic sync', async () => {
+  it('rolls an in-player reaction download through a ready partial without manual setup', async () => {
     const session = createSession('s1', 'Aladdin', 0, { reactionPath: null })
     const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
     api.getMediaUrl = vi.fn(async (role, sessionId) =>
@@ -1450,7 +1554,12 @@ describe('App', () => {
     await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1', 'initial'))
     expect(await screen.findByRole('dialog', { name: 'Finding automatic sync' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Line Up Manually Instead/i })).toHaveFocus()
-    act(() => api.emitAutoSyncComplete({ sessionId: 's1', outcome: 'confident', message: 'Ready.' }))
+    act(() => api.emitAutoSyncComplete({
+      sessionId: 's1',
+      outcome: 'partial',
+      readyToPlay: true,
+      message: 'Starting point found.'
+    }))
     await waitFor(() => expect(api.getLibrary).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Finding automatic sync' })).not.toBeInTheDocument())
     expect(screen.queryByText('Sync setup')).not.toBeInTheDocument()
@@ -1859,6 +1968,35 @@ describe('App', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Command Panel' })).not.toBeInTheDocument())
     expect(screen.getByLabelText('Sync setup')).toBeInTheDocument()
+  })
+
+  it('keeps a ready partial re-analysis in normal playback', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    const panel = await screen.findByRole('dialog', { name: 'Command Panel' })
+    fireEvent.click(within(panel).getByRole('button', { name: /Find Sync Again/i }))
+    await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1', 'recheck'))
+
+    act(() => api.emitAutoSyncComplete({
+      sessionId: 's1',
+      outcome: 'partial',
+      readyToPlay: true,
+      message: 'Starting point found.',
+      offsetSeconds: -20,
+      movieRateCorrection: 1,
+      confidence: 0.69,
+      anchorCount: 4
+    }))
+
+    await waitFor(() => expect(api.getLibrary).toHaveBeenCalledTimes(2))
+    expect(screen.queryByLabelText('Sync setup')).not.toBeInTheDocument()
   })
 
   it('dismisses Playback settings for a keyboard-opened panel and does not resurrect it after returning from the library', async () => {

@@ -207,6 +207,13 @@ export interface AutoSyncCompleteEvent {
   sessionId: string
   outcome: AutoSyncOutcome
   message: string
+  /**
+   * Marks a committed partial result that can continue without a manual
+   * alignment handoff. Confident results are always ready; opening-only
+   * evidence can establish a reliable start without supporting the
+   * full-runtime drift proof required for a `confident` outcome.
+   */
+  readyToPlay?: boolean
   offsetSeconds?: number
   movieRateCorrection?: number
   confidence?: number
