@@ -8,7 +8,8 @@ import type {
 } from '@shared/types'
 import { clamp } from '@shared/numeric'
 import { captureTimingSnapshot, isTimingSnapshotCurrent } from '@shared/sessionTiming'
-import { isConfidentFit, type AutoSyncFit } from './fitting'
+import { isConfidentFit } from './fitting'
+import { createAutoSyncEvents, fallback, friendlyError, stale, type AutoSyncEvents } from './autoSyncEvents'
 import {
   choosePreferredFit,
   fitMatchSet,
@@ -114,9 +115,11 @@ interface DetectedInset {
 export class AutoSyncService {
   private readonly running = new Map<string, RunningAnalysis>()
   private readonly now: () => Date
+  private readonly events: AutoSyncEvents
 
   constructor(private readonly options: AutoSyncServiceOptions) {
     this.now = options.now ?? (() => new Date())
+    this.events = createAutoSyncEvents((...args) => this.commit(...args))
   }
 
   start(sessionId: string, intent: AutoSyncIntent): StartAutoSyncResult {
@@ -175,8 +178,7 @@ export class AutoSyncService {
 
       this.progress(sessionId, 'finishing', AUTO_SYNC_PROGRESS.finishing, 'Finishing the timing…')
       if (fit && isConfidentFit(fit)) {
-        this.commit(sessionId, fit.offsetSeconds, fit.movieRateCorrection, fit.confidence, movieInfo.frameRate)
-        return completeFromFit(sessionId, 'confident', fit, 'Ready — WatchAlong found the timing and will keep both videos together.')
+        return this.events.completeFromFit(sessionId, fit, movieInfo.frameRate)
       }
 
       const refinedIntro = await this.refineAnchors(session, intro.anchors, intro.geometry, intro.mask, effectiveSignal, false)
@@ -196,7 +198,7 @@ export class AutoSyncService {
         introOffsetIsReliable && partialOffset !== undefined && Number.isFinite(partialOffset)) {
         // A marginal drift estimate is useful evidence, but not safe to apply.
         // Keep the user's current rate and only prefill the well-supported start point.
-        return this.completePartial(sessionId, options.intent, partialOffset, latest.movieRateCorrection,
+        return this.events.completePartial(sessionId, options.intent, partialOffset, latest.movieRateCorrection,
           Math.min(PARTIAL_CONFIDENCE_CAP, fit?.confidence ?? intro.confidence), introOffset!.count, movieInfo.frameRate)
       }
 
@@ -241,7 +243,7 @@ export class AutoSyncService {
         if (openingOffset && hasRequiredCorroboration) {
           const currentAfterOpening = this.options.sessions.getSession(sessionId)
           if (!isTimingSnapshotCurrent(currentAfterOpening, timingSnapshot)) return stale(sessionId)
-          return this.completeReadyOpeningPartial(sessionId, openingOffset.offsetSeconds,
+          return this.events.completeReadyOpeningPartial(sessionId, openingOffset.offsetSeconds,
             currentAfterOpening.movieRateCorrection,
             Math.min(PARTIAL_CONFIDENCE_CAP, Math.max(intro.confidence, OPENING_PARTIAL_FLOOR)),
             openingOffset.count, movieInfo.frameRate)
@@ -660,57 +662,6 @@ export class AutoSyncService {
     })
   }
 
-  private completePartial(
-    sessionId: string,
-    intent: AutoSyncIntent,
-    offsetSeconds: number,
-    movieRateCorrection: number,
-    confidence: number,
-    anchorCount: number,
-    detectedMovieFps: number
-  ): AutoSyncCompleteEvent {
-    if (intent === 'initial') {
-      this.commit(sessionId, offsetSeconds, movieRateCorrection, confidence, detectedMovieFps)
-    }
-    return {
-      sessionId,
-      outcome: 'partial',
-      message: intent === 'initial'
-        ? 'WatchAlong found the starting point. Please give the timing a quick check before you begin.'
-        : 'WatchAlong found a possible starting point, but kept your existing timing because the new result was not certain enough.',
-      offsetSeconds,
-      movieRateCorrection,
-      confidence,
-      anchorCount
-    }
-  }
-
-  private completeReadyOpeningPartial(
-    sessionId: string,
-    offsetSeconds: number,
-    movieRateCorrection: number,
-    confidence: number,
-    anchorCount: number,
-    detectedMovieFps: number
-  ): AutoSyncCompleteEvent {
-    // The opening establishes a trustworthy intercept, but not enough
-    // full-runtime evidence to claim a drift-aware confident result. Commit
-    // that honest partial for both import and an explicit recheck so the UI
-    // can continue directly into playback without pretending it was a full
-    // timeline fit.
-    this.commit(sessionId, offsetSeconds, movieRateCorrection, confidence, detectedMovieFps)
-    return {
-      sessionId,
-      outcome: 'partial',
-      readyToPlay: true,
-      message: 'Ready — WatchAlong found the starting point from the visible opening.',
-      offsetSeconds,
-      movieRateCorrection,
-      confidence,
-      anchorCount
-    }
-  }
-
   private progress(sessionId: string, phase: AutoSyncProgressEvent['phase'], percent: number, message: string): void {
     this.options.emitProgress({
       sessionId,
@@ -718,18 +669,6 @@ export class AutoSyncService {
       percent: Math.min(AUTO_SYNC_PROGRESS.maximum, Math.max(0, percent)),
       message
     })
-  }
-}
-
-function completeFromFit(sessionId: string, outcome: 'confident', fit: AutoSyncFit, message: string): AutoSyncCompleteEvent {
-  return {
-    sessionId,
-    outcome,
-    message,
-    offsetSeconds: fit.offsetSeconds,
-    movieRateCorrection: fit.movieRateCorrection,
-    confidence: fit.confidence,
-    anchorCount: fit.anchors.length
   }
 }
 
@@ -744,28 +683,10 @@ function offsetStatsForRate(anchors: AutoSyncAnchor[], rate: number): { offsetSe
   }
 }
 
-function fallback(sessionId: string, message: string): AutoSyncCompleteEvent {
-  return { sessionId, outcome: 'fallback', message }
-}
-
-function stale(sessionId: string): AutoSyncCompleteEvent {
-  return {
-    sessionId,
-    outcome: 'stale',
-    message: 'The files or timing changed while WatchAlong was checking, so the old result was safely ignored.'
-  }
-}
-
 function snapshotSession(session: LibrarySession): LibrarySession {
   return {
     ...session,
     overlay: { ...session.overlay },
     movieWindowGeometry: { ...session.movieWindowGeometry }
   }
-}
-
-function friendlyError(error: unknown): string {
-  const detail = error instanceof Error ? error.message : ''
-  if (/video stream|invalid data|could not be analyzed/i.test(detail)) return 'One of these files could not be read clearly. Your existing timing was left unchanged.'
-  return 'Automatic sync couldn’t finish this time. Your existing timing was left unchanged.'
 }
