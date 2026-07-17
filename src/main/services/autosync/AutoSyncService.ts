@@ -6,6 +6,7 @@ import type {
   SessionLibrary,
   StartAutoSyncResult
 } from '@shared/types'
+import { clamp } from '@shared/numeric'
 import {
   fitAnchors,
   isConfidentFit,
@@ -700,8 +701,4 @@ function friendlyError(error: unknown): string {
   const detail = error instanceof Error ? error.message : ''
   if (/video stream|invalid data|could not be analyzed/i.test(detail)) return 'One of these files could not be read clearly. Your existing timing was left unchanged.'
   return 'Automatic sync couldn’t finish this time. Your existing timing was left unchanged.'
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { clamp } from '@shared/numeric'
 import type {
   LibrarySession,
   MediaRole,
@@ -20,7 +21,7 @@ import { isAutoSyncReady } from '../autoSyncReadiness'
 import type { PlaybackHook } from './usePlayback'
 import type { SessionHook } from './useSession'
 import type { useAutoSync } from './useAutoSync'
-import { calculateMovieRateCorrection, clamp } from './playerTiming'
+import { calculateMovieRateCorrection, roundSeconds } from './playerTiming'
 
 interface UsePlayerControlsOptions {
   playback: PlaybackHook
@@ -450,10 +451,6 @@ export function usePlayerControls({
     nudgeSetupTime,
     toggleSetupPreview
   }
-}
-
-function roundSeconds(value: number): number {
-  return Number(value.toFixed(6))
 }
 
 type FrameRateDetectionSnapshot = Pick<LibrarySession,

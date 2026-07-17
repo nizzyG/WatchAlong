@@ -2,6 +2,7 @@ import { BrowserWindow, screen, type WebContents, type WebPreferences } from 'el
 import { existsSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { appIconPath } from './constants'
+import { clamp } from '@shared/numeric'
 import type {
   ImportWizardContext,
   ImportWizardLaunchOptions,
@@ -730,10 +731,6 @@ export class WindowManager {
 
 function finiteOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
-
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(maximum, Math.max(minimum, value))
 }
 
 function delay(milliseconds: number): Promise<void> {

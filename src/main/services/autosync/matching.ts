@@ -4,6 +4,7 @@ import {
   temporalOrdinalDistance,
   type FrameSignature
 } from './signatures'
+import { clamp01 } from '@shared/numeric'
 
 export interface TimedSignature {
   time: number
@@ -238,8 +239,4 @@ function nearestIndex(values: TimedSignature[], time: number): number {
 function makeOdd(value: number): number {
   const rounded = Math.round(value)
   return rounded % 2 === 0 ? rounded + 1 : rounded
-}
-
-function clamp01(value: number): number {
-  return Math.min(1, Math.max(0, value))
 }

@@ -1,4 +1,5 @@
 import type { AutoSyncAnchor, TimedSignature } from './matching'
+import { median } from '@shared/numeric'
 
 export interface OpeningEvidenceStats {
   offsetSeconds: number
@@ -75,8 +76,8 @@ export function detectSustainedOpeningMotion(signatures: TimedSignature[], predi
       .filter((item) => item.time >= candidate.time && item.time <= candidate.time + 1)
       .map((item) => item.value)
     if (before.length < 3 || after.length < 5) continue
-    const quiet = median(before)
-    const moving = median(after)
+    const quiet = before.length ? median(before) : 0
+    const moving = after.length ? median(after) : 0
     if (quiet <= 0.012 && moving >= 0.025 && moving >= quiet * 3 + 0.01) {
       matches.push({ time: candidate.time + 0.25, strength: moving - quiet })
     }
@@ -142,11 +143,4 @@ function combinedCellWeights(left?: Float32Array, right?: Float32Array): Float32
   if (!left && !right) return undefined
   const length = left?.length ?? right?.length ?? 0
   return Float32Array.from({ length }, (_, index) => Math.min(left?.[index] ?? 1, right?.[index] ?? 1))
-}
-
-function median(values: number[]): number {
-  if (!values.length) return 0
-  const sorted = [...values].sort((a, b) => a - b)
-  const middle = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
 }

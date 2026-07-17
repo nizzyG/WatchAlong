@@ -2,6 +2,7 @@ import type {
   AutoSyncAnchor,
   BurstWeightedSequenceMatchCandidate
 } from './matching'
+import { clamp01, median } from '@shared/numeric'
 
 export interface HoughVotingOptions {
   minimumRate?: number
@@ -253,14 +254,4 @@ function isSameRidge(
   )
   return differenceAt(minimumReactionTime) <= tolerance &&
     differenceAt(maximumReactionTime) <= tolerance
-}
-
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b)
-  const middle = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
-}
-
-function clamp01(value: number): number {
-  return Math.min(1, Math.max(0, value))
 }

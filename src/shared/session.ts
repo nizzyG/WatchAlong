@@ -16,6 +16,7 @@ import {
   normalizeReactorLabel,
   providerIdentityKind
 } from './reactorIdentity'
+import { clamp } from './numeric'
 
 export const SESSION_LIBRARY_VERSION = 7
 
@@ -559,10 +560,6 @@ function stringOrDefault(value: unknown, fallback: string): string {
 
 function hasExplicitTitle(value: unknown): boolean {
   return typeof value === 'string' && value.trim().length > 0
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
 }
 
 function fileName(path: string): string {

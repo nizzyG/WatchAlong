@@ -1,4 +1,5 @@
 import type { AutoSyncAnchor } from './matching'
+import { clamp01, median, round } from '@shared/numeric'
 
 export interface ResidualStats {
   medianSeconds: number
@@ -215,18 +216,4 @@ function slopeStandardError(line: { slope: number; intercept: number }, anchors:
 
 function absoluteResiduals(line: { slope: number; intercept: number }, anchors: AutoSyncAnchor[]): number[] {
   return anchors.map((anchor) => Math.abs(anchor.movieTime - (line.slope * anchor.reactionTime + line.intercept)))
-}
-
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b)
-  const middle = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
-}
-
-function round(value: number, places: number): number {
-  return Number(value.toFixed(places))
-}
-
-function clamp01(value: number): number {
-  return Math.min(1, Math.max(0, value))
 }

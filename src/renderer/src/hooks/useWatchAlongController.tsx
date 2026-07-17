@@ -24,7 +24,7 @@ import type { SessionHook } from './useSession'
 import type { SubtitlesHook } from './useSubtitles'
 import type { DownloadsHook } from './useDownloads'
 import { useAutoSync } from './useAutoSync'
-import { calculateMovieRateCorrection, reactorSourceOptions } from './playerTiming'
+import { calculateMovieRateCorrection, reactorSourceOptions, roundSeconds } from './playerTiming'
 import { usePlayerControls } from './usePlayerControls'
 import { useMovieWindow } from './useMovieWindow'
 import { useMovieAudioTracks } from './useMovieAudioTracks'
@@ -834,8 +834,4 @@ function audioState(session: LibrarySession): {
     isReactionMuted: session.isReactionMuted,
     isMovieMuted: session.isMovieMuted
   }
-}
-
-function roundSeconds(value: number): number {
-  return Number(value.toFixed(6))
 }

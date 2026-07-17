@@ -1,4 +1,5 @@
 import type { OverlayGeometry } from '@shared/types'
+import { clamp } from '@shared/numeric'
 
 export type PipCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
 
@@ -101,8 +102,4 @@ function scaleOverlayToViewport(
     width: Math.round(width * scale),
     height: Math.round(height * scale)
   }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
 }

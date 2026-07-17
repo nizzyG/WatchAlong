@@ -1,3 +1,5 @@
+import { clamp, clamp01, median } from '@shared/numeric'
+
 export interface PixelFrame {
   data: Uint8Array
   width: number
@@ -70,8 +72,8 @@ export function createFrameSignature(frame: PixelFrame, options: SignatureOption
       let sumU = 0
       let sumV = 0
       let samples = 0
-      for (let y = clampInt(y0, 0, frame.height - 1); y < Math.min(frame.height, y1); y += 1) {
-        for (let x = clampInt(x0, 0, frame.width - 1); x < Math.min(frame.width, x1); x += 1) {
+      for (let y = clamp(y0, 0, frame.height - 1); y < Math.min(frame.height, y1); y += 1) {
+        for (let x = clamp(x0, 0, frame.width - 1); x < Math.min(frame.width, x1); x += 1) {
           const index = (y * frame.width + x) * channels
           const r = frame.data[index] / 255
           const g = frame.data[index + 1] / 255
@@ -379,22 +381,8 @@ function percentileArray(values: Float32Array, fraction: number): number {
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * fraction)))]
 }
 
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b)
-  const middle = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
-}
-
 function mean(values: Float32Array): number {
   let sum = 0
   for (const value of values) sum += value
   return sum / Math.max(1, values.length)
-}
-
-function clampInt(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
-
-function clamp01(value: number): number {
-  return Math.min(1, Math.max(0, value))
 }

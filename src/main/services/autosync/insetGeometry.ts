@@ -1,4 +1,5 @@
 import { findSequenceAnchors, type AutoSyncAnchor, type TimedSignature } from './matching'
+import { clamp, median } from '@shared/numeric'
 import {
   applySignatureMask,
   createFrameSignature,
@@ -227,12 +228,6 @@ function dedupeRects(rects: NormalizedRect[]): NormalizedRect[] {
   })
 }
 
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b)
-  const middle = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
-}
-
 function densestOffsetCluster(anchors: AutoSyncAnchor[], tolerance: number): AutoSyncAnchor[] {
   let best: AutoSyncAnchor[] = []
   let bestConfidence = 0
@@ -259,8 +254,4 @@ function maskImprovesConsistency(rawAnchors: AutoSyncAnchor[], maskedAnchors: Au
   const average = (anchors: AutoSyncAnchor[]): number =>
     anchors.reduce((sum, anchor) => sum + anchor.confidence, 0) / Math.max(1, anchors.length)
   return average(maskedCluster) >= average(rawCluster) + 0.08
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
 }

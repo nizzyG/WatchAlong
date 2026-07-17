@@ -1,4 +1,5 @@
 import type { PlaybackRate, ReactorSource } from '@shared/types'
+import { clamp, round } from '@shared/numeric'
 
 export const playbackRates: PlaybackRate[] = [1, 1.25, 1.5, 2]
 
@@ -29,9 +30,9 @@ export function calculateMovieRateCorrection(
   }
 
   const sourceFps = reactorSourceFps[reactorSource]
-  return Number(clamp(sourceFps / detectedMovieFps, 0.9, 1.1).toFixed(6))
+  return round(clamp(sourceFps / detectedMovieFps, 0.9, 1.1), 6)
 }
 
-export function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
+export function roundSeconds(value: number): number {
+  return round(value, 6)
 }

@@ -1,4 +1,5 @@
 import type { MediaRole, SyncCommand, SyncState } from '@shared/types'
+import { clamp } from '@shared/numeric'
 import { SyncCommandQueue } from './commandQueue'
 import { TimelineMapping } from './timeline'
 
@@ -566,8 +567,4 @@ function correctedRate(driftSeconds: number, basePlaybackRate = 1): number {
   }
 
   return driftSeconds > 0 ? basePlaybackRate * 0.97 : basePlaybackRate * 1.03
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
 }
