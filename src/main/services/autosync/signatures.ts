@@ -1,4 +1,12 @@
 import { clamp, clamp01, median } from '@shared/numeric'
+import {
+  NORMALIZED_RECT_MINIMUM_SIZE,
+  SIGNATURE_DISTANCE,
+  SIGNATURE_DISTANCE_WEIGHTS,
+  SIGNATURE_GRID,
+  TEMPORAL_MASK,
+  WEIGHT_EPSILON
+} from './constants'
 
 export interface PixelFrame {
   data: Uint8Array
@@ -53,7 +61,10 @@ const FULL_FRAME: NormalizedRect = { x: 0, y: 0, width: 1, height: 1 }
 
 export function createFrameSignature(frame: PixelFrame, options: SignatureOptions = {}): FrameSignature {
   validateFrame(frame)
-  const gridSize = Math.max(4, Math.min(32, Math.round(options.gridSize ?? 16)))
+  const gridSize = Math.max(
+    SIGNATURE_GRID.minimum,
+    Math.min(SIGNATURE_GRID.maximum, Math.round(options.gridSize ?? SIGNATURE_GRID.default))
+  )
   const crop = normalizeRect(options.crop ?? FULL_FRAME)
   const channels = frame.channels ?? 3
   const cellCount = gridSize * gridSize
@@ -125,21 +136,41 @@ export function signatureDistance(a: FrameSignature, b: FrameSignature): number 
   const lumaErrors: WeightedValue[] = []
   const chromaErrors: WeightedValue[] = []
   for (let index = 0; index < a.luma.length; index += 1) {
-    const normalizedA = (a.luma[index] - statsA.mean) / Math.max(0.04, statsA.contrast)
-    const normalizedB = (b.luma[index] - statsB.mean) / Math.max(0.04, statsB.contrast)
-    lumaErrors.push({ value: Math.min(4, Math.abs(normalizedA - normalizedB)) / 4, weight: weights[index] })
+    const normalizedA = (a.luma[index] - statsA.mean) /
+      Math.max(SIGNATURE_DISTANCE.minimumLumaContrast, statsA.contrast)
+    const normalizedB = (b.luma[index] - statsB.mean) /
+      Math.max(SIGNATURE_DISTANCE.minimumLumaContrast, statsB.contrast)
+    lumaErrors.push({
+      value: Math.min(SIGNATURE_DISTANCE.maximumLumaError, Math.abs(normalizedA - normalizedB)) /
+        SIGNATURE_DISTANCE.maximumLumaError,
+      weight: weights[index]
+    })
     chromaErrors.push({
-      value: Math.min(1, Math.abs(a.chromaU[index] - b.chromaU[index]) + Math.abs(a.chromaV[index] - b.chromaV[index])),
+      value: Math.min(
+        SIGNATURE_DISTANCE.maximumChromaError,
+        Math.abs(a.chromaU[index] - b.chromaU[index]) + Math.abs(a.chromaV[index] - b.chromaV[index])
+      ),
       weight: weights[index]
     })
   }
 
   // Ignore the worst cells so timers, subtitles, and face-cam overlap do not dominate.
-  const spatial = weightedTrimmedMean(lumaErrors, 0.82)
-  const chroma = weightedTrimmedMean(chromaErrors, 0.82)
-  const brightness = Math.min(1, Math.abs(statsA.mean - statsB.mean) * 2)
-  const contrast = Math.min(1, Math.abs(statsA.contrast - statsB.contrast) * 3)
-  return clamp01(spatial * 0.62 + chroma * 0.16 + brightness * 0.14 + contrast * 0.08)
+  const spatial = weightedTrimmedMean(lumaErrors, SIGNATURE_DISTANCE.retainedSpatialFraction)
+  const chroma = weightedTrimmedMean(chromaErrors, SIGNATURE_DISTANCE.retainedChromaFraction)
+  const brightness = Math.min(
+    1,
+    Math.abs(statsA.mean - statsB.mean) * SIGNATURE_DISTANCE.brightnessMultiplier
+  )
+  const contrast = Math.min(
+    1,
+    Math.abs(statsA.contrast - statsB.contrast) * SIGNATURE_DISTANCE.contrastMultiplier
+  )
+  return clamp01(
+    spatial * SIGNATURE_DISTANCE_WEIGHTS.spatial +
+    chroma * SIGNATURE_DISTANCE_WEIGHTS.chroma +
+    brightness * SIGNATURE_DISTANCE_WEIGHTS.brightness +
+    contrast * SIGNATURE_DISTANCE_WEIGHTS.contrast
+  )
 }
 
 export function signatureSimilarity(a: FrameSignature, b: FrameSignature): number {
@@ -206,7 +237,7 @@ export function temporalOrdinalDistance(
     weightedDistance += Math.min(1, distance / normalization) * weight
     weightTotal += weight
   }
-  return clamp01(weightedDistance / Math.max(1e-6, weightTotal))
+  return clamp01(weightedDistance / Math.max(WEIGHT_EPSILON, weightTotal))
 }
 
 export function mirrorSignature(signature: FrameSignature): FrameSignature {
@@ -246,33 +277,50 @@ export function createTemporalVarianceMask(
   const cellCount = first.luma.length
 
   const medianActivity = medianArray(activity)
-  const quietActivity = percentileArray(activity, 0.1)
+  const quietActivity = percentileArray(activity, TEMPORAL_MASK.quietPercentile)
   // Require a distinct quiet population. This avoids masking an unobstructed
   // crop merely because the whole scene happens to be low-motion.
-  if (medianActivity < 0.006 || quietActivity / medianActivity > 0.62) return null
-  const seedThreshold = Math.min(0.025, medianActivity * 0.5)
-  const growThreshold = Math.min(0.045, medianActivity * 0.75)
+  if (medianActivity < TEMPORAL_MASK.minimumMedianActivity ||
+    quietActivity / medianActivity > TEMPORAL_MASK.maximumQuietToMedianRatio) return null
+  const seedThreshold = Math.min(
+    TEMPORAL_MASK.maximumSeedActivity,
+    medianActivity * TEMPORAL_MASK.seedMedianMultiplier
+  )
+  const growThreshold = Math.min(
+    TEMPORAL_MASK.maximumGrowActivity,
+    medianActivity * TEMPORAL_MASK.growMedianMultiplier
+  )
   const seed = Array.from(activity, (value) => value <= seedThreshold)
   const eligible = Array.from(activity, (value) => value <= growThreshold)
-  const selected = connectedStaticCells(seed, eligible, first.gridSize, options.minimumComponentSize ?? 2)
-  const maximumMasked = Math.max(1, Math.floor(cellCount * (options.maximumMaskedFraction ?? 0.5)))
+  const selected = connectedStaticCells(
+    seed,
+    eligible,
+    first.gridSize,
+    options.minimumComponentSize ?? TEMPORAL_MASK.minimumComponentSize
+  )
+  const maximumMasked = Math.max(
+    1,
+    Math.floor(cellCount * (options.maximumMaskedFraction ?? TEMPORAL_MASK.maximumMaskedFraction))
+  )
   const ranked = [...selected].sort((a, b) => activity[a] - activity[b]).slice(0, maximumMasked)
-  if (ranked.length < (options.minimumComponentSize ?? 2)) return null
+  if (ranked.length < (options.minimumComponentSize ?? TEMPORAL_MASK.minimumComponentSize)) return null
 
   const weights = new Float32Array(cellCount).fill(1)
-  for (const index of ranked) weights[index] = 0.06
+  for (const index of ranked) weights[index] = TEMPORAL_MASK.maskedCellWeight
   return { gridSize: first.gridSize, weights, maskedFraction: ranked.length / cellCount }
 }
 
 function calculateTemporalCellActivity(signatures: FrameSignature[]): Float32Array | null {
   const first = signatures[0]
-  if (!first || signatures.length < 7 || signatures.some((signature) => signature.gridSize !== first.gridSize)) return null
+  if (!first || signatures.length < TEMPORAL_MASK.minimumSignatures ||
+    signatures.some((signature) => signature.gridSize !== first.gridSize)) return null
   const activity = new Float32Array(first.luma.length)
   for (let cell = 0; cell < activity.length; cell += 1) {
     const lumaValues = signatures.map((signature) => signature.luma[cell])
     const uValues = signatures.map((signature) => signature.chromaU[cell])
     const vValues = signatures.map((signature) => signature.chromaV[cell])
-    activity[cell] = robustSpread(lumaValues) + (robustSpread(uValues) + robustSpread(vValues)) * 0.2
+    activity[cell] = robustSpread(lumaValues) +
+      (robustSpread(uValues) + robustSpread(vValues)) * TEMPORAL_MASK.chromaActivityWeight
   }
   return activity
 }
@@ -290,7 +338,12 @@ function validateFrame(frame: PixelFrame): void {
 function normalizeRect(rect: NormalizedRect): NormalizedRect {
   const x = clamp01(rect.x)
   const y = clamp01(rect.y)
-  return { x, y, width: Math.max(0.01, Math.min(1 - x, rect.width)), height: Math.max(0.01, Math.min(1 - y, rect.height)) }
+  return {
+    x,
+    y,
+    width: Math.max(NORMALIZED_RECT_MINIMUM_SIZE, Math.min(1 - x, rect.width)),
+    height: Math.max(NORMALIZED_RECT_MINIMUM_SIZE, Math.min(1 - y, rect.height))
+  }
 }
 
 interface WeightedValue { value: number; weight: number }
@@ -298,7 +351,7 @@ interface WeightedValue { value: number; weight: number }
 function weightedTrimmedMean(values: WeightedValue[], keepFraction: number): number {
   const sorted = [...values].filter((item) => item.weight > 0).sort((a, b) => a.value - b.value)
   const totalWeight = sorted.reduce((sum, item) => sum + item.weight, 0)
-  const targetWeight = Math.max(1e-6, totalWeight * keepFraction)
+  const targetWeight = Math.max(WEIGHT_EPSILON, totalWeight * keepFraction)
   let usedWeight = 0
   let sum = 0
   for (const item of sorted) {
@@ -307,7 +360,7 @@ function weightedTrimmedMean(values: WeightedValue[], keepFraction: number): num
     sum += item.value * weight
     usedWeight += weight
   }
-  return sum / Math.max(1e-6, usedWeight)
+  return sum / Math.max(WEIGHT_EPSILON, usedWeight)
 }
 
 function combinedWeights(a: FrameSignature, b: FrameSignature): Float32Array {
@@ -325,10 +378,10 @@ function weightedLumaStats(values: Float32Array, weights: Float32Array): { mean:
     weightSum += weights[index]
     sum += values[index] * weights[index]
   }
-  const meanValue = sum / Math.max(1e-6, weightSum)
+  const meanValue = sum / Math.max(WEIGHT_EPSILON, weightSum)
   let variance = 0
   for (let index = 0; index < values.length; index += 1) variance += (values[index] - meanValue) ** 2 * weights[index]
-  return { mean: meanValue, contrast: Math.sqrt(variance / Math.max(1e-6, weightSum)) }
+  return { mean: meanValue, contrast: Math.sqrt(variance / Math.max(WEIGHT_EPSILON, weightSum)) }
 }
 
 function robustSpread(values: number[]): number {

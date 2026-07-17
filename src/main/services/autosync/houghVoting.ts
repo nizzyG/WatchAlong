@@ -3,6 +3,12 @@ import type {
   BurstWeightedSequenceMatchCandidate
 } from './matching'
 import { clamp01, median } from '@shared/numeric'
+import {
+  HOUGH_DEFAULTS,
+  HOUGH_LOCAL_SCORE_WEIGHTS,
+  MATCH_CONFIDENCE_WEIGHTS,
+  RATE_BAND
+} from './constants'
 
 export interface HoughVotingOptions {
   minimumRate?: number
@@ -58,11 +64,14 @@ export function voteForTemporalConsensus(
   const groupsByProbe = new Map<string, BurstWeightedSequenceMatchCandidate[]>()
   for (const candidates of candidateGroups) {
     if (!candidates.length) continue
-    const key = candidates[0].reactionTime.toFixed(6)
+    const key = candidates[0].reactionTime.toFixed(HOUGH_DEFAULTS.probeTimeDecimalPlaces)
     groupsByProbe.set(key, [...(groupsByProbe.get(key) ?? []), ...candidates])
   }
   const groups = [...groupsByProbe.values()]
-  const minimumSupport = Math.max(3, Math.round(options.minimumSupport ?? 3))
+  const minimumSupport = Math.max(
+    HOUGH_DEFAULTS.minimumSupport,
+    Math.round(options.minimumSupport ?? HOUGH_DEFAULTS.minimumSupport)
+  )
   if (groups.length < minimumSupport) return null
 
   const probeTimes = groups.map((candidates) => candidates[0].reactionTime)
@@ -70,30 +79,36 @@ export function voteForTemporalConsensus(
   const maximumProbeTime = Math.max(...probeTimes)
   if (maximumProbeTime - minimumProbeTime <= 0) return null
   const referenceReactionTime = median(probeTimes)
-  const minimumRate = options.minimumRate ?? 0.9
-  const maximumRate = options.maximumRate ?? 1.1
+  const minimumRate = options.minimumRate ?? RATE_BAND.min
+  const maximumRate = options.maximumRate ?? RATE_BAND.max
   if (maximumRate <= minimumRate) return null
-  const offsetBinSeconds = Math.max(0.01, options.offsetBinSeconds ?? 0.25)
+  const offsetBinSeconds = Math.max(
+    HOUGH_DEFAULTS.minimumOffsetBinSeconds,
+    options.offsetBinSeconds ?? HOUGH_DEFAULTS.offsetBinSeconds
+  )
   const inlierToleranceSeconds = Math.max(
     offsetBinSeconds,
-    options.inlierToleranceSeconds ?? offsetBinSeconds * 2
+    options.inlierToleranceSeconds ?? offsetBinSeconds * HOUGH_DEFAULTS.inlierToleranceMultiplier
   )
   const runnerUpRidgeToleranceSeconds = Math.max(
     inlierToleranceSeconds,
-    options.runnerUpRidgeToleranceSeconds ?? Math.max(3, inlierToleranceSeconds * 4)
+    options.runnerUpRidgeToleranceSeconds ?? Math.max(
+      HOUGH_DEFAULTS.minimumRunnerUpRidgeToleranceSeconds,
+      inlierToleranceSeconds * HOUGH_DEFAULTS.runnerUpRidgeToleranceMultiplier
+    )
   )
   const reactionRadius = Math.max(
-    1,
+    HOUGH_DEFAULTS.minimumReactionRadiusSeconds,
     ...probeTimes.map((time) => Math.abs(time - referenceReactionTime))
   )
   const desiredSlopeStep = Math.min(
-    options.maximumSlopeStep ?? 0.001,
-    offsetBinSeconds / (2 * reactionRadius)
+    options.maximumSlopeStep ?? HOUGH_DEFAULTS.maximumSlopeStep,
+    offsetBinSeconds / (HOUGH_DEFAULTS.slopeResolutionDivisor * reactionRadius)
   )
   const slopeRange = maximumRate - minimumRate
   const slopeBinCount = Math.max(1, Math.min(
-    Math.round(options.maximumSlopeBins ?? 5000),
-    Math.ceil(slopeRange / Math.max(1e-7, desiredSlopeStep))
+    Math.round(options.maximumSlopeBins ?? HOUGH_DEFAULTS.maximumSlopeBins),
+    Math.ceil(slopeRange / Math.max(HOUGH_DEFAULTS.slopeStepEpsilon, desiredSlopeStep))
   ))
   const slopeStep = slopeRange / slopeBinCount
   const scanConfig: HoughScanConfig = {
@@ -124,16 +139,22 @@ export function voteForTemporalConsensus(
     const runnerUpCandidate = alternatives[0] ?? selected.candidate
     const separation = clamp01(
       (runnerUpCandidate.distance - selected.candidate.distance) /
-      Math.max(0.08, runnerUpCandidate.distance)
+      Math.max(HOUGH_DEFAULTS.runnerUpDistanceFloor, runnerUpCandidate.distance)
     )
     return [{
       reactionTime: selected.candidate.reactionTime,
       movieTime: selected.candidate.movieTime,
-      confidence: clamp01(selected.candidate.rawSimilarity * 0.58 + separation * 0.42),
+      confidence: clamp01(
+        selected.candidate.rawSimilarity * MATCH_CONFIDENCE_WEIGHTS.rawSimilarity +
+        separation * MATCH_CONFIDENCE_WEIGHTS.separation
+      ),
       score: selected.candidate.distance,
       runnerUpScore: runnerUpCandidate.distance,
       rawSimilarity: selected.candidate.rawSimilarity,
-      fitWeight: Math.max(1e-6, selected.candidate.burstSimilarity ** 2)
+      fitWeight: Math.max(
+        HOUGH_DEFAULTS.fitWeightEpsilon,
+        selected.candidate.burstSimilarity ** HOUGH_DEFAULTS.burstFitWeightExponent
+      )
     }]
   })
   if (anchors.length < minimumSupport) return null
@@ -149,7 +170,9 @@ export function voteForTemporalConsensus(
     seedRate: bestPeak.slope,
     peakScore: bestPeak.score,
     runnerUpPeakScore,
-    peakMargin: clamp01((bestPeak.score - runnerUpPeakScore) / Math.max(1e-9, bestPeak.score)),
+    peakMargin: clamp01(
+      (bestPeak.score - runnerUpPeakScore) / Math.max(HOUGH_DEFAULTS.peakScoreEpsilon, bestPeak.score)
+    ),
     supportCount: bestPeak.support,
     totalProbeCount: groups.length,
     supportFraction: bestPeak.support / groups.length,
@@ -174,8 +197,12 @@ function selectCandidateOnPeak(
     // Hough establishes the consensus neighborhood; the strongest raw local
     // match supplies precision within it. This avoids quantized bin phase
     // pulling WLS toward a weaker adjacent frame.
-    const score = candidate.rawSimilarity * 0.85 + candidate.burstSimilarity * 0.15 + proximity * 1e-6
-    if (!best || score > best.score) best = { candidate, proximity: Math.max(0.05, proximity), score }
+    const score = candidate.rawSimilarity * HOUGH_LOCAL_SCORE_WEIGHTS.rawSimilarity +
+      candidate.burstSimilarity * HOUGH_LOCAL_SCORE_WEIGHTS.burstSimilarity +
+      proximity * HOUGH_DEFAULTS.localScoreTieBreaker
+    if (!best || score > best.score) {
+      best = { candidate, proximity: Math.max(HOUGH_DEFAULTS.minimumProximity, proximity), score }
+    }
   }
   return best
 }

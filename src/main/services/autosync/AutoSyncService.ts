@@ -44,8 +44,37 @@ import {
 } from './openingFallback'
 import { applySignatureMask, createFrameSignature, type SignatureCellMask } from './signatures'
 import type { AutoSyncMediaBackend, MediaInfo } from './ffmpegBackend'
+import {
+  AUTO_SYNC_ALGORITHM_VERSION,
+  AUTO_SYNC_PROGRESS,
+  BODY_SCAN,
+  COARSE_RATE_BAND,
+  DEFAULT_SIGNATURE_GRID_SIZE,
+  FIT_DEFAULTS,
+  GEOMETRY_SCAN,
+  MAX_OPENING_ELIGIBLE_DEVIATION_SECONDS,
+  MAX_PARTIAL_DEVIATION_SECONDS,
+  MAX_STRONG_OPENING_DEVIATION_SECONDS,
+  MIN_OPENING_ELIGIBLE_ANCHORS,
+  MIN_PARTIAL_ANCHORS,
+  MIN_PARTIAL_GEOMETRY_CONFIDENCE,
+  MIN_STRONG_OPENING_ANCHORS,
+  MIN_STRONG_OPENING_SPAN_SECONDS,
+  OFFSET_DECIMAL_PLACES,
+  OPENING_CORROBORATION_TOLERANCE_SECONDS,
+  OPENING_MOTION_SCAN,
+  OPENING_PARTIAL_FLOOR,
+  OPENING_PREFIX_SCAN,
+  OPENING_PROBE_TIMES,
+  OPENING_SCAN,
+  PARTIAL_CONFIDENCE_CAP,
+  PARTIAL_OFFSET_AGREEMENT_SECONDS,
+  PROBE_FRACTIONS,
+  RATE_BAND,
+  REFINEMENT_SCAN
+} from './constants'
 
-export const AUTO_SYNC_ALGORITHM_VERSION = 3
+export { AUTO_SYNC_ALGORITHM_VERSION } from './constants'
 
 export interface AutoSyncSessionRepository {
   getSession(sessionId: string): LibrarySession | null
@@ -126,22 +155,22 @@ export class AutoSyncService {
     const timingSnapshot = captureTimingSnapshot(session)
     const effectiveSignal = options.signal ?? new AbortController().signal
     try {
-      this.progress(sessionId, 'preparing', 3, 'Checking both videos…')
+      this.progress(sessionId, 'preparing', AUTO_SYNC_PROGRESS.preparing, 'Checking both videos…')
       const [movieInfo, reactionInfo] = await Promise.all([
         this.options.backend.probe(session.moviePath, effectiveSignal),
         this.options.backend.probe(session.reactionPath, effectiveSignal)
       ])
 
-      this.progress(sessionId, 'finding-inset', 10, 'Finding the movie inside the reaction…')
+      this.progress(sessionId, 'finding-inset', AUTO_SYNC_PROGRESS.findingInset, 'Finding the movie inside the reaction…')
       const intro = await this.findGeometry(session, movieInfo, reactionInfo, effectiveSignal)
       if (!intro) return fallback(sessionId, 'WatchAlong couldn’t clearly see the movie in this reaction. You can line it up manually.')
 
-      this.progress(sessionId, 'scanning', 30, 'Comparing moments across the watchalong…')
+      this.progress(sessionId, 'scanning', AUTO_SYNC_PROGRESS.scanning, 'Comparing moments across the watchalong…')
       const scan = intro.openingOnly
         ? { anchors: [], consensus: null, geometry: intro.geometry, mask: intro.mask }
         : await this.scanTimelines(session, movieInfo, reactionInfo, intro, effectiveSignal)
       const coarse = scan.anchors
-      this.progress(sessionId, 'refining', 72, 'Double-checking the best matches…')
+      this.progress(sessionId, 'refining', AUTO_SYNC_PROGRESS.refining, 'Double-checking the best matches…')
       const refined = await this.refineAnchors(session, coarse, scan.geometry, scan.mask, effectiveSignal)
       const refinedFit = fitMatchSet(refined, movieInfo.duration)
       const coarseFit = fitMatchSet({ anchors: coarse, consensus: scan.consensus }, movieInfo.duration)
@@ -151,7 +180,7 @@ export class AutoSyncService {
       const current = this.options.sessions.getSession(sessionId)
       if (!isTimingSnapshotCurrent(current, timingSnapshot)) return stale(sessionId)
 
-      this.progress(sessionId, 'finishing', 94, 'Finishing the timing…')
+      this.progress(sessionId, 'finishing', AUTO_SYNC_PROGRESS.finishing, 'Finishing the timing…')
       if (fit && isConfidentFit(fit)) {
         this.commit(sessionId, fit.offsetSeconds, fit.movieRateCorrection, fit.confidence, movieInfo.frameRate)
         return completeFromFit(sessionId, 'confident', fit, 'Ready — WatchAlong found the timing and will keep both videos together.')
@@ -162,15 +191,20 @@ export class AutoSyncService {
       if (!isTimingSnapshotCurrent(latest, timingSnapshot)) return stale(sessionId)
       const introOffset = offsetStatsForRate(refinedIntro.anchors, latest.movieRateCorrection)
       const bodyOffset = offsetStatsForRate(refined.anchors, latest.movieRateCorrection)
-      const partialOffset = introOffset && bodyOffset && Math.abs(bodyOffset.offsetSeconds - introOffset.offsetSeconds) <= 2
+      const partialOffset = introOffset && bodyOffset &&
+        Math.abs(bodyOffset.offsetSeconds - introOffset.offsetSeconds) <= PARTIAL_OFFSET_AGREEMENT_SECONDS
         ? bodyOffset.offsetSeconds
         : introOffset?.offsetSeconds
-      const introOffsetIsReliable = Boolean(introOffset && introOffset.count >= 3 && introOffset.maximumDeviation <= 2)
-      if (!intro.openingOnly && intro.confidence >= 0.5 && introOffsetIsReliable && partialOffset !== undefined && Number.isFinite(partialOffset)) {
+      const introOffsetIsReliable = Boolean(
+        introOffset && introOffset.count >= MIN_PARTIAL_ANCHORS &&
+        introOffset.maximumDeviation <= MAX_PARTIAL_DEVIATION_SECONDS
+      )
+      if (!intro.openingOnly && intro.confidence >= MIN_PARTIAL_GEOMETRY_CONFIDENCE &&
+        introOffsetIsReliable && partialOffset !== undefined && Number.isFinite(partialOffset)) {
         // A marginal drift estimate is useful evidence, but not safe to apply.
         // Keep the user's current rate and only prefill the well-supported start point.
         return this.completePartial(sessionId, options.intent, partialOffset, latest.movieRateCorrection,
-          Math.min(0.69, fit?.confidence ?? intro.confidence), introOffset!.count, movieInfo.frameRate)
+          Math.min(PARTIAL_CONFIDENCE_CAP, fit?.confidence ?? intro.confidence), introOffset!.count, movieInfo.frameRate)
       }
 
       // Preserve the established whole-runtime and partial paths above. Only
@@ -181,8 +215,8 @@ export class AutoSyncService {
       const coarseIntroOffset = offsetStatsForRate(intro.anchors, latest.movieRateCorrection)
       const openingEligible = Boolean(
         coarseIntroOffset &&
-        coarseIntroOffset.count >= 2 &&
-        coarseIntroOffset.maximumDeviation <= 2.5
+        coarseIntroOffset.count >= MIN_OPENING_ELIGIBLE_ANCHORS &&
+        coarseIntroOffset.maximumDeviation <= MAX_OPENING_ELIGIBLE_DEVIATION_SECONDS
       )
       if (openingEligible) {
         const opening = await this.scanOpeningTimelines(
@@ -194,28 +228,29 @@ export class AutoSyncService {
         )
         const independentOpeningOffset = openingEvidenceStats(opening.anchors, latest.movieRateCorrection)
         const openingOffset = independentOpeningOffset ?? (
-          intro.openingOnly && opening.anchors.length >= 2
+          intro.openingOnly && opening.anchors.length >= MIN_OPENING_ELIGIBLE_ANCHORS
             ? openingEvidenceStats([...intro.anchors, ...opening.anchors], latest.movieRateCorrection)
             : null
         )
         const strongIndependentVisualEvidence = Boolean(
           independentOpeningOffset &&
-          independentOpeningOffset.count >= 3 &&
-          independentOpeningOffset.maximumDeviation <= 0.25 &&
-          independentOpeningOffset.spanSeconds >= 12
+          independentOpeningOffset.count >= MIN_STRONG_OPENING_ANCHORS &&
+          independentOpeningOffset.maximumDeviation <= MAX_STRONG_OPENING_DEVIATION_SECONDS &&
+          independentOpeningOffset.spanSeconds >= MIN_STRONG_OPENING_SPAN_SECONDS
         )
         const openingMotionOffset = strongIndependentVisualEvidence
           ? null
           : intro.openingMotionOffset ?? await this.findOpeningMotionOffset(session, intro, effectiveSignal)
         const hasRequiredCorroboration = strongIndependentVisualEvidence || (
           openingMotionOffset !== null && openingOffset !== null &&
-          Math.abs(openingMotionOffset - openingOffset.offsetSeconds) <= 1.5
+          Math.abs(openingMotionOffset - openingOffset.offsetSeconds) <= OPENING_CORROBORATION_TOLERANCE_SECONDS
         )
         if (openingOffset && hasRequiredCorroboration) {
           const currentAfterOpening = this.options.sessions.getSession(sessionId)
           if (!isTimingSnapshotCurrent(currentAfterOpening, timingSnapshot)) return stale(sessionId)
           return this.completeReadyOpeningPartial(sessionId, openingOffset.offsetSeconds,
-            currentAfterOpening.movieRateCorrection, Math.min(0.69, Math.max(intro.confidence, 0.45)),
+            currentAfterOpening.movieRateCorrection,
+            Math.min(PARTIAL_CONFIDENCE_CAP, Math.max(intro.confidence, OPENING_PARTIAL_FLOOR)),
             openingOffset.count, movieInfo.frameRate)
         }
       }
@@ -235,18 +270,27 @@ export class AutoSyncService {
     reactionInfo: MediaInfo,
     signal: AbortSignal
   ): Promise<DetectedInset | null> {
-    const fps = 0.25
-    const reactionDuration = Math.min(reactionInfo.duration, 480)
-    const movieDuration = Math.min(movieInfo.duration, 300)
+    const fps = GEOMETRY_SCAN.fps
+    const reactionDuration = Math.min(reactionInfo.duration, GEOMETRY_SCAN.maximumReactionDurationSeconds)
+    const movieDuration = Math.min(movieInfo.duration, GEOMETRY_SCAN.maximumMovieDurationSeconds)
     const [reactionFrames, movieFrames] = await Promise.all([
-      this.extractPixelFrames(session.reactionPath!, 0, reactionDuration, fps, 96, 54, signal),
-      this.extractPixelFrames(session.moviePath!, 0, movieDuration, fps, 64, 36, signal)
+      this.extractPixelFrames(
+        session.reactionPath!, 0, reactionDuration, fps,
+        GEOMETRY_SCAN.reactionWidth, GEOMETRY_SCAN.reactionHeight, signal
+      ),
+      this.extractPixelFrames(
+        session.moviePath!, 0, movieDuration, fps,
+        GEOMETRY_SCAN.movieWidth, GEOMETRY_SCAN.movieHeight, signal
+      )
     ])
-    const movie = movieFrames.map((frame) => ({ time: frame.time, signature: createFrameSignature(frame, { gridSize: 6 }) }))
+    const movie = movieFrames.map((frame) => ({
+      time: frame.time,
+      signature: createFrameSignature(frame, { gridSize: GEOMETRY_SCAN.gridSize })
+    }))
     const geometryOptions = {
       movieAspectRatio: movieInfo.width / movieInfo.height,
-      gridSize: 6,
-      minimumConfidence: 0.4
+      gridSize: GEOMETRY_SCAN.gridSize,
+      minimumConfidence: GEOMETRY_SCAN.minimumConfidence
     }
     let first: InsetGeometryResult | DetectedInset | null = findInsetGeometry(reactionFrames, movie, geometryOptions) ?? findInsetGeometry(reactionFrames, movie, {
       ...geometryOptions,
@@ -262,18 +306,32 @@ export class AutoSyncService {
       const openingCandidates = expandOpeningCandidatePositions(generateGeometryCandidates(
         reactionInfo.width / reactionInfo.height,
         movieInfo.width / movieInfo.height
-      ).filter((candidate) => candidate.width <= 0.5 && candidate.height <= 0.45))
+      ).filter((candidate) =>
+        candidate.width <= GEOMETRY_SCAN.openingCandidateMaximumWidth &&
+        candidate.height <= GEOMETRY_SCAN.openingCandidateMaximumHeight
+      ))
       const [timerReactionFrames, timerMovieFrames] = await Promise.all([
-        this.extractPixelFrames(session.reactionPath!, 0, Math.min(160, reactionInfo.duration), fps, 192, 108, signal),
-        this.extractPixelFrames(session.moviePath!, 0, Math.min(120, movieInfo.duration), fps, 128, 72, signal)
+        this.extractPixelFrames(
+          session.reactionPath!, 0,
+          Math.min(OPENING_PREFIX_SCAN.timerReactionDurationSeconds, reactionInfo.duration), fps,
+          OPENING_PREFIX_SCAN.timerReactionWidth, OPENING_PREFIX_SCAN.timerReactionHeight, signal
+        ),
+        this.extractPixelFrames(
+          session.moviePath!, 0,
+          Math.min(OPENING_PREFIX_SCAN.timerMovieDurationSeconds, movieInfo.duration), fps,
+          OPENING_PREFIX_SCAN.timerMovieWidth, OPENING_PREFIX_SCAN.timerMovieHeight, signal
+        )
       ])
       const timerMovie = timerMovieFrames.map((frame) => ({
         time: frame.time,
-        signature: createFrameSignature(frame, { gridSize: 8 })
+        signature: createFrameSignature(frame, { gridSize: OPENING_PREFIX_SCAN.timerGridSize })
       }))
-      for (const prefixSeconds of [160, 240]) {
+      for (const prefixSeconds of OPENING_PREFIX_SCAN.prefixSeconds) {
         const prefixReaction = reactionFrames.filter((frame) => frame.time <= prefixSeconds)
-        const prefixMovie = movie.filter((frame) => frame.time <= Math.min(180, prefixSeconds - 40))
+        const prefixMovie = movie.filter((frame) => frame.time <= Math.min(
+          OPENING_PREFIX_SCAN.prefixMovieMaximumSeconds,
+          prefixSeconds - OPENING_PREFIX_SCAN.prefixMovieLeadSeconds
+        ))
         const prefixResults = [findInsetGeometry(prefixReaction, prefixMovie, {
           ...geometryOptions,
           candidates: openingCandidates
@@ -283,25 +341,29 @@ export class AutoSyncService {
             reactionInfo.width / reactionInfo.height,
             movieInfo.width / movieInfo.height
           )
-        }), prefixSeconds === 160 ? findInsetGeometry(timerReactionFrames, timerMovie, {
+        }), prefixSeconds === OPENING_PREFIX_SCAN.timerPrefixSeconds
+          ? findInsetGeometry(timerReactionFrames, timerMovie, {
           ...geometryOptions,
-          gridSize: 8,
-          minimumConfidence: 0.35,
-          minimumAnchors: 2,
+          gridSize: OPENING_PREFIX_SCAN.timerGridSize,
+          minimumConfidence: OPENING_PREFIX_SCAN.minimumConfidence,
+          minimumAnchors: OPENING_PREFIX_SCAN.minimumAnchors,
             candidates: generateOpeningInsetCandidates()
-        }) : null].filter((result): result is NonNullable<typeof result> => Boolean(result))
+          })
+          : null].filter((result): result is NonNullable<typeof result> => Boolean(result))
 
         const validated: DetectedInset[] = []
         for (const result of prefixResults) {
           const coarse = offsetStatsForRate(result.anchors, 1)
-          if (!coarse || coarse.count < 2 || coarse.maximumDeviation > 2) continue
+          if (!coarse || coarse.count < OPENING_PREFIX_SCAN.minimumAnchors ||
+            coarse.maximumDeviation > OPENING_PREFIX_SCAN.maximumOffsetDeviationSeconds) continue
           const candidate: DetectedInset = {
             ...result,
             openingOnly: true,
             openingMotionOffset: null
           }
           const motionOffset = await this.findOpeningMotionOffset(session, candidate, signal)
-          if (motionOffset === null || Math.abs(motionOffset - coarse.offsetSeconds) > 3) continue
+          if (motionOffset === null ||
+            Math.abs(motionOffset - coarse.offsetSeconds) > OPENING_PREFIX_SCAN.maximumMotionDisagreementSeconds) continue
           validated.push({ ...candidate, openingMotionOffset: motionOffset })
         }
         validated.sort((left, right) =>
@@ -317,8 +379,8 @@ export class AutoSyncService {
     const refinedCandidates = refineGeometryCandidates(first.geometry, reactionInfo.width / reactionInfo.height, movieInfo.width / movieInfo.height)
     const refined = findInsetGeometry(reactionFrames, movie, {
       movieAspectRatio: movieInfo.width / movieInfo.height,
-      gridSize: 6,
-      minimumConfidence: 0.38,
+      gridSize: GEOMETRY_SCAN.gridSize,
+      minimumConfidence: GEOMETRY_SCAN.refinedMinimumConfidence,
       candidates: refinedCandidates
     })
     return {
@@ -335,42 +397,50 @@ export class AutoSyncService {
     intro: DetectedInset,
     signal: AbortSignal
   ): Promise<AnchorMatchSet> {
-    const fps = 8
-    const openingMovieDuration = Math.min(48, movieInfo.duration)
+    const fps = OPENING_SCAN.fps
+    const openingMovieDuration = Math.min(OPENING_SCAN.maximumMovieDurationSeconds, movieInfo.duration)
     const coarseOffset = offsetStatsForRate(intro.anchors, 1)?.offsetSeconds ?? intro.initialOffsetSeconds
-    const predictedReactionStart = Math.max(0, -coarseOffset - 3)
+    const predictedReactionStart = Math.max(0, -coarseOffset - OPENING_SCAN.reactionPrerollSeconds)
     const reactionDuration = Math.min(
-      openingMovieDuration + 6,
+      openingMovieDuration + OPENING_SCAN.reactionTailSeconds,
       Math.max(0, reactionInfo.duration - predictedReactionStart)
     )
-    if (reactionDuration < 12) return { anchors: [], consensus: null }
+    if (reactionDuration < OPENING_SCAN.minimumReactionDurationSeconds) return { anchors: [], consensus: null }
 
     const [reaction, movie] = await Promise.all([
       this.extractSignatures(
         session.reactionPath!, predictedReactionStart, reactionDuration, fps,
-        256, 144, intro.geometry, signal, 16, intro.mask
+        OPENING_SCAN.reactionWidth, OPENING_SCAN.reactionHeight,
+        intro.geometry, signal, OPENING_SCAN.gridSize, intro.mask
       ),
       this.extractSignatures(
         session.moviePath!, 0, openingMovieDuration, fps,
-        192, 108, undefined, signal, 16
+        OPENING_SCAN.movieWidth, OPENING_SCAN.movieHeight,
+        undefined, signal, OPENING_SCAN.gridSize
       )
     ])
     const candidateGroups: SequenceMatchCandidate[][] = []
-    for (const movieTime of [3, 6, 9, 12, 16, 20, 28, 36, 44]) {
-      if (movieTime >= openingMovieDuration - 2) continue
-      const window = signatureWindow(reaction, movieTime - coarseOffset, 9)
-      if (window.length < 9 || sequenceActivity(window) < 0.018) continue
+    for (const movieTime of OPENING_PROBE_TIMES) {
+      if (movieTime >= openingMovieDuration - OPENING_SCAN.probeEndMarginSeconds) continue
+      const window = signatureWindow(reaction, movieTime - coarseOffset, OPENING_SCAN.windowSize)
+      if (window.length < OPENING_SCAN.windowSize ||
+        sequenceActivity(window) < OPENING_SCAN.minimumSequenceActivity) continue
       const candidates = findSequenceMatchCandidates(window, movie, {
-        candidateExclusionFrames: 4,
-        maximumCandidatesPerProbe: 80
+        candidateExclusionFrames: OPENING_SCAN.candidateExclusionFrames,
+        maximumCandidatesPerProbe: OPENING_SCAN.maximumCandidatesPerProbe
       }).filter((candidate) =>
-        candidate.rawSimilarity >= 0.68 &&
-        Math.abs((candidate.movieTime - candidate.reactionTime) - coarseOffset) <= 3
+        candidate.rawSimilarity >= OPENING_SCAN.minimumCandidateRawSimilarity &&
+        Math.abs((candidate.movieTime - candidate.reactionTime) - coarseOffset) <=
+          OPENING_SCAN.candidateOffsetToleranceSeconds
       )
       if (candidates.length) candidateGroups.push(candidates)
     }
-    const anchors = selectBurstWeightedMatches(candidateGroups, { runnerUpExclusionFrames: 24 })
-      .filter((anchor) => anchor.confidence >= 0.42 && (anchor.rawSimilarity ?? 0) >= 0.72)
+    const anchors = selectBurstWeightedMatches(candidateGroups, {
+      runnerUpExclusionFrames: OPENING_SCAN.runnerUpExclusionFrames
+    }).filter((anchor) =>
+      anchor.confidence >= OPENING_SCAN.minimumAnchorConfidence &&
+      (anchor.rawSimilarity ?? 0) >= OPENING_SCAN.minimumAnchorRawSimilarity
+    )
     return { anchors, consensus: null }
   }
 
@@ -381,13 +451,14 @@ export class AutoSyncService {
   ): Promise<number | null> {
     const predictedStart = -intro.initialOffsetSeconds
     if (!Number.isFinite(predictedStart) || predictedStart < 0) return null
-    const start = Math.max(0, predictedStart - 4)
+    const start = Math.max(0, predictedStart - OPENING_MOTION_SCAN.prerollSeconds)
     const signatures = await this.extractSignatures(
-      session.reactionPath!, start, 8, 8,
-      256, 144, intro.geometry, signal, 16, intro.mask
+      session.reactionPath!, start, OPENING_MOTION_SCAN.durationSeconds, OPENING_MOTION_SCAN.fps,
+      OPENING_MOTION_SCAN.width, OPENING_MOTION_SCAN.height,
+      intro.geometry, signal, OPENING_MOTION_SCAN.gridSize, intro.mask
     )
     const motionStart = detectSustainedOpeningMotion(signatures, predictedStart)
-    return motionStart === null ? null : Number((-motionStart).toFixed(3))
+    return motionStart === null ? null : Number((-motionStart).toFixed(OPENING_MOTION_SCAN.resultDecimalPlaces))
   }
 
   private async scanTimelines(
@@ -397,13 +468,29 @@ export class AutoSyncService {
     intro: DetectedInset,
     signal: AbortSignal
   ): Promise<{ anchors: AutoSyncAnchor[]; consensus: HoughConsensus | null; geometry: InsetGeometry; mask: SignatureCellMask | null }> {
-    const pivotReactionTime = clamp(reactionInfo.duration * 0.55, 30, reactionInfo.duration - 30)
+    const pivotReactionTime = clamp(
+      reactionInfo.duration * BODY_SCAN.pivotReactionFraction,
+      BODY_SCAN.pivotEdgeMarginSeconds,
+      reactionInfo.duration - BODY_SCAN.pivotEdgeMarginSeconds
+    )
     const reactionSpan = pivotReactionTime - intro.referenceReactionTime
-    const possibleMovieTimes = [0.9, 1.1].map((rate) => intro.referenceMovieTime + reactionSpan * rate)
-    const pivotMovieStart = clamp(Math.min(...possibleMovieTimes) - 20, 0, movieInfo.duration)
-    const pivotMovieEnd = clamp(Math.max(...possibleMovieTimes) + 20, pivotMovieStart, movieInfo.duration)
+    const possibleMovieTimes = [RATE_BAND.min, RATE_BAND.max]
+      .map((rate) => intro.referenceMovieTime + reactionSpan * rate)
+    const pivotMovieStart = clamp(
+      Math.min(...possibleMovieTimes) - BODY_SCAN.pivotMoviePaddingSeconds,
+      0,
+      movieInfo.duration
+    )
+    const pivotMovieEnd = clamp(
+      Math.max(...possibleMovieTimes) + BODY_SCAN.pivotMoviePaddingSeconds,
+      pivotMovieStart,
+      movieInfo.duration
+    )
     const pivotMovie = await this.extractSignatures(
-      session.moviePath!, pivotMovieStart, Math.max(1, pivotMovieEnd - pivotMovieStart), 0.5, 96, 54, undefined, signal, 10
+      session.moviePath!, pivotMovieStart,
+      Math.max(BODY_SCAN.pivotMovieMinimumDurationSeconds, pivotMovieEnd - pivotMovieStart),
+      BODY_SCAN.pivotMovieFps, BODY_SCAN.pivotMovieWidth, BODY_SCAN.pivotMovieHeight,
+      undefined, signal, BODY_SCAN.pivotMovieGridSize
     )
     const geometryCandidates = [
       { geometry: intro.geometry, mask: intro.mask },
@@ -417,43 +504,70 @@ export class AutoSyncService {
     for (const candidate of geometryCandidates) {
       const { geometry, mask } = candidate
       const pivotReaction = await this.extractSignatures(
-        session.reactionPath!, Math.max(0, pivotReactionTime - 14), 28, 0.5, 128, 72, geometry, signal, 10, mask
+        session.reactionPath!,
+        Math.max(0, pivotReactionTime - BODY_SCAN.pivotReactionHalfWindowSeconds),
+        BODY_SCAN.pivotReactionDurationSeconds, BODY_SCAN.pivotReactionFps,
+        BODY_SCAN.pivotReactionWidth, BODY_SCAN.pivotReactionHeight,
+        geometry, signal, BODY_SCAN.pivotReactionGridSize, mask
       )
-      const pivot = matchSequence(pivotReaction, pivotMovie, { runnerUpExclusionFrames: 20 })
+      const pivot = matchSequence(pivotReaction, pivotMovie, {
+        runnerUpExclusionFrames: BODY_SCAN.pivotRunnerUpExclusionFrames
+      })
       if (pivot && (!selected || pivot.confidence > selected.pivot.confidence)) selected = { pivot, geometry, mask }
     }
-    if (!selected || selected.pivot.confidence < 0.32 || Math.abs(selected.pivot.reactionTime - intro.referenceReactionTime) < 30) {
+    if (!selected || selected.pivot.confidence < BODY_SCAN.minimumPivotConfidence ||
+      Math.abs(selected.pivot.reactionTime - intro.referenceReactionTime) < BODY_SCAN.minimumPivotSeparationSeconds) {
       return { anchors: [], consensus: null, geometry: intro.geometry, mask: intro.mask }
     }
     const { pivot, geometry, mask } = selected
 
     const estimatedRate = (pivot.movieTime - intro.referenceMovieTime) / (pivot.reactionTime - intro.referenceReactionTime)
-    if (!Number.isFinite(estimatedRate) || estimatedRate < 0.88 || estimatedRate > 1.12) {
+    if (!Number.isFinite(estimatedRate) ||
+      estimatedRate < COARSE_RATE_BAND.min || estimatedRate > COARSE_RATE_BAND.max) {
       return { anchors: [], consensus: null, geometry, mask }
     }
-    const probeTimes = [0.08, 0.2, 0.38, 0.56, 0.74, 0.9]
+    const probeTimes = PROBE_FRACTIONS
       .map((fraction) => reactionInfo.duration * fraction)
-      .filter((time) => time > 20 && time < reactionInfo.duration - 20)
+      .filter((time) =>
+        time > BODY_SCAN.probeEdgeMarginSeconds &&
+        time < reactionInfo.duration - BODY_SCAN.probeEdgeMarginSeconds
+      )
     const anchors: AutoSyncAnchor[] = [pivot]
     const candidateGroups: SequenceMatchCandidate[][] = []
     for (let index = 0; index < probeTimes.length; index += 1) {
       const reactionTime = probeTimes[index]
-      this.progress(session.id, 'scanning', 35 + Math.round(index / Math.max(1, probeTimes.length) * 32), 'Checking moments throughout the watchalong…')
-      if (Math.abs(reactionTime - pivot.reactionTime) < 20) continue
+      this.progress(
+        session.id,
+        'scanning',
+        AUTO_SYNC_PROGRESS.bodyScanStart +
+          Math.round(index / Math.max(1, probeTimes.length) * AUTO_SYNC_PROGRESS.bodyScanRange),
+        'Checking moments throughout the watchalong…'
+      )
+      if (Math.abs(reactionTime - pivot.reactionTime) < BODY_SCAN.probePivotExclusionSeconds) continue
       const predictedMovieTime = intro.referenceMovieTime + (reactionTime - intro.referenceReactionTime) * estimatedRate
-      const reactionStart = Math.max(0, reactionTime - 5)
-      const movieStart = Math.max(0, predictedMovieTime - 14)
+      const reactionStart = Math.max(0, reactionTime - BODY_SCAN.reactionHalfWindowSeconds)
+      const movieStart = Math.max(0, predictedMovieTime - BODY_SCAN.movieHalfWindowSeconds)
       const [reaction, movie] = await Promise.all([
-        this.extractSignatures(session.reactionPath!, reactionStart, 10, 2, 128, 72, geometry, signal, 10, mask),
-        this.extractSignatures(session.moviePath!, movieStart, 28, 2, 96, 54, undefined, signal, 10)
+        this.extractSignatures(
+          session.reactionPath!, reactionStart,
+          BODY_SCAN.reactionDurationSeconds, BODY_SCAN.reactionFps,
+          BODY_SCAN.reactionWidth, BODY_SCAN.reactionHeight,
+          geometry, signal, BODY_SCAN.reactionGridSize, mask
+        ),
+        this.extractSignatures(
+          session.moviePath!, movieStart,
+          BODY_SCAN.movieDurationSeconds, BODY_SCAN.movieFps,
+          BODY_SCAN.movieWidth, BODY_SCAN.movieHeight,
+          undefined, signal, BODY_SCAN.movieGridSize
+        )
       ])
       const candidates = findSequenceMatchCandidates(reaction, movie)
       if (candidates.length) candidateGroups.push(candidates)
     }
     const body = resolveCandidateGroups(candidateGroups, {
-      offsetBinSeconds: 0.5,
-      inlierToleranceSeconds: 0.75
-    }, 12, 0.35)
+      offsetBinSeconds: BODY_SCAN.houghOffsetBinSeconds,
+      inlierToleranceSeconds: BODY_SCAN.houghInlierToleranceSeconds
+    }, BODY_SCAN.runnerUpExclusionFrames, BODY_SCAN.minimumAnchorConfidence)
     anchors.push(...body.anchors)
     return { anchors, consensus: body.consensus, geometry, mask }
   }
@@ -467,24 +581,40 @@ export class AutoSyncService {
     reportProgress = true
   ): Promise<AnchorMatchSet> {
     const candidateGroups: SequenceMatchCandidate[][] = []
-    for (let index = 0; index < Math.min(8, anchors.length); index += 1) {
+    for (let index = 0; index < Math.min(REFINEMENT_SCAN.maximumAnchors, anchors.length); index += 1) {
       const anchor = anchors[index]
       if (reportProgress) {
-        this.progress(session.id, 'refining', 72 + Math.round((index / Math.max(1, anchors.length)) * 18), 'Checking the timing at several points…')
+        this.progress(
+          session.id,
+          'refining',
+          AUTO_SYNC_PROGRESS.anchorRefinementStart +
+            Math.round((index / Math.max(1, anchors.length)) * AUTO_SYNC_PROGRESS.anchorRefinementRange),
+          'Checking the timing at several points…'
+        )
       }
-      const reactionStart = Math.max(0, anchor.reactionTime - 5)
-      const movieStart = Math.max(0, anchor.movieTime - 7)
+      const reactionStart = Math.max(0, anchor.reactionTime - REFINEMENT_SCAN.reactionHalfWindowSeconds)
+      const movieStart = Math.max(0, anchor.movieTime - REFINEMENT_SCAN.movieHalfWindowSeconds)
       const [reaction, movie] = await Promise.all([
-        this.extractSignatures(session.reactionPath!, reactionStart, 10, 4, 192, 108, geometry, signal, 12, mask),
-        this.extractSignatures(session.moviePath!, movieStart, 14, 4, 128, 72, undefined, signal)
+        this.extractSignatures(
+          session.reactionPath!, reactionStart,
+          REFINEMENT_SCAN.reactionDurationSeconds, REFINEMENT_SCAN.reactionFps,
+          REFINEMENT_SCAN.reactionWidth, REFINEMENT_SCAN.reactionHeight,
+          geometry, signal, REFINEMENT_SCAN.reactionGridSize, mask
+        ),
+        this.extractSignatures(
+          session.moviePath!, movieStart,
+          REFINEMENT_SCAN.movieDurationSeconds, REFINEMENT_SCAN.movieFps,
+          REFINEMENT_SCAN.movieWidth, REFINEMENT_SCAN.movieHeight,
+          undefined, signal
+        )
       ])
       const candidates = findSequenceMatchCandidates(reaction, movie)
       if (candidates.length) candidateGroups.push(candidates)
     }
     return resolveCandidateGroups(candidateGroups, {
-      offsetBinSeconds: 0.25,
-      inlierToleranceSeconds: 0.5
-    }, 20, 0.4)
+      offsetBinSeconds: REFINEMENT_SCAN.houghOffsetBinSeconds,
+      inlierToleranceSeconds: REFINEMENT_SCAN.houghInlierToleranceSeconds
+    }, REFINEMENT_SCAN.runnerUpExclusionFrames, REFINEMENT_SCAN.minimumAnchorConfidence)
   }
 
   private async extractPixelFrames(
@@ -512,7 +642,7 @@ export class AutoSyncService {
     height: number,
     geometry: InsetGeometry | undefined,
     signal: AbortSignal,
-    gridSize = 12,
+    gridSize = DEFAULT_SIGNATURE_GRID_SIZE,
     mask: SignatureCellMask | null = null
   ): Promise<TimedSignature[]> {
     const signatures: TimedSignature[] = []
@@ -589,7 +719,12 @@ export class AutoSyncService {
   }
 
   private progress(sessionId: string, phase: AutoSyncProgressEvent['phase'], percent: number, message: string): void {
-    this.options.emitProgress({ sessionId, phase, percent: Math.min(100, Math.max(0, percent)), message })
+    this.options.emitProgress({
+      sessionId,
+      phase,
+      percent: Math.min(AUTO_SYNC_PROGRESS.maximum, Math.max(0, percent)),
+      message
+    })
   }
 }
 
@@ -610,7 +745,7 @@ function offsetStatsForRate(anchors: AutoSyncAnchor[], rate: number): { offsetSe
   const values = anchors.map((anchor) => anchor.movieTime - rate * anchor.reactionTime).sort((a, b) => a - b)
   const offsetSeconds = values[Math.floor(values.length / 2)]
   return {
-    offsetSeconds: Number(offsetSeconds.toFixed(6)),
+    offsetSeconds: Number(offsetSeconds.toFixed(OFFSET_DECIMAL_PLACES)),
     maximumDeviation: Math.max(...values.map((value) => Math.abs(value - offsetSeconds))),
     count: values.length
   }
@@ -635,7 +770,7 @@ function resolveCandidateGroups(
 }
 
 function fitMatchSet(matched: AnchorMatchSet, movieDuration: number): AutoSyncFit | null {
-  if (!matched.consensus || matched.anchors.length < 3) return null
+  if (!matched.consensus || matched.anchors.length < FIT_DEFAULTS.minimumAnchors) return null
   return fitAnchors(matched.anchors, {
     movieDuration,
     seedAnchors: matched.consensus.anchors,

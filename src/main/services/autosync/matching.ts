@@ -5,6 +5,12 @@ import {
   type FrameSignature
 } from './signatures'
 import { clamp01 } from '@shared/numeric'
+import {
+  MATCH_CONFIDENCE_WEIGHTS,
+  MATCH_DEFAULTS,
+  SEQUENCE_SCORE_WEIGHTS,
+  SEQUENCE_SCORING
+} from './constants'
 
 export interface TimedSignature {
   time: number
@@ -50,9 +56,12 @@ export function findSequenceAnchors(
   probeTimes: number[],
   options: MatchOptions = {}
 ): AutoSyncAnchor[] {
-  const windowSize = makeOdd(Math.max(3, options.windowSize ?? 5))
+  const windowSize = makeOdd(Math.max(
+    MATCH_DEFAULTS.minimumWindowSize,
+    options.windowSize ?? MATCH_DEFAULTS.windowSize
+  ))
   const halfWindow = Math.floor(windowSize / 2)
-  const minimumConfidence = options.minimumConfidence ?? 0.42
+  const minimumConfidence = options.minimumConfidence ?? MATCH_DEFAULTS.minimumConfidence
   const candidateGroups: SequenceMatchCandidate[][] = []
 
   for (const probeTime of probeTimes) {
@@ -60,16 +69,17 @@ export function findSequenceAnchors(
     if (center < halfWindow || center + halfWindow >= reaction.length || movie.length < windowSize) continue
     const window = reaction.slice(center - halfWindow, center + halfWindow + 1)
     const activity = sequenceActivity(window)
-    if (activity < (options.minimumSequenceActivity ?? 0.025)) continue
+    if (activity < (options.minimumSequenceActivity ?? MATCH_DEFAULTS.minimumSequenceActivity)) continue
     const candidates = findSequenceMatchCandidates(window, movie, options)
     if (candidates.length) candidateGroups.push(candidates)
   }
 
   const anchors = selectBurstWeightedMatches(candidateGroups, {
-    runnerUpExclusionFrames: options.runnerUpExclusionFrames ?? windowSize * 2,
+    runnerUpExclusionFrames: options.runnerUpExclusionFrames ??
+      windowSize * MATCH_DEFAULTS.runnerUpWindowMultiplier,
     referenceTimeBinSeconds: options.referenceTimeBinSeconds
   }).filter((match) => match.confidence >= minimumConfidence)
-  return dedupeAnchors(anchors, Math.max(1, windowSize))
+  return dedupeAnchors(anchors, Math.max(MATCH_DEFAULTS.minimumDedupeTolerance, windowSize))
 }
 
 export function matchSequence(
@@ -86,7 +96,8 @@ export function findSequenceMatchCandidates(
   movie: TimedSignature[],
   options: Pick<MatchOptions, 'candidateExclusionFrames' | 'maximumCandidatesPerProbe'> = {}
 ): SequenceMatchCandidate[] {
-  if (reactionWindow.length < 3 || movie.length < reactionWindow.length) return []
+  if (reactionWindow.length < MATCH_DEFAULTS.minimumWindowSize ||
+    movie.length < reactionWindow.length) return []
   const scores: Array<{ index: number; score: number }> = []
   const reactionOrdinal = createTemporalOrdinalSignature(reactionWindow.map((item) => item.signature))
   for (let start = 0; start <= movie.length - reactionWindow.length; start += 1) {
@@ -97,7 +108,10 @@ export function findSequenceMatchCandidates(
   }
   scores.sort((a, b) => a.score - b.score)
   const centerOffset = Math.floor(reactionWindow.length / 2)
-  const maximumCandidates = Math.max(2, Math.round(options.maximumCandidatesPerProbe ?? 64))
+  const maximumCandidates = Math.max(
+    MATCH_DEFAULTS.minimumCandidateCount,
+    Math.round(options.maximumCandidatesPerProbe ?? MATCH_DEFAULTS.maximumCandidatesPerProbe)
+  )
   const exclusion = Math.max(0, Math.round(options.candidateExclusionFrames ?? 0))
   const kept: Array<{ index: number; score: number }> = []
   for (const candidate of scores) {
@@ -123,7 +137,10 @@ export function applyBurstinessReweighting(
   candidateGroups: SequenceMatchCandidate[][],
   options: Pick<MatchOptions, 'referenceTimeBinSeconds'> = {}
 ): BurstWeightedSequenceMatchCandidate[][] {
-  const timeBin = Math.max(0.001, options.referenceTimeBinSeconds ?? 0.25)
+  const timeBin = Math.max(
+    MATCH_DEFAULTS.minimumReferenceTimeBinSeconds,
+    options.referenceTimeBinSeconds ?? MATCH_DEFAULTS.referenceTimeBinSeconds
+  )
   const movieSums = new Map<number, number>()
   for (const candidates of candidateGroups) for (const candidate of candidates) {
     const key = Math.round(candidate.movieTime / timeBin)
@@ -160,9 +177,13 @@ export function selectBurstWeightedMatches(
       Math.abs(candidate.candidateIndex - best.candidateIndex) > exclusion
     ) ?? ranked[1] ?? best
     const rawSeparation = clamp01(
-      (runnerUp.distance - best.distance) / Math.max(0.08, runnerUp.distance)
+      (runnerUp.distance - best.distance) /
+      Math.max(MATCH_DEFAULTS.runnerUpDistanceFloor, runnerUp.distance)
     )
-    const confidence = clamp01(best.rawSimilarity * 0.58 + rawSeparation * 0.42)
+    const confidence = clamp01(
+      best.rawSimilarity * MATCH_CONFIDENCE_WEIGHTS.rawSimilarity +
+      rawSeparation * MATCH_CONFIDENCE_WEIGHTS.separation
+    )
     return [{
       reactionTime: best.reactionTime,
       movieTime: best.movieTime,
@@ -170,7 +191,10 @@ export function selectBurstWeightedMatches(
       score: best.distance,
       runnerUpScore: runnerUp.distance,
       rawSimilarity: best.rawSimilarity,
-      fitWeight: Math.max(1e-6, best.burstSimilarity ** 2)
+      fitWeight: Math.max(
+        MATCH_DEFAULTS.fitWeightEpsilon,
+        best.burstSimilarity ** MATCH_DEFAULTS.burstFitWeightExponent
+      )
     }]
   })
 }
@@ -196,13 +220,20 @@ function sequenceScore(
     const frameDistance = signatureDistance(reaction[index].signature, movie[index].signature)
     const cutWeight = index === 0
       ? 1
-      : 1 + Math.min(2.5, signatureDistance(reaction[index - 1].signature, reaction[index].signature) * 5)
+      : 1 + Math.min(
+        SEQUENCE_SCORING.maximumCutBoost,
+        signatureDistance(reaction[index - 1].signature, reaction[index].signature) *
+          SEQUENCE_SCORING.cutBoostMultiplier
+      )
     spatial += frameDistance * cutWeight
     weightTotal += cutWeight
     if (index > 0) {
       const reactionMotion = signatureDistance(reaction[index - 1].signature, reaction[index].signature)
       const movieMotion = signatureDistance(movie[index - 1].signature, movie[index].signature)
-      motion += Math.min(1, Math.abs(reactionMotion - movieMotion) * 2.5)
+      motion += Math.min(
+        SEQUENCE_SCORING.maximumMotionDifference,
+        Math.abs(reactionMotion - movieMotion) * SEQUENCE_SCORING.motionDifferenceMultiplier
+      )
     }
   }
   const temporalOrdinal = temporalOrdinalDistance(
@@ -210,9 +241,9 @@ function sequenceScore(
     createTemporalOrdinalSignature(movie.map((item) => item.signature))
   )
   return clamp01(
-    (spatial / Math.max(1, weightTotal)) * 0.62 +
-    (motion / Math.max(1, reaction.length - 1)) * 0.18 +
-    temporalOrdinal * 0.2
+    (spatial / Math.max(1, weightTotal)) * SEQUENCE_SCORE_WEIGHTS.spatial +
+    (motion / Math.max(1, reaction.length - 1)) * SEQUENCE_SCORE_WEIGHTS.motion +
+    temporalOrdinal * SEQUENCE_SCORE_WEIGHTS.temporalOrdinal
   )
 }
 
