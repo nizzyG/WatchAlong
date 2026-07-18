@@ -74,7 +74,7 @@ export class PatreonSessionVault {
     }
 
     mkdirSync(dirname(this.encryptedCookiePath), { recursive: true })
-    writeFileSync(this.encryptedCookiePath, safeStorage.encryptString(cookie))
+    writeFileSync(this.encryptedCookiePath, safeStorage.encryptString(cookie), { mode: 0o600 })
     return this.status()
   }
 

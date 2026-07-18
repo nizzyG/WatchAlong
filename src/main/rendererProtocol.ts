@@ -9,7 +9,7 @@ import {
   resolveRendererAssetPath
 } from './rendererProtocolPolicy'
 
-const RENDERER_CSP = "default-src 'self'; media-src 'self' watchalong: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: watchalong:;"
+const RENDERER_CSP = "default-src 'self'; media-src 'self' watchalong: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: watchalong:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none';"
 
 export function registerRendererProtocol(rendererRoot: string): void {
   protocol.handle(RENDERER_SCHEME, (request) => {

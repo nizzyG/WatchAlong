@@ -10,7 +10,7 @@ const MANAGED_TOOL_DIRECTORIES = [
   'resources/tools/ffmpeg',
   'resources/tools/node'
 ]
-const LEGACY_TOOL_PATHS = ['yt-dlp_macos']
+const LEGACY_TOOL_PATHS = []
 
 export function parseToolProvenance(markdown) {
   const start = markdown.indexOf(MANIFEST_START)

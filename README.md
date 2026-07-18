@@ -10,7 +10,7 @@ You've already done the important part. Now point WatchAlong at your local movie
 
 Your Patreon subscriptions are what actually matter. The sync setup shouldn't be what gets in the way of enjoying the content you paid for.
 
-![WatchAlong library in Mahogany mode](docs/screenshots/library-mahogany.png)
+![WatchAlong library, Movie view in Mahogany mode](docs/screenshots/library-mahogany.png)
 
 ## What WatchAlong does
 
@@ -50,9 +50,9 @@ The engine is confident on most pairings. When it isn't, it says so and steps as
 
 WatchAlong has two cabinet modes: **Mahogany** (dark) and **Oak** (light). Both are warm, textured, and built to feel like real furniture, not a generic app theme. The app follows your system's dark or light preference by default. Switch manually from the Control Panel.
 
-![WatchAlong library in Oak mode](docs/screenshots/library-oak.png)
+![WatchAlong library, Reactor view in Oak mode](docs/screenshots/library-oak.png)
 
-Movie poster art appears automatically when your library folders contain standard image files (`poster.jpg`, `folder.jpg`, or the movie filename with a `.jpg` extension), the same conventions used by Kodi, Jellyfin, and other media tools. WatchAlong reads what you already have. It never fetches images from the internet.
+Movie poster art appears automatically when your library folders contain standard image files (`poster.jpg`, `folder.jpg`, or the movie filename with a `.jpg` extension), the same conventions used by Kodi, Jellyfin, and other media tools. WatchAlong reads what you already have. It never fetches poster art from the internet. (The one image WatchAlong does download is a reactor's public profile picture after a YouTube connection — see [PRIVACY.md](PRIVACY.md).)
 
 ## Platform notes
 

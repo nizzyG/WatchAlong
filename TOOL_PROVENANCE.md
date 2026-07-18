@@ -4,8 +4,6 @@ WatchAlong vendors its standalone media-tool executables so a release behaves pr
 
 `npm run verify:tool-provenance` reads the manifest below, discovers every executable in the managed tool directories, and hashes the files locally. It fails if a file is missing, unlisted, newly added without provenance, or different from its recorded digest. Verification never contacts the network.
 
-The standalone `yt-dlp_macos` at the repository root is a legacy development mirror. It is not copied into release packages, but it remains covered by the integrity check while it exists. The packaged copy is `resources/tools/yt-dlp/yt-dlp_macos`; both files are byte-identical.
-
 ## Integrity manifest
 
 Keep the table formatting intact: it is the human-readable and machine-read source of truth for the offline verifier.
@@ -24,7 +22,6 @@ Keep the table formatting intact: it is the human-readable and machine-read sour
 | `resources/tools/node/node.exe` | Windows x64 | 24.15.0 | [Node.js Windows x64 archive](https://nodejs.org/dist/v24.15.0/node-v24.15.0-win-x64.zip) | `3331e1ffe19874215472217c5e94f5a0c6d8e18c4ac7111d3937aa0ad5e9b4a5` |
 | `resources/tools/node/node-darwin-x64` | macOS Intel | 24.16.0 | [Node.js macOS x64 archive](https://nodejs.org/dist/v24.16.0/node-v24.16.0-darwin-x64.tar.gz) | `47483a524a057d93e246bb0e63867e2b4d189810aef53a6978d9e708a3d0f453` |
 | `resources/tools/node/node-darwin-arm64` | macOS Apple Silicon | 24.16.0 | [Node.js macOS arm64 archive](https://nodejs.org/dist/v24.16.0/node-v24.16.0-darwin-arm64.tar.gz) | `1ee75375e33b94fc34b3b19aede049e11dae90efb63b374dc96d6bdace70c4b8` |
-| `yt-dlp_macos` | Legacy unbundled mirror | 2026.03.17 | [yt-dlp_macos](https://github.com/yt-dlp/yt-dlp/releases/download/2026.03.17/yt-dlp_macos) | `e80c47b3ce712acee51d5e3d4eace2d181b44d38f1942c3a32e3c7ff53cd9ed5` |
 <!-- tool-integrity-manifest:end -->
 
 ## Upstream retrieval audit (2026-07-15)
