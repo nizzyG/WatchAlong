@@ -21,25 +21,29 @@ export type RendererSessionPatch = Partial<Pick<
   | 'reactorName'
 >>
 
-const rendererWritableSessionKeys = new Set<keyof RendererSessionPatch>([
-  'reactionDurationSeconds',
-  'offsetSeconds',
-  'lastReactionTimeSeconds',
-  'overlay',
-  'isPipHidden',
-  'isMoviePoppedOut',
-  'movieWindowGeometry',
-  'reactionVolume',
-  'movieVolume',
-  'movieAudioTrackPreference',
-  'isReactionMuted',
-  'isMovieMuted',
-  'playbackRate',
-  'reactorSource',
-  'detectedMovieFps',
-  'movieRateCorrection',
-  'reactorName'
-])
+const rendererWritableSessionKeyRecord = {
+  reactionDurationSeconds: true,
+  offsetSeconds: true,
+  lastReactionTimeSeconds: true,
+  overlay: true,
+  isPipHidden: true,
+  isMoviePoppedOut: true,
+  movieWindowGeometry: true,
+  reactionVolume: true,
+  movieVolume: true,
+  movieAudioTrackPreference: true,
+  isReactionMuted: true,
+  isMovieMuted: true,
+  playbackRate: true,
+  reactorSource: true,
+  detectedMovieFps: true,
+  movieRateCorrection: true,
+  reactorName: true
+} satisfies Record<keyof RendererSessionPatch, true>
+
+const rendererWritableSessionKeys = Object.keys(
+  rendererWritableSessionKeyRecord
+) as Array<keyof RendererSessionPatch>
 
 export function pickRendererSessionPatch(value: unknown): RendererSessionPatch {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
