@@ -19,10 +19,10 @@ Your Patreon subscriptions are what actually matter. The sync setup shouldn't be
 - **Keeps both videos locked.** Pause, seek, change the playback speed. Both videos move together.
 - **Picture-in-picture or pop-out.** Watch the reaction with your movie in a draggable, resizable overlay. Or pop the movie out to a second screen.
 - **Download reactions directly.** Paste a Patreon post URL, an unlisted YouTube link, or add a local file. WatchAlong grabs the full-length reaction for you.
-- **Your library, remembered.** Every pairing is saved. Sync, playback position, PiP layout. Close the app, come back tomorrow night, and everything is right where you left it. Browse by movie, by reactor, or by pairing.
+- **Your library, remembered.** Every pairing is saved. Sync, playback position, PiP layout. Close the app, come back tomorrow night, and everything is right where you left it. Browse by movie, by reactor, or by pairing, in a poster grid or a compact list. Click any pairing for a detail page with the reactor, sync status, and a continue button that picks up exactly where you stopped.
 - **Subtitles.** Load SRT or VTT files. They display over the movie.
 - **Audio track selection.** Watching a foreign film? Choose between the original language and the dub right from the player. Supports multi-track MKV files.
-- **Playback controls that follow you.** Spacebar, earbud taps, and system media keys control both videos. Arrow keys skip. Full list in the [FAQ](FAQ.md).
+- **Playback controls that follow you.** Spacebar, earbud taps, and system media keys control both videos. Arrow keys skip. Player controls fade out when you're not using them and come back on any movement. Full list in the [FAQ](FAQ.md).
 
 ## Our principles
 

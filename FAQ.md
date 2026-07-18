@@ -127,7 +127,9 @@ Yes. Pausing stops both videos at the same instant. Resuming picks up from exact
 
 ### 21. How do I browse my library?
 
-Three views: **Pairings** (every movie-and-reactor combination), **By Reactor** (grouped by creator), and **By Movie** (grouped by film). Switch from the library header. Sort alphabetically or by date added.
+Three views: **Pairings** (every movie-and-reactor combination), **By Reactor** (grouped by creator), and **By Movie** (grouped by film). Switch from the library header. Sort alphabetically or by date added. Each view remembers whether you prefer the poster grid or the compact list, so you can set it once and forget it.
+
+Click any pairing to see its detail page: the movie poster, the reactor, whether the timing is ready, and a button to continue or start watching. If you've paused mid-reaction, the button says **Continue Reaction** and shows where you left off.
 
 ### 22. Does WatchAlong show movie poster art?
 
