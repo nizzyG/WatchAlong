@@ -734,7 +734,6 @@ export function useWatchAlongController({
   })
 
   const {
-    closeMovieWindowForModeChange,
     closeDetachedMovieForTransition,
     popOutMovie,
     popInMovie
@@ -785,9 +784,8 @@ export function useWatchAlongController({
   })
 
   useAppSubscriptions({
-    playback, sessionState, downloads, canPlay, wizardSwapMovieMomentRef, commitLibrary,
-    refreshMediaUrls, flushCurrentSessionPosition, closeMovieWindowForModeChange,
-    destroyRemoteMovieAdapter, enterSyncSetup
+    playback, sessionState, downloads, canPlay, wizardSwapMovieMomentRef,
+    flushCurrentSessionPosition, enterSyncSetup, transitionToSession
   })
 
   const actions: WatchAlongViewActions = {

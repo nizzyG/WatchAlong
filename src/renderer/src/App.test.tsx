@@ -1903,6 +1903,10 @@ describe('App', () => {
     act(() => api.emitWizardLifecycle({ type: 'closed', outcome: 'completed' }))
 
     await waitFor(() => expect(api.closeMovieWindow).toHaveBeenCalledWith({ notifyMainWindow: false }))
+    await waitFor(() => expect(api.saveMovieWindowState).toHaveBeenCalledWith(
+      's1',
+      { isMoviePoppedOut: false }
+    ))
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 'wizard-session'))
     expect(vi.mocked(api.closeMovieWindow).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(api.getMediaUrl).mock.invocationCallOrder[0]

@@ -1,10 +1,11 @@
 import { useEffect, useRef, type MutableRefObject } from 'react'
-import type { LibrarySession, SessionLibrary, WizardLifecycleEvent } from '@shared/types'
+import type { AppPreferences, WizardLifecycleEvent } from '@shared/types'
 import { mediaPathIdentity } from '@shared/session'
 import { TimelineMapping } from '../sync/timeline'
 import type { DownloadsHook } from './useDownloads'
 import type { PlaybackHook } from './usePlayback'
 import type { SessionHook } from './useSession'
+import type { TransitionToSession } from './useSessionTransition'
 
 interface UseAppSubscriptionsOptions {
   playback: PlaybackHook
@@ -12,11 +13,8 @@ interface UseAppSubscriptionsOptions {
   downloads: DownloadsHook
   canPlay: boolean
   wizardSwapMovieMomentRef: MutableRefObject<number | null>
-  commitLibrary: (next: SessionLibrary) => LibrarySession | null
-  refreshMediaUrls: (sessionId: string | null) => Promise<void>
+  transitionToSession: TransitionToSession
   flushCurrentSessionPosition: () => Promise<void>
-  closeMovieWindowForModeChange: () => Promise<void>
-  destroyRemoteMovieAdapter: () => void
   enterSyncSetup: () => void
 }
 
@@ -26,11 +24,8 @@ export function useAppSubscriptions({
   downloads,
   canPlay,
   wizardSwapMovieMomentRef,
-  commitLibrary,
-  refreshMediaUrls,
+  transitionToSession,
   flushCurrentSessionPosition,
-  closeMovieWindowForModeChange,
-  destroyRemoteMovieAdapter,
   enterSyncSetup
 }: UseAppSubscriptionsOptions): void {
   const {
@@ -39,20 +34,12 @@ export function useAppSubscriptions({
     isPlayingRef,
     setupMode,
     setupModeRef,
-    restoredPopOutSessionRef,
-    setPosition,
-    setMoviePosition,
     pendingSyncSetup,
-    setPendingSyncSetup,
-    setMovieWindowActive,
-    movieWindowActive
+    setPendingSyncSetup
   } = playback
   const {
-    sessionRef,
-    activeSessionIdRef,
     resumeAfterRepairRef,
     setPreferences,
-    setAppView,
     setShowWelcome,
     setWizardDimmed,
     wizardDimmed,
@@ -101,67 +88,87 @@ export function useAppSubscriptions({
         const shouldResume = pausedForWizardRef.current
         pausedForWizardRef.current = false
         wizardSwapMovieMomentRef.current = null
-        const previousSessionId = activeSessionIdRef.current
-        const reconciled = commitLibrary(await window.watchAlong.getLibrary())
-        if ((reconciled?.id ?? null) !== previousSessionId) {
-          setPosition(reconciled?.lastReactionTimeSeconds ?? 0)
-          setMoviePosition(0)
-          setAppView(reconciled ? 'player' : 'library')
-          await refreshMediaUrls(reconciled?.id ?? null)
-          return
+        const result = await transitionToSession<void, undefined>(null, {
+          pause: 'none',
+          flushPosition: false,
+          detachedMovie: 'keep',
+          resolveLibrary: async () => ({
+            library: await window.watchAlong.getLibrary(),
+            metadata: undefined
+          }),
+          clearResolvedPopOut: false,
+          position: 'session',
+          presentation: 'active-id-changed',
+          destination: 'resolved'
+        })
+        if (
+          result.status === 'completed' && !result.presented &&
+          shouldResume && canPlayRef.current
+        ) {
+          controllerRef.current?.play()
         }
-        if (shouldResume && canPlayRef.current) controllerRef.current?.play()
         return
       }
 
+      const outcome = event.outcome
+      const swapMovieMoment = wizardSwapMovieMomentRef.current
       pausedForWizardRef.current = false
-      if (movieWindowActive) {
-        await closeMovieWindowForModeChange()
-        destroyRemoteMovieAdapter()
-        restoredPopOutSessionRef.current = sessionRef.current.id
-        setMovieWindowActive(false)
-      }
-      const [nextLibrary, nextPreferences] = await Promise.all([
-        window.watchAlong.getLibrary(),
-        window.watchAlong.getPreferences()
-      ])
-      let nextSession = commitLibrary(nextLibrary)
-      if (nextSession?.isMoviePoppedOut) {
-        nextSession = commitLibrary(await window.watchAlong.saveActiveSession({ isMoviePoppedOut: false }))
-      }
-      setPreferences(nextPreferences)
-      setShowWelcome(false)
-      if (event.outcome === 'completed' && nextSession && wizardSwapMovieMomentRef.current !== null) {
-        const mappedPosition = new TimelineMapping({
-          offsetSeconds: nextSession.offsetSeconds,
-          movieRateCorrection: nextSession.movieRateCorrection
-        }).movieToReaction(wizardSwapMovieMomentRef.current)
-        nextSession = commitLibrary(await window.watchAlong.saveSessionPosition(nextSession.id, mappedPosition))
-      }
-      wizardSwapMovieMomentRef.current = null
-      if (nextSession?.reactionPath) {
-        const attachedPath = normalizeMediaPath(nextSession.reactionPath)
-        setDownloadEvents((current) => current.filter((item) =>
-          item.state !== 'success' || !item.filePath || normalizeMediaPath(item.filePath) !== attachedPath
-        ))
-        setDownloadIndicator((current) =>
-          current?.state === 'success' && current.filePath && normalizeMediaPath(current.filePath) === attachedPath
-            ? null
-            : current
-        )
-      }
-      setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
-      setMoviePosition(0)
-      setPendingSyncSetup(event.outcome === 'completed-needs-review' && Boolean(nextSession?.reactionPath && nextSession.moviePath))
-      setAppView(nextSession ? 'player' : 'library')
-      setCommandPanelOpen(false)
-      await refreshMediaUrls(nextSession?.id ?? null)
+      await transitionToSession<void, AppPreferences>(null, {
+        pause: 'none',
+        flushPosition: false,
+        detachedMovie: 'wizard-completed',
+        resolveLibrary: async () => {
+          const [library, preferences] = await Promise.all([
+            window.watchAlong.getLibrary(),
+            window.watchAlong.getPreferences()
+          ])
+          return { library, metadata: preferences }
+        },
+        clearResolvedPopOut: true,
+        afterResolved: (_nextSession, preferences) => {
+          setPreferences(preferences)
+          setShowWelcome(false)
+        },
+        finalizeResolvedSession: async (nextSession) => {
+          if (outcome !== 'completed' || swapMovieMoment === null) return null
+          const mappedPosition = new TimelineMapping({
+            offsetSeconds: nextSession.offsetSeconds,
+            movieRateCorrection: nextSession.movieRateCorrection
+          }).movieToReaction(swapMovieMoment)
+          return window.watchAlong.saveSessionPosition(nextSession.id, mappedPosition)
+        },
+        position: 'session',
+        presentation: 'always',
+        destination: 'resolved',
+        beforePresentation: (nextSession) => {
+          wizardSwapMovieMomentRef.current = null
+          if (!nextSession?.reactionPath) return
+          const attachedPath = normalizeMediaPath(nextSession.reactionPath)
+          setDownloadEvents((current) => current.filter((item) =>
+            item.state !== 'success' || !item.filePath || normalizeMediaPath(item.filePath) !== attachedPath
+          ))
+          setDownloadIndicator((current) =>
+            current?.state === 'success' && current.filePath && normalizeMediaPath(current.filePath) === attachedPath
+              ? null
+              : current
+          )
+        },
+        beforeViewChange: (nextSession) => {
+          setPendingSyncSetup(
+            outcome === 'completed-needs-review' &&
+            Boolean(nextSession?.reactionPath && nextSession.moviePath)
+          )
+        },
+        afterViewChange: () => {
+          setCommandPanelOpen(false)
+        }
+      })
     }
 
     return window.watchAlong.onWizardLifecycle((event) => {
       void handleWizardLifecycle(event)
     })
-  }, [commitLibrary, movieWindowActive, refreshMediaUrls])
+  }, [transitionToSession])
 
   useEffect(() => window.watchAlong.onMainWindowCloseRequest(() => {
     void (async () => {
