@@ -1516,6 +1516,232 @@ describe('App', () => {
     expect(screen.queryByText('Sync setup')).not.toBeInTheDocument()
   })
 
+  it('keeps an active detached movie open when the local reaction picker is cancelled', async () => {
+    const session = createSession('s1', 'Movie waiting for a reaction', 0, {
+      reactionPath: null,
+      isMoviePoppedOut: true
+    })
+    const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
+    api.getMediaUrl = vi.fn(async (role, sessionId) =>
+      role === 'reaction' ? null : `watchalong://media/${sessionId}/${role}`
+    )
+    api.selectReactionFile = vi.fn(async () => null)
+    window.watchAlong = api
+
+    render(<App />)
+    expect(await screen.findByLabelText('Add Reaction Video')).toBeInTheDocument()
+    await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalledOnce())
+    await waitFor(() => expect(api.saveMovieWindowState).toHaveBeenCalledWith(
+      's1', expect.objectContaining({ isMoviePoppedOut: true })
+    ))
+    vi.mocked(api.closeMovieWindow).mockClear()
+    vi.mocked(api.saveMovieWindowState).mockClear()
+    vi.mocked(api.setSessionMedia).mockClear()
+    vi.mocked(api.getMediaUrl).mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: /Local file/i }))
+
+    await waitFor(() => expect(api.selectReactionFile).toHaveBeenCalledOnce())
+    expect(api.closeMovieWindow).not.toHaveBeenCalled()
+    expect(api.saveMovieWindowState).not.toHaveBeenCalledWith(
+      's1', expect.objectContaining({ isMoviePoppedOut: false })
+    )
+    expect(api.setSessionMedia).not.toHaveBeenCalled()
+    expect(api.getMediaUrl).not.toHaveBeenCalled()
+  })
+
+  it('closes stale detached state before asking for a missing movie and keeps a cancelled download attach available', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    api.selectMovieFile = vi.fn(async () => null)
+    window.watchAlong = api
+
+    render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    popOutFromOverlay()
+    await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalledOnce())
+    await waitFor(() => expect(document.querySelector('video.pip-video')).not.toBeInTheDocument())
+
+    // Model a library reconciliation that discovers the active movie path is
+    // gone while its already-open detached window is still alive.
+    const staleSession = createSession('s1', 'Reaction waiting for a movie', 0, { moviePath: null })
+    const staleLibrary = createLibrary('s1', [staleSession])
+    api.getLibrary = vi.fn(async () => staleLibrary)
+    api.saveMovieWindowState = vi.fn(async (_sessionId, patch) => createLibrary('s1', [{
+      ...staleSession,
+      ...patch
+    }]))
+    act(() => api.emitWizardLifecycle({ type: 'opened' }))
+    expect(document.querySelector('.main-window-dim')).toBeInTheDocument()
+    await act(async () => {
+      api.emitWizardLifecycle({ type: 'closed', outcome: 'cancelled' })
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(api.getLibrary).toHaveBeenCalledOnce())
+    await waitFor(() => expect(document.querySelector('.main-window-dim')).not.toBeInTheDocument())
+    expect(api.closeMovieWindow).not.toHaveBeenCalled()
+
+    act(() => api.emitDownloadProgress({
+      jobId: 'cancelled-attach',
+      source: 'youtube',
+      state: 'success',
+      message: 'Reaction video ready.',
+      percent: 100,
+      filePath: 'C:\\Reactions\\Waiting reaction.mp4'
+    }))
+
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    const panel = await screen.findByRole('dialog', { name: 'Command Panel' })
+    fireEvent.click(within(panel).getByRole('button', { name: /Downloads/i }))
+    vi.mocked(api.closeMovieWindow).mockClear()
+    vi.mocked(api.selectMovieFile).mockClear()
+    vi.mocked(api.createOrSwitchSessionFromPaths).mockClear()
+    vi.mocked(api.getMediaUrl).mockClear()
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Attach' }))
+
+    await waitFor(() => expect(api.selectMovieFile).toHaveBeenCalledOnce())
+    expect(api.closeMovieWindow).toHaveBeenCalledWith({ notifyMainWindow: false })
+    expect(vi.mocked(api.closeMovieWindow).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(api.selectMovieFile).mock.invocationCallOrder[0]
+    )
+    expect(api.createOrSwitchSessionFromPaths).not.toHaveBeenCalled()
+    expect(api.getMediaUrl).not.toHaveBeenCalled()
+    expect(within(panel).getByRole('button', { name: 'Attach' })).toBeInTheDocument()
+    expect(api.startSessionAutoSync).not.toHaveBeenCalled()
+  })
+
+  it('orders detached download replacement through flush, reset, refresh, consumption, and AutoSync', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    const reaction = container.querySelector('video.reaction-video') as HTMLVideoElement
+    fireEvent.loadedMetadata(reaction)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+    reaction.currentTime = 44.5
+    popOutFromOverlay()
+    await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalledOnce())
+    await waitFor(() => expect(document.querySelector('video.pip-video')).not.toBeInTheDocument())
+
+    act(() => api.emitDownloadProgress({
+      jobId: 'ordered-attach',
+      source: 'youtube',
+      state: 'success',
+      message: 'Reaction video ready.',
+      percent: 100,
+      filePath: 'C:\\Reactions\\Replacement reaction.mp4',
+      metadata: { reactorName: 'Order Check' }
+    }))
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    const panel = await screen.findByRole('dialog', { name: 'Command Panel' })
+    fireEvent.click(within(panel).getByRole('button', { name: /Downloads/i }))
+    vi.mocked(api.saveSessionPosition).mockClear()
+    vi.mocked(api.closeMovieWindow).mockClear()
+    vi.mocked(api.replaceSessionMedia).mockClear()
+    vi.mocked(api.getMediaUrl).mockClear()
+    vi.mocked(api.startSessionAutoSync).mockClear()
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Attach' }))
+
+    await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1', 'initial'))
+    expect(api.saveSessionPosition).toHaveBeenCalledWith('s1', 44.5)
+    expect(api.saveSessionPosition).toHaveBeenCalledWith('s1', 0)
+    const positionCalls = vi.mocked(api.saveSessionPosition).mock.calls
+    const flushCall = positionCalls.findIndex(([, value]) => value === 44.5)
+    const resetCall = positionCalls.findIndex(([, value]) => value === 0)
+    const saveOrders = vi.mocked(api.saveSessionPosition).mock.invocationCallOrder
+    const closeOrder = vi.mocked(api.closeMovieWindow).mock.invocationCallOrder[0]
+    const replaceOrder = vi.mocked(api.replaceSessionMedia).mock.invocationCallOrder[0]
+    const refreshOrder = Math.min(...vi.mocked(api.getMediaUrl).mock.invocationCallOrder)
+    const autoSyncOrder = vi.mocked(api.startSessionAutoSync).mock.invocationCallOrder[0]
+    expect(saveOrders[flushCall]).toBeLessThan(closeOrder)
+    expect(closeOrder).toBeLessThan(replaceOrder)
+    expect(replaceOrder).toBeLessThan(saveOrders[resetCall])
+    expect(saveOrders[resetCall]).toBeLessThan(refreshOrder)
+    expect(refreshOrder).toBeLessThan(autoSyncOrder)
+
+    act(() => api.emitAutoSyncComplete({
+      sessionId: 's1',
+      outcome: 'confident',
+      message: 'Ready.',
+      offsetSeconds: -20,
+      movieRateCorrection: 1,
+      confidence: 0.95,
+      anchorCount: 6
+    }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Finding automatic sync' })).not.toBeInTheDocument())
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    const reopenedPanel = await screen.findByRole('dialog', { name: 'Command Panel' })
+    expect(within(reopenedPanel).queryByRole('button', { name: /Downloads/i })).not.toBeInTheDocument()
+    expect(within(reopenedPanel).queryByRole('button', { name: 'Attach' })).not.toBeInTheDocument()
+  })
+
+  it('does not reset or AutoSync a newly active session when a download replacement resolves late', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    let resolveReplacement!: (
+      result: Awaited<ReturnType<WatchAlongApi['replaceSessionMedia']>>
+    ) => void
+    const replacementPromise = new Promise<Awaited<ReturnType<WatchAlongApi['replaceSessionMedia']>>>(
+      (resolve) => { resolveReplacement = resolve }
+    )
+    api.replaceSessionMedia = vi.fn(async () => replacementPromise)
+    window.watchAlong = api
+
+    render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+
+    act(() => api.emitDownloadProgress({
+      jobId: 'late-attach',
+      source: 'youtube',
+      state: 'success',
+      message: 'Reaction video ready.',
+      percent: 100,
+      filePath: 'C:\\Reactions\\Late replacement.mp4'
+    }))
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    const panel = await screen.findByRole('dialog', { name: 'Command Panel' })
+    fireEvent.click(within(panel).getByRole('button', { name: /Downloads/i }))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Attach' }))
+    await waitFor(() => expect(api.replaceSessionMedia).toHaveBeenCalledWith(
+      's1', 'reaction', 'C:\\Reactions\\Late replacement.mp4', 'youtube', undefined, undefined
+    ))
+
+    fireEvent.click(within(panel).getByRole('button', { name: /Library/i }))
+    fireEvent.click(within(panel).getByRole('button', { name: /Open Second/i }))
+    await waitFor(() => expect(api.setActiveSession).toHaveBeenCalledWith('s2'))
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's2'))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Command Panel' })).not.toBeInTheDocument())
+
+    vi.mocked(api.saveSessionPosition).mockClear()
+    vi.mocked(api.getMediaUrl).mockClear()
+    vi.mocked(api.startSessionAutoSync).mockClear()
+    await act(async () => {
+      resolveReplacement({
+        status: 'replaced',
+        library: createLibrary('s1', [{
+          ...firstSession,
+          reactionPath: 'C:\\Reactions\\Late replacement.mp4'
+        }, secondSession])
+      })
+      await replacementPromise
+      await Promise.resolve()
+    })
+
+    expect(api.saveSessionPosition).not.toHaveBeenCalledWith('s2', 0)
+    expect(api.saveSessionPosition).not.toHaveBeenCalled()
+    expect(api.startSessionAutoSync).not.toHaveBeenCalled()
+    expect(api.getMediaUrl).not.toHaveBeenCalled()
+    const libraryAfterRace = await api.getLibrary()
+    expect(libraryAfterRace.activeSessionId).toBe('s2')
+    expect(libraryAfterRace.sessions.find((session) => session.id === 's2')?.lastReactionTimeSeconds).toBe(20)
+
+    fireEvent.click(screen.getByLabelText('Command Panel'))
+    const reopenedPanel = await screen.findByRole('dialog', { name: 'Command Panel' })
+    fireEvent.click(within(reopenedPanel).getByRole('button', { name: /Downloads/i }))
+    expect(within(reopenedPanel).getByRole('button', { name: 'Attach' })).toBeInTheDocument()
+  })
+
   it('rolls an in-player reaction download through a ready partial without manual setup', async () => {
     const session = createSession('s1', 'Aladdin', 0, { reactionPath: null })
     const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })

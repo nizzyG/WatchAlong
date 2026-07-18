@@ -29,6 +29,7 @@ import { usePlayerControls } from './usePlayerControls'
 import { useMovieWindow } from './useMovieWindow'
 import { useMovieAudioTracks } from './useMovieAudioTracks'
 import { useSessionActions } from './useSessionActions'
+import { useSessionTransition } from './useSessionTransition'
 import { useAppSubscriptions } from './useAppSubscriptions'
 import { useCabinetTheme } from './useCabinetTheme'
 
@@ -732,10 +733,25 @@ export function useWatchAlongController({
     persist
   })
 
-  const { closeMovieWindowForModeChange, stopDetachedMovie, popOutMovie, popInMovie } = useMovieWindow({
+  const {
+    closeMovieWindowForModeChange,
+    closeDetachedMovieForTransition,
+    popOutMovie,
+    popInMovie
+  } = useMovieWindow({
     playback, sessionState, activeSession, session, activeSubtitleText: activeSubtitle?.text ?? null,
     canPlay, hasMissingMedia, getMovieAdapter, buildController, destroyRemoteMovieAdapter,
     persist, commitLibrary
+  })
+
+  const { transitionToSession } = useSessionTransition({
+    playback,
+    sessionState,
+    flushCurrentSessionPosition,
+    refreshMediaUrls,
+    getMovieAdapter,
+    commitLibrary,
+    closeDetachedMovieForTransition
   })
 
 
@@ -750,9 +766,8 @@ export function useWatchAlongController({
     confirmDeleteSession, openSubtitle, clearSubtitle
   } = useSessionActions({
     playback, sessionState, subtitles, downloads, autoSync, activeSession, wizardSwapMovieMomentRef,
-    currentMovieMoment, flushCurrentSessionPosition, refreshMediaUrls, getMovieAdapter,
-    commitLibrary, consumeDownloadJob, persist, closeMovieWindowForModeChange, stopDetachedMovie,
-    destroyRemoteMovieAdapter
+    currentMovieMoment, flushCurrentSessionPosition, refreshMediaUrls, commitLibrary,
+    consumeDownloadJob, closeDetachedMovieForTransition, transitionToSession
   })
 
 

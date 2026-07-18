@@ -15,10 +15,11 @@ import { buildSuggestedPairingTitle } from '../components/pairingTitle'
 import { isAutoSyncReady } from '../autoSyncReadiness'
 import type { MoviePosterActionResult } from '../moviePosterActions'
 import { TimelineMapping } from '../sync/timeline'
-import type { VideoAdapter } from '../sync/SyncController'
 import type { DownloadsHook } from './useDownloads'
 import type { PlaybackHook } from './usePlayback'
 import type { SessionHook } from './useSession'
+import type { TransitionToSession } from './useSessionTransition'
+import type { DetachedMovieTransitionPolicy } from './useMovieWindow'
 import type { SubtitlesHook } from './useSubtitles'
 import type { useAutoSync } from './useAutoSync'
 
@@ -33,6 +34,19 @@ const COMMAND_PANEL_FOCUSABLE_SELECTOR = [
   '.command-panel [tabindex="0"]'
 ].join(', ')
 
+interface MediaReplacementResolution {
+  library: SessionLibrary
+  status: 'replaced' | 'missing' | 'conflict'
+  replaced: boolean
+}
+
+interface DownloadAttachmentMetadata {
+  shouldConsume: boolean
+  autoSyncSessionId: string | null
+  preserveMovieMoment: number | null
+  resetPositionSessionId: string | null
+}
+
 interface UseSessionActionsOptions {
   playback: PlaybackHook
   sessionState: SessionHook
@@ -44,13 +58,10 @@ interface UseSessionActionsOptions {
   currentMovieMoment: (source: LibrarySession | null) => number | null
   flushCurrentSessionPosition: () => Promise<void>
   refreshMediaUrls: (sessionId: string | null) => Promise<void>
-  getMovieAdapter: () => VideoAdapter | null
   commitLibrary: (next: SessionLibrary) => LibrarySession | null
   consumeDownloadJob: (jobId: string) => void
-  persist: (patch: Partial<LibrarySession>) => Promise<LibrarySession | null>
-  closeMovieWindowForModeChange: () => Promise<void>
-  stopDetachedMovie: () => Promise<void>
-  destroyRemoteMovieAdapter: () => void
+  closeDetachedMovieForTransition: (policy: DetachedMovieTransitionPolicy) => Promise<void>
+  transitionToSession: TransitionToSession
 }
 
 export function useSessionActions({
@@ -64,16 +75,12 @@ export function useSessionActions({
   currentMovieMoment,
   flushCurrentSessionPosition,
   refreshMediaUrls,
-  getMovieAdapter,
   commitLibrary,
   consumeDownloadJob,
-  persist,
-  closeMovieWindowForModeChange,
-  stopDetachedMovie,
-  destroyRemoteMovieAdapter
+  closeDetachedMovieForTransition,
+  transitionToSession
 }: UseSessionActionsOptions) {
   const {
-    reactionVideoRef,
     controllerRef,
     canPlayRef,
     isPlayingRef,
@@ -85,9 +92,7 @@ export function useSessionActions({
     setSyncState,
     setError,
     setPendingSyncSetup,
-    setViewTransitioning,
-    movieWindowActive,
-    setMovieWindowActive
+    setViewTransitioning
   } = playback
   const {
     appShellRef,
@@ -120,20 +125,19 @@ export function useSessionActions({
 
   const resolveMediaReplacement = async (
     result: ReplaceSessionMediaResult
-  ): Promise<{ library: SessionLibrary; replaced: boolean } | null> => {
+  ): Promise<MediaReplacementResolution> => {
     if (result.status === 'replaced') {
-      return { library: result.library, replaced: true }
+      return { library: result.library, status: 'replaced', replaced: true }
     }
 
     if (result.status === 'missing') {
-      commitLibrary(result.library)
       setError('That watchalong changed before the file could be attached. Nothing was replaced; try again from the library.')
-      return null
+      return { library: result.library, status: 'missing', replaced: false }
     }
 
     const existingLibrary = await window.watchAlong.setActiveSession(result.existingSessionId)
     setError('That exact pairing is already in your library, so WatchAlong opened the saved copy. Your current pairing was left unchanged.')
-    return { library: existingLibrary, replaced: false }
+    return { library: existingLibrary, status: 'conflict', replaced: false }
   }
 
   const openImportWizard = async (options?: ImportWizardLaunchOptions): Promise<void> => {
@@ -152,22 +156,20 @@ export function useSessionActions({
   }
 
   const navigateToLibrary = async (): Promise<void> => {
-    controllerRef.current?.pause()
-    reactionVideoRef.current?.pause()
-    getMovieAdapter()?.pause()
-    await flushCurrentSessionPosition()
-    if (movieWindowActive) {
-      await closeMovieWindowForModeChange()
-      destroyRemoteMovieAdapter()
-      setMovieWindowActive(false)
-      await persist({ isMoviePoppedOut: false })
-    }
-    setSetupMode(false)
-    setSetupPlayingRole(null)
-    setCommandPanelOpen(false)
-    setSyncState('paused')
-    setAppView('library')
-    await refreshMediaUrls(null)
+    await transitionToSession(null, {
+      pause: 'all-media',
+      flushPosition: true,
+      detachedMovie: 'leave-session',
+      position: 'preserve',
+      presentation: 'always',
+      destination: 'library',
+      beforeViewChange: () => {
+        setSetupMode(false)
+        setSetupPlayingRole(null)
+        setCommandPanelOpen(false)
+        setSyncState('paused')
+      }
+    })
   }
 
   const openStartupLibrary = async (): Promise<void> => {
@@ -183,35 +185,47 @@ export function useSessionActions({
   }
 
   const locateMissingMedia = async (role: MediaRole): Promise<void> => {
-    if (!activeSession) return
+    const initiatingSession = activeSession
+    if (!initiatingSession) return
+    const initiatingSessionId = initiatingSession.id
     setError(null)
     const shouldResume = playback.syncState === 'playing'
-    controllerRef.current?.pause()
-    await flushCurrentSessionPosition()
-    const media = role === 'movie'
-      ? await window.watchAlong.selectMovieFile()
-      : await window.watchAlong.selectReactionFile()
-    if (!media) return
-
-    await stopDetachedMovie()
-    const replacementRequest = role === 'reaction'
-      ? window.watchAlong.replaceSessionMedia(
-          activeSession.id,
-          role,
-          media.path,
-          activeSession.reactionSource ?? 'local',
-          undefined,
-          activeSession.reactorName ?? undefined
-        )
-      : window.watchAlong.replaceSessionMedia(activeSession.id, role, media.path, undefined)
-    const replacement = await resolveMediaReplacement(await replacementRequest)
-    if (!replacement) return
-    const nextSession = commitLibrary(replacement.library)
-    setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
-    setMoviePosition(0)
-    resumeAfterRepairRef.current = shouldResume
-    setAppView(nextSession ? 'player' : 'library')
-    await refreshMediaUrls(nextSession?.id ?? null)
+    await transitionToSession(initiatingSessionId, {
+      pause: 'controller',
+      flushPosition: true,
+      prepare: async () => {
+        const media = role === 'movie'
+          ? await window.watchAlong.selectMovieFile()
+          : await window.watchAlong.selectReactionFile()
+        return media && activeSessionIdRef.current === initiatingSessionId
+          ? { status: 'ready', value: media }
+          : { status: 'cancelled' }
+      },
+      detachedMovie: 'replace-media',
+      afterDetached: () => activeSessionIdRef.current === initiatingSessionId,
+      resolveLibrary: async (media) => {
+        if (!media) return null
+        const replacementRequest = role === 'reaction'
+          ? window.watchAlong.replaceSessionMedia(
+              initiatingSessionId,
+              role,
+              media.path,
+              initiatingSession.reactionSource ?? 'local',
+              undefined,
+              initiatingSession.reactorName ?? undefined
+            )
+          : window.watchAlong.replaceSessionMedia(initiatingSessionId, role, media.path, undefined)
+        const replacement = await resolveMediaReplacement(await replacementRequest)
+        if (replacement.replaced && activeSessionIdRef.current !== initiatingSessionId) return null
+        return { library: replacement.library, metadata: replacement.status }
+      },
+      position: 'session',
+      presentation: 'always',
+      destination: 'resolved',
+      beforeViewChange: () => {
+        resumeAfterRepairRef.current = shouldResume
+      }
+    })
   }
 
   const updatePreference = async <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]): Promise<void> => {
@@ -288,55 +302,80 @@ export function useSessionActions({
 
     setError(null)
     try {
-      const preservedMovieMoment = currentMovieMoment(activeSession)
-      controllerRef.current?.pause()
-      await flushCurrentSessionPosition()
-      await stopDetachedMovie()
-      if (activeSession?.moviePath) {
-        const suggestedTitle = buildSuggestedPairingTitle(activeSession.moviePath, event.metadata?.reactorName)
-        const replacement = await resolveMediaReplacement(await window.watchAlong.replaceSessionMedia(
-          activeSession.id, 'reaction', event.filePath, event.source, suggestedTitle, event.metadata?.reactorName
-        ))
-        if (!replacement) return
-        let nextSession = commitLibrary(replacement.library)
-        if (replacement.replaced && nextSession) {
-          nextSession = commitLibrary(await window.watchAlong.saveSessionPosition(nextSession.id, 0))
-        }
-        setPosition(replacement.replaced ? 0 : nextSession?.lastReactionTimeSeconds ?? 0)
-        setMoviePosition(0)
-        setPendingSyncSetup(false)
-        setAppView('player')
-        setCommandPanelOpen(false)
-        await refreshMediaUrls(nextSession?.id ?? null)
-        if (nextSession?.id) {
-          consumeDownloadJob(event.jobId)
-          if (replacement.replaced) {
-            await runAutoSyncAfterAttachment(nextSession.id, preservedMovieMoment)
+      const initiatingSession = activeSession
+      const initiatingSessionId = initiatingSession?.id ?? null
+      const preservedMovieMoment = currentMovieMoment(initiatingSession)
+      const downloadedPath = event.filePath
+      const transition = await transitionToSession<void, DownloadAttachmentMetadata>(initiatingSessionId, {
+        pause: 'controller',
+        flushPosition: true,
+        detachedMovie: 'replace-media',
+        afterDetached: () => activeSessionIdRef.current === initiatingSessionId,
+        resolveLibrary: async () => {
+          if (initiatingSession?.moviePath) {
+            const suggestedTitle = buildSuggestedPairingTitle(initiatingSession.moviePath, event.metadata?.reactorName)
+            const replacement = await resolveMediaReplacement(await window.watchAlong.replaceSessionMedia(
+              initiatingSession.id,
+              'reaction',
+              downloadedPath,
+              event.source,
+              suggestedTitle,
+              event.metadata?.reactorName
+            ))
+            if (replacement.replaced && activeSessionIdRef.current !== initiatingSessionId) return null
+            return {
+              library: replacement.library,
+              metadata: {
+                shouldConsume: replacement.status !== 'missing',
+                autoSyncSessionId: replacement.replaced ? initiatingSession.id : null,
+                preserveMovieMoment: preservedMovieMoment,
+                resetPositionSessionId: replacement.replaced ? initiatingSession.id : null
+              }
+            }
           }
-        }
-        return
-      }
 
-      const movie = await window.watchAlong.selectMovieFile()
-      if (!movie) return
-      const suggestedTitle = buildSuggestedPairingTitle(movie.path, event.metadata?.reactorName)
-      const next = await window.watchAlong.createOrSwitchSessionFromPaths(
-        event.filePath,
-        movie.path,
-        event.source,
-        suggestedTitle,
-        event.metadata?.reactorName
-      )
-      const nextSession = commitLibrary(next)
-      setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
-      setMoviePosition(0)
-      setPendingSyncSetup(false)
-      setAppView(nextSession ? 'player' : 'library')
-      setCommandPanelOpen(false)
-      await refreshMediaUrls(nextSession?.id ?? null)
-      if (nextSession?.id) {
+          const movie = await window.watchAlong.selectMovieFile()
+          if (!movie || activeSessionIdRef.current !== initiatingSessionId) return null
+          const suggestedTitle = buildSuggestedPairingTitle(movie.path, event.metadata?.reactorName)
+          const library = await window.watchAlong.createOrSwitchSessionFromPaths(
+            downloadedPath,
+            movie.path,
+            event.source,
+            suggestedTitle,
+            event.metadata?.reactorName
+          )
+          if (activeSessionIdRef.current !== initiatingSessionId) return null
+          return {
+            library,
+            metadata: {
+              shouldConsume: Boolean(library.activeSessionId),
+              autoSyncSessionId: library.activeSessionId,
+              preserveMovieMoment: null,
+              resetPositionSessionId: null
+            }
+          }
+        },
+        finalizeResolvedSession: async (_nextSession, metadata) => metadata.resetPositionSessionId
+          ? window.watchAlong.saveSessionPosition(metadata.resetPositionSessionId, 0)
+          : null,
+        position: 'session',
+        presentation: 'always',
+        destination: 'resolved',
+        beforeViewChange: () => {
+          setPendingSyncSetup(false)
+        },
+        afterViewChange: () => {
+          setCommandPanelOpen(false)
+        }
+      })
+      if (transition.status === 'completed' && transition.metadata.shouldConsume) {
         consumeDownloadJob(event.jobId)
-        await runAutoSyncAfterAttachment(nextSession.id)
+        if (transition.metadata.autoSyncSessionId && transition.session?.id === transition.metadata.autoSyncSessionId) {
+          await runAutoSyncAfterAttachment(
+            transition.metadata.autoSyncSessionId,
+            transition.metadata.preserveMovieMoment
+          )
+        }
       }
     } catch {
       setError('The reaction is safely downloaded, but WatchAlong could not attach it. Try Attach again from Downloads.')
@@ -390,18 +429,32 @@ export function useSessionActions({
   }
 
   const openLocalReaction = async (): Promise<void> => {
+    const initiatingSessionId = activeSessionIdRef.current
     setError(null)
-    controllerRef.current?.pause()
-    await flushCurrentSessionPosition()
-    const reaction = await window.watchAlong.selectReactionFile()
-    if (!reaction) return
-    await stopDetachedMovie()
-    const nextSession = commitLibrary(await window.watchAlong.setSessionMedia('reaction', reaction.path, 'local'))
-    setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
-    setMoviePosition(0)
-    setPendingSyncSetup(true)
-    setAppView(nextSession ? 'player' : 'library')
-    await refreshMediaUrls(nextSession?.id ?? null)
+    await transitionToSession(initiatingSessionId, {
+      pause: 'controller',
+      flushPosition: true,
+      prepare: async () => {
+        const reaction = await window.watchAlong.selectReactionFile()
+        return reaction && activeSessionIdRef.current === initiatingSessionId
+          ? { status: 'ready', value: reaction }
+          : { status: 'cancelled' }
+      },
+      detachedMovie: 'replace-media',
+      afterDetached: () => activeSessionIdRef.current === initiatingSessionId,
+      resolveLibrary: async (reaction) => reaction
+        ? {
+            library: await window.watchAlong.setSessionMedia('reaction', reaction.path, 'local'),
+            metadata: undefined
+          }
+        : null,
+      position: 'session',
+      presentation: 'always',
+      destination: 'resolved',
+      beforeViewChange: () => {
+        setPendingSyncSetup(true)
+      }
+    })
   }
 
   const handleDownloadedReaction = async (
@@ -411,55 +464,75 @@ export function useSessionActions({
     const initiatingSession = activeSession
     const initiatingSessionId = initiatingSession?.id ?? null
     if (!initiatingSessionId || !initiatingSession?.moviePath || autoSync.runningSessionId) return
-    await flushCurrentSessionPosition()
-    await stopDetachedMovie()
-    if (activeSessionIdRef.current !== initiatingSessionId) return
-
-    const suggestedTitle = buildSuggestedPairingTitle(initiatingSession.moviePath, metadata.reactorName)
-    const replacement = await resolveMediaReplacement(await window.watchAlong.replaceSessionMedia(
-      initiatingSessionId, 'reaction', filePath, metadata.source, suggestedTitle, metadata.reactorName
-    ))
-    if (!replacement) return
-    if (replacement.replaced && activeSessionIdRef.current !== initiatingSessionId) return
-    const next = replacement.replaced
-      ? await window.watchAlong.saveSessionPosition(initiatingSessionId, 0)
-      : replacement.library
-    const nextSession = commitLibrary(next)
-    setPosition(replacement.replaced ? 0 : nextSession?.lastReactionTimeSeconds ?? 0)
-    setMoviePosition(0)
-    setPendingSyncSetup(false)
-    setAppView(nextSession ? 'player' : 'library')
-    await refreshMediaUrls(nextSession?.id ?? null)
-    if (nextSession?.id) {
+    const transition = await transitionToSession<
+      void,
+      { replaced: boolean; shouldConsume: boolean; autoSyncSessionId: string | null }
+    >(initiatingSessionId, {
+      pause: 'none',
+      flushPosition: true,
+      detachedMovie: 'replace-media',
+      afterDetached: () => activeSessionIdRef.current === initiatingSessionId,
+      resolveLibrary: async () => {
+        const suggestedTitle = buildSuggestedPairingTitle(initiatingSession.moviePath!, metadata.reactorName)
+        const replacement = await resolveMediaReplacement(await window.watchAlong.replaceSessionMedia(
+          initiatingSessionId,
+          'reaction',
+          filePath,
+          metadata.source,
+          suggestedTitle,
+          metadata.reactorName
+        ))
+        if (replacement.replaced && activeSessionIdRef.current !== initiatingSessionId) return null
+        return {
+          library: replacement.replaced
+            ? await window.watchAlong.saveSessionPosition(initiatingSessionId, 0)
+            : replacement.library,
+          metadata: {
+            replaced: replacement.replaced,
+            shouldConsume: replacement.status !== 'missing',
+            autoSyncSessionId: replacement.replaced ? initiatingSessionId : null
+          }
+        }
+      },
+      position: 'session',
+      presentation: 'always',
+      destination: 'resolved',
+      beforeViewChange: () => {
+        setPendingSyncSetup(false)
+      }
+    })
+    if (transition.status === 'completed' && transition.metadata.shouldConsume) {
       consumeDownloadJob(metadata.jobId)
-      if (replacement.replaced) {
-        await runAutoSyncAfterAttachment(nextSession.id)
+      if (
+        transition.metadata.replaced && transition.metadata.autoSyncSessionId &&
+        transition.session?.id === transition.metadata.autoSyncSessionId
+      ) {
+        await runAutoSyncAfterAttachment(transition.metadata.autoSyncSessionId)
       }
     }
   }
 
   const switchSession = async (sessionId: string): Promise<void> => {
     if (sessionId === activeSession?.id && appView === 'player') return
-    controllerRef.current?.pause()
-    await flushCurrentSessionPosition()
-    if (movieWindowActive) {
-      await closeMovieWindowForModeChange()
-      destroyRemoteMovieAdapter()
-      setMovieWindowActive(false)
-      await persist({ isMoviePoppedOut: false })
-    }
-    setSyncState('paused')
-    let nextSession = commitLibrary(await window.watchAlong.setActiveSession(sessionId))
-    if (nextSession?.isMoviePoppedOut) {
-      nextSession = commitLibrary(await window.watchAlong.saveActiveSession({ isMoviePoppedOut: false }))
-    }
-    setPosition(nextSession?.lastReactionTimeSeconds ?? 0)
-    setMoviePosition(0)
-    setSetupMode(false)
-    setCommandPanelOpen(false)
-    setAppView(nextSession ? 'player' : 'library')
-    if (nextSession) finishViewTransition()
-    await refreshMediaUrls(nextSession?.id ?? null)
+    await transitionToSession(sessionId, {
+      pause: 'controller',
+      flushPosition: true,
+      detachedMovie: 'leave-session',
+      beforeResolve: () => {
+        setSyncState('paused')
+      },
+      clearResolvedPopOut: true,
+      position: 'session',
+      presentation: 'always',
+      destination: 'resolved',
+      beforeViewChange: () => {
+        setSetupMode(false)
+        setCommandPanelOpen(false)
+      },
+      afterViewChange: (nextSession) => {
+        if (nextSession) finishViewTransition()
+      }
+    })
   }
 
   const chooseMoviePoster = async (sessionId: string): Promise<MoviePosterActionResult> => {
@@ -535,7 +608,9 @@ export function useSessionActions({
   const confirmDeleteSession = async (): Promise<void> => {
     if (!deleteTarget) return
     const shouldReturnToLibrary = deleteTarget.returnToLibrary
-    if (movieWindowActive && deleteTarget.sessionId === activeSession?.id) await stopDetachedMovie()
+    if (deleteTarget.sessionId === activeSession?.id) {
+      await closeDetachedMovieForTransition('replace-media')
+    }
     const nextSession = commitLibrary(await window.watchAlong.deleteSession(deleteTarget.sessionId))
     setDeleteTarget(null)
     restoreSessionDialogFocus()
