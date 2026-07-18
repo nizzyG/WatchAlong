@@ -8,6 +8,7 @@ import type {
   SessionLibrary
 } from '@shared/types'
 import { constrainOverlay } from '../components/pipGeometry'
+import { EMPTY_AUDIO_TRACK_SNAPSHOT } from '../playback/movieAudioTrackSnapshot'
 import { RemoteVideoAdapter } from '../sync/RemoteVideoAdapter'
 import { createHtmlVideoAdapter, type SyncController, type VideoAdapter } from '../sync/SyncController'
 import type { PlaybackHook } from './usePlayback'
@@ -149,7 +150,7 @@ export function useMovieWindow({
 
   const stopDetachedMovie = async (): Promise<void> => {
     if (!hasDetachedMovie()) return
-    setMovieAudioTrackSnapshot({ tracks: [], selected: null })
+    setMovieAudioTrackSnapshot(EMPTY_AUDIO_TRACK_SNAPSHOT)
     const detachedSessionId = movieWindowSessionIdRef.current ?? activeSessionIdRef.current
     await closeMovieWindowForModeChange()
     destroyRemoteMovieAdapter()
@@ -246,7 +247,7 @@ export function useMovieWindow({
       const initialGeometry = geometryMode === 'screen'
         ? initiatingSession.movieWindowGeometry
         : initiatingSession.overlay
-      setMovieAudioTrackSnapshot({ tracks: [], selected: null })
+      setMovieAudioTrackSnapshot(EMPTY_AUDIO_TRACK_SNAPSHOT)
       controllerRef.current?.pause()
       movieAdapter?.pause()
 
@@ -330,7 +331,7 @@ export function useMovieWindow({
       return
     }
     pendingPopInRequestRef.current = false
-    setMovieAudioTrackSnapshot({ tracks: [], selected: null })
+    setMovieAudioTrackSnapshot(EMPTY_AUDIO_TRACK_SNAPSHOT)
     const detachedSessionId = movieWindowSessionIdRef.current ?? activeSessionIdRef.current
     const detachedSession = sessionRef.current
     if (!remoteMovieAdapterRef.current) {
@@ -437,7 +438,7 @@ export function useMovieWindow({
       movieWindowSessionIdRef.current = null
       destroyRemoteMovieAdapter()
       restoredPopOutSessionRef.current = closedSessionId
-      setMovieAudioTrackSnapshot({ tracks: [], selected: null })
+      setMovieAudioTrackSnapshot(EMPTY_AUDIO_TRACK_SNAPSHOT)
       setMovieWindowActive(false)
       if (closedSessionId) {
         void persistMovieWindowState(closedSessionId, { isMoviePoppedOut: false })

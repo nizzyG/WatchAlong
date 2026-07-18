@@ -6,7 +6,7 @@ import type { RenameSessionFocus } from '../components/RenameSessionDialog'
 
 export type AppView = 'loading' | 'startup-error' | 'library' | 'player'
 
-const defaultPreferences: AppPreferences = {
+export const DEFAULT_PREFERENCES: AppPreferences = {
   hasCompletedOnboarding: false,
   openLibraryOnLaunch: true,
   libraryView: 'grid',
@@ -25,7 +25,7 @@ export function useSession() {
 
   const [emptySession] = useState(() => createDefaultSession())
   const [library, setLibrary] = useState<SessionLibrary>(() => createDefaultLibrary())
-  const [preferences, setPreferences] = useState<AppPreferences>(defaultPreferences)
+  const [preferences, setPreferences] = useState<AppPreferences>(DEFAULT_PREFERENCES)
   const [appView, setAppView] = useState<AppView>('loading')
   const [startupError, setStartupError] = useState<string | null>(null)
   const [startupRecoveryAvailable, setStartupRecoveryAvailable] = useState(false)

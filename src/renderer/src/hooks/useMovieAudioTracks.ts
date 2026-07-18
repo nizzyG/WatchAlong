@@ -9,11 +9,13 @@ import {
   matchAudioTrackPreference,
   selectAudioTrack
 } from '../playback/audioTrackCapability'
-import { snapshotAudioTracks } from '../playback/movieAudioTrackSnapshot'
+import {
+  EMPTY_AUDIO_TRACK_SNAPSHOT,
+  snapshotAudioTracks
+} from '../playback/movieAudioTrackSnapshot'
 import type { PlaybackHook } from './usePlayback'
 import type { SessionHook } from './useSession'
 
-const EMPTY_AUDIO_TRACK_SNAPSHOT: MovieAudioTrackSnapshot = { tracks: [], selected: null }
 const AUDIO_TRACK_SWITCH_ERROR = 'WatchAlong could not switch the movie audio track. Playback was left unchanged.'
 
 interface UseMovieAudioTracksOptions {

@@ -1,7 +1,7 @@
 import type { MovieAudioTrackSnapshot } from '@shared/types'
 import { inspectAudioTracks, toAudioTrackPreference } from './audioTrackCapability'
 
-const EMPTY_AUDIO_TRACK_SNAPSHOT: MovieAudioTrackSnapshot = { tracks: [], selected: null }
+export const EMPTY_AUDIO_TRACK_SNAPSHOT: MovieAudioTrackSnapshot = { tracks: [], selected: null }
 
 /** Serializes only playable metadata and selection state; native track ids never cross IPC. */
 export function snapshotAudioTracks(media: HTMLMediaElement): MovieAudioTrackSnapshot {

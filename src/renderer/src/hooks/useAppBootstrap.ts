@@ -1,16 +1,8 @@
 import { useCallback, useEffect } from 'react'
 import { createDefaultLibrary } from '@shared/session'
-import type { AppPreferences, LibrarySession, SessionLibrary } from '@shared/types'
+import type { LibrarySession, SessionLibrary } from '@shared/types'
 import type { PlaybackHook } from './usePlayback'
-import type { SessionHook } from './useSession'
-
-const defaultPreferences: AppPreferences = {
-  hasCompletedOnboarding: false,
-  openLibraryOnLaunch: true,
-  libraryView: 'grid',
-  reactionDownloadDirectory: null,
-  cabinetTheme: 'system'
-}
+import { DEFAULT_PREFERENCES, type SessionHook } from './useSession'
 
 interface UseAppBootstrapOptions {
   playback: PlaybackHook
@@ -46,7 +38,7 @@ export function useAppBootstrap({
     ])
 
     const loadedLibrary = libraryResult.status === 'fulfilled' ? libraryResult.value : createDefaultLibrary()
-    const loadedPreferences = preferencesResult.status === 'fulfilled' ? preferencesResult.value : defaultPreferences
+    const loadedPreferences = preferencesResult.status === 'fulfilled' ? preferencesResult.value : DEFAULT_PREFERENCES
     const loadedSession = commitLibrary(loadedLibrary)
     setPreferences(loadedPreferences)
     setShowWelcome(!loadedPreferences.hasCompletedOnboarding)
