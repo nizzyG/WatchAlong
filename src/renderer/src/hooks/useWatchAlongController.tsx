@@ -452,16 +452,6 @@ export function useWatchAlongController({
     nudgeOffset
   }))
 
-  useEffect(() => {
-    if (!commandPanelOpen) {
-      return
-    }
-
-    window.requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>('[data-command-panel-close]')?.focus()
-    })
-  }, [commandPanelOpen])
-
   const hasMedia = appView === 'player' && Boolean(activeSession && mediaUrls.reaction && mediaUrls.movie)
   const movieReady = Boolean(activeSession?.moviePath)
   const reactionReady = Boolean(activeSession?.reactionPath)
