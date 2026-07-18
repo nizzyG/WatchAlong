@@ -50,7 +50,7 @@ Firefox one-click connection is local-only. The bundled `yt-dlp` exports Firefox
 
 | Trigger | Destination | What's sent |
 |---|---|---|
-| Patreon login | `patreon.com` (and identity providers: Google, Facebook, Apple) | Your Patreon credentials (handled by Patreon's login page in an isolated browser window) |
+| Patreon login | `patreon.com` (and identity providers: Google, including the exact `accounts.youtube.com` authentication bridge; Facebook; Apple) | Your Patreon credentials (handled by Patreon's login page in an isolated browser window) |
 | Patreon download | `patreon.com` | Your session cookie, the post URL |
 | YouTube download and creator picture | YouTube and Google-owned media/CDN hosts (via yt-dlp) | The video URL, followed by the public channel and creator-picture requests |
 | External links | Various | When you click a help link, donation link, or open the GitHub issues page |

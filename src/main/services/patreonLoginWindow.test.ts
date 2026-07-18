@@ -1,10 +1,9 @@
 import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { shell, type BrowserWindow, type BrowserWindowConstructorOptions } from 'electron'
+import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron'
 
 vi.mock('electron', () => ({
-  BrowserWindow: class BrowserWindow {},
-  shell: { openExternal: vi.fn(async () => undefined) }
+  BrowserWindow: class BrowserWindow {}
 }))
 
 import { PatreonLoginWindowManager } from './patreonLoginWindow'
@@ -12,7 +11,6 @@ import { PatreonLoginWindowManager } from './patreonLoginWindow'
 describe('PatreonLoginWindowManager', () => {
   beforeEach(() => {
     vi.useRealTimers()
-    vi.mocked(shell.openExternal).mockClear()
   })
 
   it('preserves the native OAuth opener lifecycle from the known-working login window', async () => {
@@ -85,31 +83,16 @@ describe('PatreonLoginWindowManager', () => {
     )
     expect(allowedNavigation.preventDefault).not.toHaveBeenCalled()
 
-    const allowedRedirect = { preventDefault: vi.fn() }
+    // A provider's server-managed chain may use a non-interactive intermediate
+    // host. It must remain in the native popup lifecycle instead of being
+    // handed to the desktop browser.
+    const allowedRedirect = { preventDefault: vi.fn(), isMainFrame: false }
     popup.webContents.emit(
       'will-redirect',
       allowedRedirect,
-      'https://www.patreon.com/api/oauth2/callback?state=opaque'
+      'https://provider-intermediate.invalid/oauth-return?state=opaque'
     )
     expect(allowedRedirect.preventDefault).not.toHaveBeenCalled()
-
-    const blockedNavigation = { preventDefault: vi.fn() }
-    popup.webContents.emit(
-      'will-navigate',
-      blockedNavigation,
-      'https://example.test/leave-login'
-    )
-    expect(blockedNavigation.preventDefault).toHaveBeenCalledOnce()
-    expect(shell.openExternal).toHaveBeenCalledWith('https://example.test/leave-login')
-
-    const blockedRedirect = { preventDefault: vi.fn() }
-    root.webContents.emit(
-      'will-redirect',
-      blockedRedirect,
-      'https://patreon.com.attacker.example/oauth'
-    )
-    expect(blockedRedirect.preventDefault).toHaveBeenCalledOnce()
-    expect(shell.openExternal).toHaveBeenCalledWith('https://patreon.com.attacker.example/oauth')
 
     await manager.closeAll()
     await expect(resultPromise).resolves.toMatchObject({ ok: false })
@@ -137,6 +120,142 @@ describe('PatreonLoginWindowManager', () => {
 
     await expect(resultPromise).resolves.toEqual({ ok: true, token: 'patreon-token' })
     expect(vault.createToken).toHaveBeenCalledWith('session_id=oauth-cookie', 0)
+    expect(root.close).toHaveBeenCalledOnce()
+  })
+
+  it('does not intercept provider subframe redirects before Patreon cookie capture', async () => {
+    const loginSession = new FakeSession()
+    const root = new FakeWindow(loginSession)
+    const popup = new FakeWindow(loginSession)
+    const vault = new FakeVault()
+    const manager = new PatreonLoginWindowManager(
+      vault as never,
+      () => root as unknown as BrowserWindow
+    )
+
+    const resultPromise = manager.open({} as BrowserWindow)
+    expect(root.openHandler?.({
+      url: 'https://accounts.google.com/o/oauth2/v2/auth?state=opaque'
+    })?.action).toBe('allow')
+    root.webContents.emit('did-create-window', popup)
+
+    for (const challengeUrl of [
+      'https://accounts.google.com/signin/v2/challenge/pwd',
+      'https://accounts.google.com/signin/v2/challenge/ipp'
+    ]) {
+      const challenge = { preventDefault: vi.fn() }
+      popup.webContents.emit('will-navigate', challenge, challengeUrl)
+      expect(challenge.preventDefault).not.toHaveBeenCalled()
+    }
+
+    const providerReturn = { preventDefault: vi.fn(), isMainFrame: false }
+    popup.webContents.emit(
+      'will-redirect',
+      providerReturn,
+      'https://provider-intermediate.invalid/oauth-return?state=opaque'
+    )
+    expect(providerReturn.preventDefault).not.toHaveBeenCalled()
+
+    const youtubeSessionRedirect = { preventDefault: vi.fn(), isMainFrame: true }
+    popup.webContents.emit(
+      'will-redirect',
+      youtubeSessionRedirect,
+      'https://accounts.youtube.com/accounts/SetSID?sid=opaque'
+    )
+    expect(youtubeSessionRedirect.preventDefault).not.toHaveBeenCalled()
+
+    const youtubeSessionNavigation = { preventDefault: vi.fn() }
+    popup.webContents.emit(
+      'will-navigate',
+      youtubeSessionNavigation,
+      'https://accounts.youtube.com/accounts/CheckConnection?continue=opaque'
+    )
+    expect(youtubeSessionNavigation.preventDefault).not.toHaveBeenCalled()
+
+    const patreonCallback = { preventDefault: vi.fn(), isMainFrame: true }
+    popup.webContents.emit(
+      'will-redirect',
+      patreonCallback,
+      'https://www.patreon.com/api/oauth2/callback/google?state=opaque&code=one-time'
+    )
+    expect(patreonCallback.preventDefault).not.toHaveBeenCalled()
+
+    loginSession.cookies.emit(
+      'changed',
+      {},
+      { name: 'session_id', value: 'oauth-cookie', domain: '.patreon.com' },
+      'explicit',
+      false
+    )
+
+    await expect(resultPromise).resolves.toEqual({ ok: true, token: 'patreon-token' })
+    expect(vault.createToken).toHaveBeenCalledWith('session_id=oauth-cookie', 0)
+    expect(root.close).toHaveBeenCalledOnce()
+    expect(popup.close).not.toHaveBeenCalled()
+  })
+
+  it('blocks an untrusted top-level redirect without handing OAuth details to the OS', async () => {
+    const root = new FakeWindow(new FakeSession())
+    const manager = new PatreonLoginWindowManager(
+      new FakeVault() as never,
+      () => root as unknown as BrowserWindow
+    )
+
+    const resultPromise = manager.open({} as BrowserWindow)
+    const blockedRedirect = { preventDefault: vi.fn(), isMainFrame: true }
+    root.webContents.emit(
+      'will-redirect',
+      blockedRedirect,
+      'https://attacker.example/oauth?state=private&code=one-time'
+    )
+
+    expect(blockedRedirect.preventDefault).toHaveBeenCalledOnce()
+    await expect(resultPromise).resolves.toEqual({
+      ok: false,
+      message: 'Patreon sign-in stopped at an unrecognized site (https://attacker.example). No sign-in details were opened in another browser.'
+    })
+    expect(root.close).toHaveBeenCalledOnce()
+  })
+
+  it('blocks an untrusted direct navigation without handing OAuth details to the OS', async () => {
+    const root = new FakeWindow(new FakeSession())
+    const manager = new PatreonLoginWindowManager(
+      new FakeVault() as never,
+      () => root as unknown as BrowserWindow
+    )
+
+    const resultPromise = manager.open({} as BrowserWindow)
+    const blockedNavigation = { preventDefault: vi.fn() }
+    root.webContents.emit(
+      'will-navigate',
+      blockedNavigation,
+      'https://attacker.example/continue?state=private&code=one-time'
+    )
+
+    expect(blockedNavigation.preventDefault).toHaveBeenCalledOnce()
+    await expect(resultPromise).resolves.toEqual({
+      ok: false,
+      message: 'Patreon sign-in stopped at an unrecognized site (https://attacker.example). No sign-in details were opened in another browser.'
+    })
+    expect(root.close).toHaveBeenCalledOnce()
+  })
+
+  it('blocks an untrusted popup without handing OAuth details to the OS', async () => {
+    const root = new FakeWindow(new FakeSession())
+    const manager = new PatreonLoginWindowManager(
+      new FakeVault() as never,
+      () => root as unknown as BrowserWindow
+    )
+
+    const resultPromise = manager.open({} as BrowserWindow)
+    expect(root.openHandler?.({
+      url: 'https://attacker.example/popup?state=private&code=one-time'
+    })).toEqual({ action: 'deny' })
+
+    await expect(resultPromise).resolves.toEqual({
+      ok: false,
+      message: 'Patreon sign-in stopped at an unrecognized site (https://attacker.example). No sign-in details were opened in another browser.'
+    })
     expect(root.close).toHaveBeenCalledOnce()
   })
 
@@ -194,7 +313,7 @@ describe('PatreonLoginWindowManager', () => {
     expect(vault.createToken).not.toHaveBeenCalled()
   })
 
-  it('does not send unsafe external schemes to the operating system', async () => {
+  it('blocks unsafe popup schemes inside the login flow', async () => {
     const root = new FakeWindow(new FakeSession())
     const manager = new PatreonLoginWindowManager(
       new FakeVault() as never,
@@ -203,10 +322,10 @@ describe('PatreonLoginWindowManager', () => {
 
     const resultPromise = manager.open({} as BrowserWindow)
     expect(root.openHandler?.({ url: 'javascript:alert(1)' })).toEqual({ action: 'deny' })
-    expect(shell.openExternal).not.toHaveBeenCalled()
-
-    await manager.closeAll()
-    await expect(resultPromise).resolves.toMatchObject({ ok: false })
+    await expect(resultPromise).resolves.toEqual({
+      ok: false,
+      message: 'Patreon sign-in stopped at an unrecognized site (invalid address). No sign-in details were opened in another browser.'
+    })
   })
 })
 

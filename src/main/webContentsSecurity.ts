@@ -31,9 +31,8 @@ export function hardenDefaultSession(targetSession: Session): void {
 
 /**
  * Patreon and its identity-provider popups share this short-lived session.
- * Marking the session lets the global navigation fallback preserve the OAuth
- * redirect chain while the window-specific guards continue to enforce the
- * same host allowlist and external-link behavior.
+ * Marking the session lets the global fallback apply the dedicated OAuth host
+ * policy while permissions remain denied for every remote page.
  */
 export function hardenPatreonLoginSession(targetSession: Session): void {
   patreonLoginSessions.add(targetSession)
@@ -68,8 +67,25 @@ export function installGlobalWebContentsGuards(targetApp: App): void {
         event.preventDefault()
       }
     }
+    const guardRedirect = (
+      event: Electron.Event<Electron.WebContentsWillRedirectEventParams>,
+      url: string
+    ): void => {
+      // will-navigate protects main-frame destinations. Hidden provider frames
+      // also emit will-redirect during OAuth cookie/challenge hand-offs; they
+      // must stay in the sandboxed login session and must never be promoted to
+      // the user's desktop browser.
+      if (
+        patreonLoginSessions.has(webContents.session)
+        && event.isMainFrame === false
+      ) {
+        return
+      }
+
+      guardNavigation(event, url)
+    }
     webContents.on('will-navigate', guardNavigation)
-    webContents.on('will-redirect', guardNavigation)
+    webContents.on('will-redirect', guardRedirect)
   })
 }
 

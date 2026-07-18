@@ -1,6 +1,5 @@
 import {
   BrowserWindow,
-  shell,
   type BrowserWindowConstructorOptions
 } from 'electron'
 import { randomUUID } from 'node:crypto'
@@ -138,19 +137,46 @@ export class PatreonLoginWindowManager {
         }
       }
 
+      const stopAtUntrustedDestination = (url: string): void => {
+        // Finish outside Chromium's navigation/window-open callback. This
+        // avoids destroying WebContents while Electron is still deciding the
+        // navigation, while the settled guard keeps duplicate callbacks safe.
+        queueMicrotask(() => finish(untrustedDestinationResult(url)))
+      }
+
       const guardPopupOpen = ({ url }: { url: string }): Electron.WindowOpenHandlerResponse => {
         if (isAllowedPatreonLoginUrl(url)) {
           return { action: 'allow' }
         }
 
-        openExternalUrl(url)
+        stopAtUntrustedDestination(url)
         return { action: 'deny' }
       }
 
       const guardLoginNavigation = (event: Electron.Event, url: string): void => {
         if (!isAllowedPatreonLoginUrl(url)) {
           event.preventDefault()
-          openExternalUrl(url)
+          stopAtUntrustedDestination(url)
+        }
+      }
+
+      const guardLoginRedirect = (
+        event: Electron.Event<Electron.WebContentsWillRedirectEventParams>,
+        url: string
+      ): void => {
+        // Some identity providers use hidden frames for cookie and challenge
+        // hand-offs. Promoting one of those redirects to the OS browser loses
+        // the popup opener and ephemeral session that OAuth needs to finish.
+        if (event.isMainFrame === false) {
+          return
+        }
+
+        if (!isAllowedPatreonLoginUrl(url)) {
+          // A server-directed OAuth hop is not an explicit request to leave
+          // WatchAlong. Keep its state/code out of another browser profile and
+          // fail locally with a query-free destination for diagnosis.
+          event.preventDefault()
+          stopAtUntrustedDestination(url)
         }
       }
 
@@ -174,16 +200,16 @@ export class PatreonLoginWindowManager {
           }
         }
 
-        openExternalUrl(url)
+        stopAtUntrustedDestination(url)
         return { action: 'deny' }
       })
       loginWindow.webContents.on('did-create-window', (popup) => {
         popup.webContents.setWindowOpenHandler(guardPopupOpen)
         popup.webContents.on('will-navigate', guardLoginNavigation)
-        popup.webContents.on('will-redirect', guardLoginNavigation)
+        popup.webContents.on('will-redirect', guardLoginRedirect)
       })
       loginWindow.webContents.on('will-navigate', guardLoginNavigation)
-      loginWindow.webContents.on('will-redirect', guardLoginNavigation)
+      loginWindow.webContents.on('will-redirect', guardLoginRedirect)
 
       loginSession.cookies.on('changed', onCookieChanged)
       loginWindow.webContents.on('did-navigate', () => void checkCookies())
@@ -230,13 +256,20 @@ function secureLoginWebPreferences(partition: string): Electron.WebPreferences {
   }
 }
 
-function openExternalUrl(rawUrl: string): void {
+function safeNavigationOrigin(rawUrl: string): string {
   try {
     const url = new URL(rawUrl)
-    if (url.protocol === 'http:' || url.protocol === 'https:') {
-      void shell.openExternal(rawUrl)
-    }
+    return url.protocol === 'https:' || url.protocol === 'http:'
+      ? url.origin
+      : 'invalid address'
   } catch {
-    // Ignore malformed navigation targets.
+    return 'invalid address'
+  }
+}
+
+function untrustedDestinationResult(rawUrl: string): PatreonLoginResult {
+  return {
+    ok: false,
+    message: `Patreon sign-in stopped at an unrecognized site (${safeNavigationOrigin(rawUrl)}). No sign-in details were opened in another browser.`
   }
 }

@@ -19,7 +19,7 @@ If you choose the Firefox one-click extraction:
 
 If you use the in-app login window:
 1. An isolated browser window opens (`contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`)
-2. Navigation is restricted to Patreon domains and selected identity providers (Google, Facebook, Apple)
+2. Top-level navigation and new windows are restricted to Patreon domains and selected identity providers (Google, including its exact `accounts.youtube.com` authentication bridge; Facebook; Apple)
 3. Only `session_id` cookies from `patreon.com` are read — nothing else
 4. After the cookie is captured, the login window closes normally so the identity provider can finish its OAuth callback
 

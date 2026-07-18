@@ -108,6 +108,14 @@ describe('web contents security', () => {
     const blockedRedirect = { preventDefault: vi.fn() }
     contents.navigate('will-redirect', blockedRedirect, 'https://example.test/redirect')
     expect(blockedRedirect.preventDefault).toHaveBeenCalledOnce()
+
+    const blockedSubframeRedirect = { preventDefault: vi.fn(), isMainFrame: false }
+    contents.navigate(
+      'will-redirect',
+      blockedSubframeRedirect,
+      'https://example.test/frame-redirect'
+    )
+    expect(blockedSubframeRedirect.preventDefault).toHaveBeenCalledOnce()
   })
 
   it('allows only destinations approved by an application renderer policy', () => {
@@ -126,7 +134,7 @@ describe('web contents security', () => {
     expect(blocked.preventDefault).toHaveBeenCalledOnce()
   })
 
-  it('preserves the allowlisted Patreon OAuth chain while blocking lookalikes', () => {
+  it('preserves Patreon subframe redirects while blocking unsafe top-level destinations', () => {
     const app = createAppHarness()
     const targetSession = createSessionHarness()
     const contents = createWebContentsHarness(targetSession.session)
@@ -142,21 +150,45 @@ describe('web contents security', () => {
     )
     expect(allowed.preventDefault).not.toHaveBeenCalled()
 
-    const allowedRedirect = { preventDefault: vi.fn() }
+    const allowedRedirect = { preventDefault: vi.fn(), isMainFrame: false }
     contents.navigate(
       'will-redirect',
       allowedRedirect,
-      'https://www.patreon.com/api/oauth2/callback?state=opaque'
+      'https://provider-intermediate.invalid/oauth-return?state=opaque'
     )
     expect(allowedRedirect.preventDefault).not.toHaveBeenCalled()
 
-    const blockedRedirect = { preventDefault: vi.fn() }
+    const allowedMainFrameRedirect = { preventDefault: vi.fn(), isMainFrame: true }
+    contents.navigate(
+      'will-redirect',
+      allowedMainFrameRedirect,
+      'https://www.patreon.com/api/oauth2/callback?state=opaque'
+    )
+    expect(allowedMainFrameRedirect.preventDefault).not.toHaveBeenCalled()
+
+    const allowedGoogleSessionBridge = { preventDefault: vi.fn(), isMainFrame: true }
+    contents.navigate(
+      'will-redirect',
+      allowedGoogleSessionBridge,
+      'https://accounts.youtube.com/accounts/SetSID?sid=opaque'
+    )
+    expect(allowedGoogleSessionBridge.preventDefault).not.toHaveBeenCalled()
+
+    const blockedRedirect = { preventDefault: vi.fn(), isMainFrame: true }
     contents.navigate(
       'will-redirect',
       blockedRedirect,
       'https://accounts.google.com.attacker.example/oauth'
     )
     expect(blockedRedirect.preventDefault).toHaveBeenCalledOnce()
+
+    const blockedNavigation = { preventDefault: vi.fn() }
+    contents.navigate(
+      'will-navigate',
+      blockedNavigation,
+      'https://accounts.google.com.attacker.example/oauth'
+    )
+    expect(blockedNavigation.preventDefault).toHaveBeenCalledOnce()
   })
 })
 
@@ -216,7 +248,11 @@ function createSessionHarness(): {
 function createWebContentsHarness(targetSession: Session): {
   webContents: WebContents
   openHandler: ((details: { url: string }) => Electron.WindowOpenHandlerResponse) | null
-  navigate(type: 'will-navigate' | 'will-redirect', event: { preventDefault(): void }, url: string): void
+  navigate(
+    type: 'will-navigate' | 'will-redirect',
+    event: { preventDefault(): void; isMainFrame?: boolean },
+    url: string
+  ): void
 } {
   let openHandler: ((details: { url: string }) => Electron.WindowOpenHandlerResponse) | null = null
   const navigationHandlers = new Map<string, (event: Electron.Event, url: string) => void>()
