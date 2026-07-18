@@ -19,6 +19,12 @@ const MOVIE_WINDOW_COMMAND_TIMEOUT_ERROR = 'Movie window stopped responding.'
 const MOVIE_WINDOW_UNRESPONSIVE_MESSAGE =
   'The movie window stopped responding, so the movie has been brought back into the player.'
 
+export type DetachedMovieTransitionPolicy =
+  | 'keep'
+  | 'replace-media'
+  | 'leave-session'
+  | 'wizard-completed'
+
 interface UseMovieWindowOptions {
   playback: PlaybackHook
   sessionState: SessionHook
@@ -142,7 +148,7 @@ export function useMovieWindow({
   }
 
   const stopDetachedMovie = async (): Promise<void> => {
-    if (!movieWindowActive) return
+    if (!hasDetachedMovie()) return
     setMovieAudioTrackSnapshot({ tracks: [], selected: null })
     const detachedSessionId = movieWindowSessionIdRef.current ?? activeSessionIdRef.current
     await closeMovieWindowForModeChange()
@@ -153,6 +159,46 @@ export function useMovieWindow({
       await persistMovieWindowState(detachedSessionId, { isMoviePoppedOut: false })
     }
   }
+
+  const closeDetachedMovieForTransition = async (
+    policy: DetachedMovieTransitionPolicy
+  ): Promise<void> => {
+    switch (policy) {
+      case 'keep':
+        return
+      case 'replace-media':
+        // A pop-out may still be awaiting the main process even though React
+        // has not rendered it as active yet. Invalidate that generation before
+        // checking the visible state so it cannot finish into the next session.
+        popOutGenerationRef.current += 1
+        await stopDetachedMovie()
+        return
+      case 'leave-session':
+      case 'wizard-completed': {
+        popOutGenerationRef.current += 1
+        if (!hasDetachedMovie()) return
+        const detachedSessionId = movieWindowSessionIdRef.current ?? activeSessionIdRef.current
+        await closeMovieWindowForModeChange()
+        destroyRemoteMovieAdapter()
+        if (policy === 'wizard-completed') {
+          restoredPopOutSessionRef.current = detachedSessionId
+        }
+        setMovieWindowActive(false)
+        // Persist by the captured owner, not whichever session happens to be
+        // active after the asynchronous close. This also prevents a wizard
+        // switch from leaving the old session set to re-pop on next launch.
+        if (detachedSessionId) {
+          await persistMovieWindowState(detachedSessionId, { isMoviePoppedOut: false })
+        }
+        return
+      }
+      default:
+        return assertNever(policy)
+    }
+  }
+
+  const hasDetachedMovie = (): boolean =>
+    movieWindowActive || remoteMovieAdapterRef.current !== null || movieWindowSessionIdRef.current !== null
 
   async function flushMovieWindowGeometry(): Promise<void> {
     if (movieWindowGeometryTimerRef.current !== null) {
@@ -427,5 +473,15 @@ export function useMovieWindow({
     void popOutMovie('screen')
   })
 
-  return { closeMovieWindowForModeChange, stopDetachedMovie, popOutMovie, popInMovie }
+  return {
+    closeMovieWindowForModeChange,
+    stopDetachedMovie,
+    closeDetachedMovieForTransition,
+    popOutMovie,
+    popInMovie
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled detached movie transition policy: ${String(value)}`)
 }
