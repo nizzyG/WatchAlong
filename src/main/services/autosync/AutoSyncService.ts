@@ -7,6 +7,7 @@ import type {
   StartAutoSyncResult
 } from '@shared/types'
 import { clamp } from '@shared/numeric'
+import { isAutoSyncReady } from '@shared/autoSyncReadiness'
 import { captureTimingSnapshot } from '@shared/sessionTiming'
 import { runAutoSyncAnalysis } from './autoSyncAnalysis'
 import { createAutoSyncEvents, fallback, friendlyError, type AutoSyncEvents } from './autoSyncEvents'
@@ -427,12 +428,20 @@ export class AutoSyncService {
     return signatures
   }
 
-  private commit(sessionId: string, offsetSeconds: number, movieRateCorrection: number, confidence: number, detectedMovieFps: number): void {
+  private commit(
+    sessionId: string,
+    offsetSeconds: number,
+    movieRateCorrection: number,
+    confidence: number,
+    detectedMovieFps: number,
+    result: AutoSyncCompleteEvent
+  ): void {
     this.options.sessions.updateSession(sessionId, {
       offsetSeconds,
       movieRateCorrection,
       detectedMovieFps,
       timingOrigin: 'automatic',
+      syncReadiness: isAutoSyncReady(result) ? 'ready' : 'needs-sync',
       autoSyncConfidence: confidence,
       autoSyncAnalyzedAt: this.now().toISOString(),
       autoSyncAlgorithmVersion: AUTO_SYNC_ALGORITHM_VERSION

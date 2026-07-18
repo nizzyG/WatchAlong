@@ -9,6 +9,8 @@ export function ReactorLibraryView({
   sort,
   compact,
   onOpenSession,
+  onRegisterSessionCard,
+  onSessionCardFocus,
   onChoosePoster,
   onClearPoster,
   onRename,
@@ -20,6 +22,8 @@ export function ReactorLibraryView({
   sort: LibrarySort
   compact: boolean
   onOpenSession(sessionId: string): void
+  onRegisterSessionCard(sessionId: string, button: HTMLButtonElement | null): void
+  onSessionCardFocus(sessionId: string): void
   onChoosePoster(sessionId: string): void
   onClearPoster(sessionId: string): void
   onRename(sessionId: string, returnFocusTarget: HTMLButtonElement | null): void
@@ -53,6 +57,9 @@ export function ReactorLibraryView({
                     accessibleLabel={`${movie.label} with ${group.label}`}
                     artwork="movie"
                     reactorLabel={reactor.label}
+                    openLabelPrefix="View details for"
+                    onRegisterMainButton={(button) => onRegisterSessionCard(session.id, button)}
+                    onMainButtonFocus={() => onSessionCardFocus(session.id)}
                     onOpen={() => onOpenSession(session.id)}
                     onChoosePoster={session.moviePath ? () => onChoosePoster(session.id) : undefined}
                     onClearPoster={session.moviePath ? () => onClearPoster(session.id) : undefined}

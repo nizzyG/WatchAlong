@@ -22,6 +22,7 @@ export function useSession() {
   const commandPanelReturnFocusRef = useRef<HTMLElement | null>(null)
   const sessionDialogReturnFocusRef = useRef<HTMLElement | null>(null)
   const resumeAfterRepairRef = useRef(false)
+  const playWhenReadySessionIdRef = useRef<string | null>(null)
 
   const [emptySession] = useState(() => createDefaultSession())
   const [library, setLibrary] = useState<SessionLibrary>(() => createDefaultLibrary())
@@ -32,7 +33,7 @@ export function useSession() {
   const [showWelcome, setShowWelcome] = useState(false)
   const [wizardDimmed, setWizardDimmed] = useState(false)
   const [commandPanelOpen, setCommandPanelOpen] = useState(false)
-  const [expandedPanelSection, setExpandedPanelSection] = useState<CommandPanelSection>('now-playing')
+  const [expandedPanelSection, setExpandedPanelSection] = useState<CommandPanelSection | null>('now-playing')
   const [patreonStatus, setPatreonStatus] = useState<SavedPatreonSessionStatus>({ available: false, canEncrypt: false })
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null)
   const [renameInitialFocus, setRenameInitialFocus] = useState<RenameSessionFocus>('title')
@@ -42,7 +43,7 @@ export function useSession() {
   return {
     appShellRef, sessionRef, activeSessionIdRef, commandPanelButtonRef, commandPanelReturnFocusRef,
     sessionDialogReturnFocusRef,
-    resumeAfterRepairRef, emptySession, library, setLibrary, preferences, setPreferences, appView,
+    resumeAfterRepairRef, playWhenReadySessionIdRef, emptySession, library, setLibrary, preferences, setPreferences, appView,
     setAppView, startupError, setStartupError, startupRecoveryAvailable, setStartupRecoveryAvailable,
     showWelcome, setShowWelcome, wizardDimmed,
     setWizardDimmed, commandPanelOpen, setCommandPanelOpen, expandedPanelSection,

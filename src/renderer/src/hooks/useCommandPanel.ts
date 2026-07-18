@@ -1,5 +1,4 @@
 import { useEffect } from 'react'
-import type { PlaybackHook } from './usePlayback'
 import type { SessionHook } from './useSession'
 
 const COMMAND_PANEL_FOCUSABLE_SELECTOR = [
@@ -13,11 +12,10 @@ const COMMAND_PANEL_FOCUSABLE_SELECTOR = [
 ].join(', ')
 
 interface UseCommandPanelOptions {
-  playback: PlaybackHook
   sessionState: SessionHook
 }
 
-export function useCommandPanel({ playback, sessionState }: UseCommandPanelOptions) {
+export function useCommandPanel({ sessionState }: UseCommandPanelOptions) {
   const {
     appShellRef,
     commandPanelButtonRef,
@@ -35,7 +33,7 @@ export function useCommandPanel({ playback, sessionState }: UseCommandPanelOptio
   }, [commandPanelOpen])
 
   const focusPlayerFallback = (): void => {
-    if (commandPanelButtonRef.current && !playback.controlsIdle) commandPanelButtonRef.current.focus()
+    if (commandPanelButtonRef.current?.isConnected) commandPanelButtonRef.current.focus()
     else appShellRef.current?.focus()
   }
 
@@ -43,7 +41,6 @@ export function useCommandPanel({ playback, sessionState }: UseCommandPanelOptio
     commandPanelReturnFocusRef.current = returnFocusTarget ?? (
       document.activeElement instanceof HTMLElement ? document.activeElement : commandPanelButtonRef.current
     )
-    playback.setControlsIdle(false)
     setCommandPanelOpen(true)
   }
 

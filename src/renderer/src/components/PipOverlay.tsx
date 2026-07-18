@@ -1,7 +1,13 @@
 import { ExternalLink, EyeOff, GripHorizontal, Magnet, Maximize2 } from 'lucide-react'
 import type { RefObject } from 'react'
 import type { OverlayGeometry } from '@shared/types'
-import { constrainOverlay, nextPipCorner, snapOverlayToCorner, snapOverlayToNearestCorner } from './pipGeometry'
+import {
+  constrainOverlay,
+  getPipPresentationShift,
+  nextPipCorner,
+  snapOverlayToCorner,
+  snapOverlayToNearestCorner
+} from './pipGeometry'
 
 interface PipOverlayProps {
   geometry: OverlayGeometry
@@ -15,6 +21,7 @@ interface PipOverlayProps {
   onTimeUpdate(): void
   onVideoError(video: HTMLVideoElement): void
   subtitleText?: string | null
+  osdTop?: number | null
 }
 
 const MIN_WIDTH = 320
@@ -31,8 +38,10 @@ export function PipOverlay({
   onLoadedMetadata,
   onTimeUpdate,
   onVideoError,
-  subtitleText
+  subtitleText,
+  osdTop = null
 }: PipOverlayProps): JSX.Element {
+  const presentationShift = hidden ? 0 : getPipPresentationShift(geometry, osdTop)
   const beginDrag = (event: React.PointerEvent): void => {
     if (event.button && event.button !== 0) {
       return
@@ -116,61 +125,67 @@ export function PipOverlay({
       aria-label="Movie picture in picture"
       aria-hidden={hidden}
     >
-      <div className="pip-titlebar">
-        <div className="pip-drag-handle" onPointerDown={beginDrag}>
-          <GripHorizontal size={16} aria-hidden />
-          <span>Movie</span>
+      <div
+        className="pip-presentation"
+        data-presentation-shift={presentationShift}
+        style={{ transform: `translateY(${presentationShift}px)` }}
+      >
+        <div className="pip-titlebar">
+          <div className="pip-drag-handle" onPointerDown={beginDrag}>
+            <GripHorizontal size={16} aria-hidden />
+            <span>Movie</span>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            title="Snap movie"
+            aria-label="Snap movie"
+            onPointerDown={stopToolbarPointerDown}
+            onClick={cycleSnapCorner}
+          >
+            <Magnet size={16} aria-hidden />
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            title="Pop out movie"
+            aria-label="Pop out movie"
+            onPointerDown={stopToolbarPointerDown}
+            onClick={onPopOut}
+          >
+            <ExternalLink size={16} aria-hidden />
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            title="Hide movie"
+            aria-label="Hide movie"
+            onPointerDown={stopToolbarPointerDown}
+            onClick={onHide}
+          >
+            <EyeOff size={17} aria-hidden />
+          </button>
         </div>
+        <video
+          ref={videoRef}
+          className="pip-video"
+          playsInline
+          preload="metadata"
+          onLoadedMetadata={onLoadedMetadata}
+          onTimeUpdate={onTimeUpdate}
+          onError={(event) => onVideoError(event.currentTarget)}
+        />
+        {subtitleText && <div className="pip-subtitles">{subtitleText}</div>}
         <button
-          className="icon-button"
+          className="pip-resize"
           type="button"
-          title="Snap movie"
-          aria-label="Snap movie"
-          onPointerDown={stopToolbarPointerDown}
-          onClick={cycleSnapCorner}
+          title="Resize movie"
+          aria-label="Resize movie"
+          onPointerDown={beginResize}
         >
-          <Magnet size={16} aria-hidden />
-        </button>
-        <button
-          className="icon-button"
-          type="button"
-          title="Pop out movie"
-          aria-label="Pop out movie"
-          onPointerDown={stopToolbarPointerDown}
-          onClick={onPopOut}
-        >
-          <ExternalLink size={16} aria-hidden />
-        </button>
-        <button
-          className="icon-button"
-          type="button"
-          title="Hide movie"
-          aria-label="Hide movie"
-          onPointerDown={stopToolbarPointerDown}
-          onClick={onHide}
-        >
-          <EyeOff size={17} aria-hidden />
+          <Maximize2 size={16} aria-hidden />
         </button>
       </div>
-      <video
-        ref={videoRef}
-        className="pip-video"
-        playsInline
-        preload="metadata"
-        onLoadedMetadata={onLoadedMetadata}
-        onTimeUpdate={onTimeUpdate}
-        onError={(event) => onVideoError(event.currentTarget)}
-      />
-      {subtitleText && <div className="pip-subtitles">{subtitleText}</div>}
-      <button
-        className="pip-resize"
-        type="button"
-        title="Resize movie"
-        aria-label="Resize movie"
-        onPointerDown={beginResize}
-      >
-        <Maximize2 size={16} aria-hidden />
-      </button>
     </section>
   )
 }

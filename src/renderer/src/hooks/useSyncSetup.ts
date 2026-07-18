@@ -71,7 +71,8 @@ export function useSyncSetup({
         movie.currentTime,
         session.movieRateCorrection
       )),
-      lastReactionTimeSeconds: nextReactionTime
+      lastReactionTimeSeconds: nextReactionTime,
+      syncReadiness: 'ready'
     })
     setPosition(nextReactionTime)
     setSetupMode(false)

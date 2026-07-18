@@ -29,6 +29,7 @@ describe('session helpers', () => {
     expect(session.detectedMovieFps).toBeNull()
     expect(session.movieRateCorrection).toBe(1)
     expect(session.timingOrigin).toBe('manual')
+    expect(session.syncReadiness).toBe('needs-sync')
     expect(session.autoSyncConfidence).toBeNull()
     expect(session.autoSyncAnalyzedAt).toBeNull()
     expect(session.autoSyncAlgorithmVersion).toBeNull()
@@ -37,6 +38,12 @@ describe('session helpers', () => {
       width: 320,
       height: 180
     })
+  })
+
+  it('starts new complete pairings as needing sync', () => {
+    const session = createSessionFromPaths('reaction.mp4', 'movie.mp4')
+
+    expect(session.syncReadiness).toBe('needs-sync')
   })
 
   it('merges overlay patches without dropping existing geometry', () => {
@@ -163,7 +170,7 @@ describe('session helpers', () => {
       lastReactionTimeSeconds: 90
     })
 
-    expect(library.version).toBe(7)
+    expect(library.version).toBe(8)
     expect(library.sessions).toHaveLength(1)
     expect(library.activeSessionId).toBe(library.sessions[0].id)
     expect(library.sessions[0]).toMatchObject({
@@ -177,6 +184,7 @@ describe('session helpers', () => {
       reactorName: null,
       reactorNameOrigin: 'metadata',
       timingOrigin: 'manual',
+      syncReadiness: 'ready',
       autoSyncConfidence: null,
       autoSyncAnalyzedAt: null,
       autoSyncAlgorithmVersion: null
@@ -201,7 +209,7 @@ describe('session helpers', () => {
     })
 
     expect(migrated).toMatchObject({
-      version: 7,
+      version: 8,
       activeSessionId: 'legacy-session',
       sessions: [{ moviePosterPath: null, movieAudioTrackPreference: null }]
     })
@@ -229,16 +237,41 @@ describe('session helpers', () => {
       movieAudioTrackPreference: preference
     })
     const roundTripped = normalizeLibrary(JSON.parse(JSON.stringify({
-      version: 7,
+      version: 8,
       activeSessionId: session.id,
       sessions: [session]
     })))
 
     expect(migrated).toMatchObject({
-      version: 7,
+      version: 8,
       sessions: [{ movieAudioTrackPreference: null }]
     })
     expect(roundTripped.sessions[0].movieAudioTrackPreference).toEqual(preference)
+  })
+
+  it('migrates v7 complete pairings as ready and incomplete drafts as needing sync', () => {
+    const migrated = normalizeLibrary({
+      version: 7,
+      activeSessionId: 'complete',
+      sessions: [
+        { id: 'complete', reactionPath: 'reaction.mp4', moviePath: 'movie.mp4' },
+        { id: 'draft', reactionPath: 'reaction-only.mp4', moviePath: null }
+      ]
+    })
+
+    expect(migrated.version).toBe(8)
+    expect(migrated.sessions.find((session) => session.id === 'complete')?.syncReadiness).toBe('ready')
+    expect(migrated.sessions.find((session) => session.id === 'draft')?.syncReadiness).toBe('needs-sync')
+  })
+
+  it('does not treat malformed persisted readiness as legacy-ready', () => {
+    const session = normalizeSession({
+      reactionPath: 'reaction.mp4',
+      moviePath: 'movie.mp4',
+      syncReadiness: 'definitely-ready'
+    })
+
+    expect(session.syncReadiness).toBe('needs-sync')
   })
 
   it('rejects malformed audio preferences atomically', () => {

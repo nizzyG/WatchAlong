@@ -6,7 +6,8 @@ export type CommitAutoSyncTiming = (
   offsetSeconds: number,
   movieRateCorrection: number,
   confidence: number,
-  detectedMovieFps: number
+  detectedMovieFps: number,
+  result: AutoSyncCompleteEvent
 ) => void
 
 export interface AutoSyncEvents {
@@ -33,14 +34,7 @@ export interface AutoSyncEvents {
 export function createAutoSyncEvents(commit: CommitAutoSyncTiming): AutoSyncEvents {
   return {
     completeFromFit(sessionId, fit, detectedMovieFps) {
-      commit(
-        sessionId,
-        fit.offsetSeconds,
-        fit.movieRateCorrection,
-        fit.confidence,
-        detectedMovieFps
-      )
-      return {
+      const result: AutoSyncCompleteEvent = {
         sessionId,
         outcome: 'confident',
         message: 'Ready — WatchAlong found the timing and will keep both videos together.',
@@ -49,6 +43,15 @@ export function createAutoSyncEvents(commit: CommitAutoSyncTiming): AutoSyncEven
         confidence: fit.confidence,
         anchorCount: fit.anchors.length
       }
+      commit(
+        sessionId,
+        fit.offsetSeconds,
+        fit.movieRateCorrection,
+        fit.confidence,
+        detectedMovieFps,
+        result
+      )
+      return result
     },
 
     completePartial(
@@ -60,10 +63,7 @@ export function createAutoSyncEvents(commit: CommitAutoSyncTiming): AutoSyncEven
       anchorCount,
       detectedMovieFps
     ) {
-      if (intent === 'initial') {
-        commit(sessionId, offsetSeconds, movieRateCorrection, confidence, detectedMovieFps)
-      }
-      return {
+      const result: AutoSyncCompleteEvent = {
         sessionId,
         outcome: 'partial',
         message: intent === 'initial'
@@ -74,6 +74,10 @@ export function createAutoSyncEvents(commit: CommitAutoSyncTiming): AutoSyncEven
         confidence,
         anchorCount
       }
+      if (intent === 'initial') {
+        commit(sessionId, offsetSeconds, movieRateCorrection, confidence, detectedMovieFps, result)
+      }
+      return result
     },
 
     completeReadyOpeningPartial(
@@ -89,8 +93,7 @@ export function createAutoSyncEvents(commit: CommitAutoSyncTiming): AutoSyncEven
       // that honest partial for both import and an explicit recheck so the UI
       // can continue directly into playback without pretending it was a full
       // timeline fit.
-      commit(sessionId, offsetSeconds, movieRateCorrection, confidence, detectedMovieFps)
-      return {
+      const result: AutoSyncCompleteEvent = {
         sessionId,
         outcome: 'partial',
         readyToPlay: true,
@@ -100,6 +103,8 @@ export function createAutoSyncEvents(commit: CommitAutoSyncTiming): AutoSyncEven
         confidence,
         anchorCount
       }
+      commit(sessionId, offsetSeconds, movieRateCorrection, confidence, detectedMovieFps, result)
+      return result
     }
   }
 }

@@ -5,7 +5,6 @@ import type { PlaybackHook } from './usePlayback'
 import type { SessionHook } from './useSession'
 import type { SubtitlesHook } from './useSubtitles'
 
-const CONTROL_IDLE_DELAY_MS = 2400
 const UNSUPPORTED_SUBTITLE_FORMAT_ERROR = "This subtitle format isn't supported. Use SRT or VTT."
 
 interface UsePlayerSurfaceLifecycleOptions {
@@ -13,7 +12,6 @@ interface UsePlayerSurfaceLifecycleOptions {
   sessionState: SessionHook
   subtitles: SubtitlesHook
   activeSession: LibrarySession | null
-  shouldAutoHideControls: boolean
 }
 
 /**
@@ -24,26 +22,30 @@ export function usePlayerSurfaceLifecycle({
   playback,
   sessionState,
   subtitles,
-  activeSession,
-  shouldAutoHideControls
+  activeSession
 }: UsePlayerSurfaceLifecycleOptions) {
   const {
     moviePosition,
     movieWindowActive,
-    setControlsIdle,
     setError
   } = playback
   const { appView } = sessionState
-  const { subtitleCues, setSubtitleCues } = subtitles
+  const {
+    subtitleCues,
+    setSubtitleCues,
+    subtitlesEnabled,
+    setSubtitlesEnabled
+  } = subtitles
   const activeSubtitleText = useMemo(
-    () => getActiveSubtitleCue(subtitleCues, moviePosition)?.text ?? null,
-    [moviePosition, subtitleCues]
+    () => subtitlesEnabled ? getActiveSubtitleCue(subtitleCues, moviePosition)?.text ?? null : null,
+    [moviePosition, subtitleCues, subtitlesEnabled]
   )
 
   useEffect(() => {
     let mounted = true
 
     void (async () => {
+      setSubtitlesEnabled(true)
       if (!activeSession?.subtitlePath) {
         setSubtitleCues([])
         return
@@ -62,7 +64,7 @@ export function usePlayerSurfaceLifecycle({
     return () => {
       mounted = false
     }
-  }, [activeSession?.id, activeSession?.subtitlePath])
+  }, [activeSession?.id, activeSession?.subtitlePath, setSubtitlesEnabled])
 
   useEffect(() => {
     if (!movieWindowActive) return
@@ -87,43 +89,6 @@ export function usePlayerSurfaceLifecycle({
     document.addEventListener('fullscreenchange', exitFullscreenOutsidePrimaryView)
     return () => document.removeEventListener('fullscreenchange', exitFullscreenOutsidePrimaryView)
   }, [appView])
-
-  useEffect(() => {
-    let timer: number | undefined
-
-    const clearIdleTimer = (): void => {
-      if (timer !== undefined) {
-        window.clearTimeout(timer)
-        timer = undefined
-      }
-    }
-
-    const markActive = (): void => {
-      setControlsIdle(false)
-      clearIdleTimer()
-      if (shouldAutoHideControls) {
-        timer = window.setTimeout(() => setControlsIdle(true), CONTROL_IDLE_DELAY_MS)
-      }
-    }
-
-    markActive()
-    if (!shouldAutoHideControls) return clearIdleTimer
-
-    window.addEventListener('mousemove', markActive)
-    window.addEventListener('mousedown', markActive)
-    window.addEventListener('wheel', markActive, { passive: true })
-    window.addEventListener('keydown', markActive)
-    window.addEventListener('touchstart', markActive, { passive: true })
-
-    return () => {
-      clearIdleTimer()
-      window.removeEventListener('mousemove', markActive)
-      window.removeEventListener('mousedown', markActive)
-      window.removeEventListener('wheel', markActive)
-      window.removeEventListener('keydown', markActive)
-      window.removeEventListener('touchstart', markActive)
-    }
-  }, [shouldAutoHideControls])
 
   const toggleFullscreen = useCallback((): void => {
     if (appView !== 'library' && appView !== 'player') return

@@ -10,7 +10,6 @@ import {
   Gauge,
   LayoutGrid,
   Library as LibraryIcon,
-  List,
   Loader2,
   Lock,
   Minus,
@@ -19,6 +18,7 @@ import {
   Settings,
   ShieldCheck,
   SlidersHorizontal,
+  TriangleAlert,
   X
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
@@ -51,15 +51,14 @@ interface CommandPanelProps {
   downloads: DownloadProgressEvent[]
   preferences: AppPreferences
   patreonStatus: SavedPatreonSessionStatus
-  expandedSection: CommandPanelSection
-  onExpandedSection(section: CommandPanelSection): void
+  expandedSection: CommandPanelSection | null
+  onExpandedSection(section: CommandPanelSection | null): void
   onClose(): void
   onSyncSetup(): void
   onFindSyncAgain(): void
   onNudgeOffset(deltaSeconds: number): void
   onReactorSource(source: ReactorSource): void
   onMovieRateCorrection(rate: number): void
-  onSwapReaction(): void
   onCloseSession(): void
   onSwitchSession(sessionId: string): void
   onViewLibrary(): void
@@ -91,7 +90,6 @@ export function CommandPanel({
   onNudgeOffset,
   onReactorSource,
   onMovieRateCorrection,
-  onSwapReaction,
   onCloseSession,
   onSwitchSession,
   onViewLibrary,
@@ -112,6 +110,9 @@ export function CommandPanel({
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
     .slice(0, 10)
   const showDownloads = downloads.length > 0
+  const toggleSection = (section: CommandPanelSection): void => {
+    onExpandedSection(expandedSection === section ? null : section)
+  }
 
   return (
     <div className="command-panel-scrim" onMouseDown={onClose}>
@@ -123,20 +124,28 @@ export function CommandPanel({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="command-panel-titlebar">
-          <strong id="command-panel-title">Command Panel</strong>
-          <button
-            className="icon-button"
-            type="button"
-            title="Close"
-            aria-label="Close Command Panel"
-            data-command-panel-close
-            onClick={onClose}
-          >
-            <X size={17} aria-hidden />
-          </button>
+          <strong id="command-panel-title">Control Panel</strong>
+          <div className="command-panel-titlebar-actions">
+            {activeSession && (
+              <button className="secondary-button panel-close-session-button" type="button" onClick={onCloseSession}>
+                <LibraryIcon size={15} aria-hidden />
+                Close Session
+              </button>
+            )}
+            <button
+              className="icon-button"
+              type="button"
+              title="Close"
+              aria-label="Close Control Panel"
+              data-command-panel-close
+              onClick={onClose}
+            >
+              <X size={17} aria-hidden />
+            </button>
+          </div>
         </header>
 
-        <div className="command-panel-content" role="region" aria-label="Command Panel content" tabIndex={0}>
+        <div className="command-panel-content" role="region" aria-label="Control Panel content" tabIndex={0}>
           {activeSession && (
             <SessionTimingPanel
               session={activeSession}
@@ -158,7 +167,7 @@ export function CommandPanel({
               label="Now Playing"
               summary={activeSession.title}
               expanded={expandedSection === 'now-playing'}
-              onToggle={() => onExpandedSection('now-playing')}
+              onToggle={() => toggleSection('now-playing')}
             >
               <div className="panel-session-summary">
                 <strong>{activeSession.title}</strong>
@@ -167,16 +176,6 @@ export function CommandPanel({
                   {reactionSourceLabel(activeSession.reactionSource)}
                 </small>
                 <ReadOnlyProgress value={progress} label={`${formatTime(position)} of ${formatTime(reactionDuration)}`} />
-              </div>
-              <div className="panel-action-grid">
-                <button className="secondary-button" type="button" onClick={onSwapReaction}>
-                  <RefreshCw size={16} aria-hidden />
-                  Swap Reaction
-                </button>
-                <button className="secondary-button" type="button" onClick={onCloseSession}>
-                  <LibraryIcon size={16} aria-hidden />
-                  Close Session
-                </button>
               </div>
             </CommandPanelSection>
           )}
@@ -187,7 +186,7 @@ export function CommandPanel({
             label="Library"
             summary={`${library.sessions.length} saved`}
             expanded={expandedSection === 'library'}
-            onToggle={() => onExpandedSection('library')}
+            onToggle={() => toggleSection('library')}
           >
             <div className="panel-library-list">
               {recentSessions.map((session) => (
@@ -219,7 +218,7 @@ export function CommandPanel({
               label="Downloads"
               summary={`${downloads.length} recent`}
               expanded={expandedSection === 'downloads'}
-              onToggle={() => onExpandedSection('downloads')}
+              onToggle={() => toggleSection('downloads')}
             >
               <div className="panel-download-list">
                 {downloads.map((download) => (
@@ -240,7 +239,7 @@ export function CommandPanel({
             label="Preferences"
             summary={preferences.openLibraryOnLaunch ? 'Library on launch' : 'Resume on launch'}
             expanded={expandedSection === 'preferences'}
-            onToggle={() => onExpandedSection('preferences')}
+            onToggle={() => toggleSection('preferences')}
           >
             <div className="panel-preferences">
               <div className="panel-cabinet-setting">
@@ -307,13 +306,19 @@ export function CommandPanel({
                   </strong>
                   <small>{patreonStatus.available ? 'Saved' : 'Not saved'} / {patreonStatus.canEncrypt ? 'encrypted storage available' : 'encryption unavailable'}</small>
                   {showPatreonLearnMore && (
-                    <small className="panel-learn-more">
+                    <small id="panel-patreon-storage-help" className="panel-learn-more">
                       Your Patreon session is used only for Patreon downloads. It never goes to a WatchAlong server or anyone besides Patreon, and it is saved on this device only if you choose.
                     </small>
                   )}
                 </span>
                 <div className="panel-setting-actions">
-                  <button className="link-button" type="button" onClick={() => setShowPatreonLearnMore((current) => !current)}>
+                  <button
+                    className="link-button"
+                    type="button"
+                    aria-expanded={showPatreonLearnMore}
+                    aria-controls="panel-patreon-storage-help"
+                    onClick={() => setShowPatreonLearnMore((current) => !current)}
+                  >
                     Learn more
                   </button>
                   <button className="secondary-button" type="button" disabled={!patreonStatus.available} onClick={onForgetPatreon}>
@@ -331,23 +336,11 @@ export function CommandPanel({
                 />
               </label>
 
-              <div className="panel-segmented" role="group" aria-label="Library view">
-                <button
-                  type="button"
-                  className={preferences.libraryView === 'grid' ? 'segment-active' : ''}
-                  onClick={() => void onPreference('libraryView', 'grid')}
-                >
-                  <LayoutGrid size={15} aria-hidden />
-                  Grid
-                </button>
-                <button
-                  type="button"
-                  className={preferences.libraryView === 'list' ? 'segment-active' : ''}
-                  onClick={() => void onPreference('libraryView', 'list')}
-                >
-                  <List size={15} aria-hidden />
-                  List
-                </button>
+              <div className="panel-setting-row">
+                <span>
+                  <strong>Library layouts</strong>
+                  <small>Choose Posters or List in the Library. WatchAlong remembers each view.</small>
+                </span>
               </div>
 
               <div className="panel-setting-row panel-setting-disabled">
@@ -370,7 +363,7 @@ export function CommandPanel({
             label="Help & About"
             summary={`Version ${APP_VERSION}`}
             expanded={expandedSection === 'help'}
-            onToggle={() => onExpandedSection('help')}
+            onToggle={() => toggleSection('help')}
           >
             <div className="panel-about">
               <section className="panel-shortcuts" aria-labelledby="keyboard-shortcuts-heading">
@@ -448,29 +441,41 @@ function SessionTimingPanel({
   onMovieRateCorrection(rate: number): void
 }): JSX.Element {
   const automatic = session.timingOrigin === 'automatic'
+  const needsReview = session.syncReadiness !== 'ready'
   const confidence = formatConfidence(session.autoSyncConfidence, automatic)
   const analyzedAt = formatAnalyzedAt(session.autoSyncAnalyzedAt)
   const canAnalyze = Boolean(session.moviePath && session.reactionPath)
-  const timingLabel = autoSyncRunning ? 'Analyzing sync' : automatic ? 'Automatically synced' : 'Manual timing'
+  const timingLabel = autoSyncRunning
+    ? 'Analyzing sync'
+    : needsReview
+      ? 'Timing needs a quick check'
+      : automatic ? 'Automatically synced' : 'Manual timing'
   const timingDescription = autoSyncRunning
     ? autoSyncProgressMessage
-    : automatic
-      ? 'WatchAlong measured this session locally and applied the result.'
-      : 'This session is using timing adjusted by hand.'
+    : needsReview
+      ? automatic
+        ? 'WatchAlong found a possible starting point. Check one clear moment before watching.'
+        : 'Line up one clear moment before watching.'
+      : automatic
+        ? 'WatchAlong measured this session locally and applied the result.'
+        : 'This session is using timing adjusted by hand.'
 
   return (
     <section
-      className={`panel-sync-overview panel-sync-${autoSyncRunning ? 'running' : session.timingOrigin}`}
+      className={`panel-sync-overview panel-sync-${autoSyncRunning ? 'running' : needsReview ? 'needs-review' : session.timingOrigin}`}
       aria-labelledby="command-panel-timing-heading"
       data-timing-origin={session.timingOrigin}
+      data-sync-readiness={session.syncReadiness}
     >
       <header className="panel-sync-status" aria-live="polite">
         <span className="panel-sync-status-icon" aria-hidden>
           {autoSyncRunning
             ? <Loader2 size={22} className="spin" />
-            : automatic
-              ? <ShieldCheck size={22} />
-              : <SlidersHorizontal size={22} />}
+            : needsReview
+              ? <TriangleAlert size={22} />
+              : automatic
+                ? <ShieldCheck size={22} />
+                : <SlidersHorizontal size={22} />}
         </span>
         <div>
           <small>Session timing</small>
@@ -478,41 +483,6 @@ function SessionTimingPanel({
           <span>{timingDescription}</span>
         </div>
       </header>
-
-      {automatic && !autoSyncRunning && (
-        <dl className="panel-sync-facts">
-          <div>
-            <Gauge size={17} aria-hidden />
-            <dt>Confidence</dt>
-            <dd>
-              <strong>{confidence.value}</strong>
-              <small>{confidence.label}</small>
-            </dd>
-          </div>
-          <div>
-            <Clock3 size={17} aria-hidden />
-            <dt>Last analyzed</dt>
-            <dd>
-              {session.autoSyncAnalyzedAt
-                ? <time dateTime={session.autoSyncAnalyzedAt} title={session.autoSyncAnalyzedAt}>{analyzedAt}</time>
-                : <strong>Not yet</strong>}
-              <small>{session.autoSyncAnalyzedAt ? 'On this device' : 'No automatic analysis'}</small>
-            </dd>
-          </div>
-          <div>
-            <Activity size={17} aria-hidden />
-            <dt>Sync engine</dt>
-            <dd>
-              <strong>
-                {session.autoSyncAlgorithmVersion !== null
-                  ? `Algorithm v${session.autoSyncAlgorithmVersion}`
-                  : 'Automatic'}
-              </strong>
-              <small>Local audio analysis</small>
-            </dd>
-          </div>
-        </dl>
-      )}
 
       <button
         className="primary-button panel-find-sync-button"
@@ -525,7 +495,7 @@ function SessionTimingPanel({
       >
         {autoSyncRunning ? <Loader2 size={17} aria-hidden className="spin" /> : <RefreshCw size={17} aria-hidden />}
         <span>
-          <strong>{autoSyncRunning ? autoSyncProgressMessage : 'Find Sync Again'}</strong>
+          <strong>{autoSyncRunning ? autoSyncProgressMessage : needsReview ? 'Find Sync' : 'Find Sync Again'}</strong>
           {!autoSyncRunning && <small>Re-analyze this session locally</small>}
         </span>
       </button>
@@ -534,13 +504,48 @@ function SessionTimingPanel({
         <summary>
           <SlidersHorizontal size={17} aria-hidden />
           <span>
-            <strong>Manual timing fallback</strong>
-            <small>Fine offset and frame-rate controls</small>
+            <strong>Advanced timing</strong>
+            <small>Analysis details and manual controls</small>
           </span>
           <ChevronDown size={16} aria-hidden />
         </summary>
         <div className="panel-manual-timing-body">
-          <p>Use these controls only when automatic sync needs a hand.</p>
+          <p>Review the analysis or adjust timing when automatic sync needs a hand.</p>
+
+          {automatic && !autoSyncRunning && (
+            <dl className="panel-sync-facts">
+              <div>
+                <Gauge size={17} aria-hidden />
+                <dt>Confidence</dt>
+                <dd>
+                  <strong>{confidence.value}</strong>
+                  <small>{confidence.label}</small>
+                </dd>
+              </div>
+              <div>
+                <Clock3 size={17} aria-hidden />
+                <dt>Last analyzed</dt>
+                <dd>
+                  {session.autoSyncAnalyzedAt
+                    ? <time dateTime={session.autoSyncAnalyzedAt} title={session.autoSyncAnalyzedAt}>{analyzedAt}</time>
+                    : <strong>Not yet</strong>}
+                  <small>{session.autoSyncAnalyzedAt ? 'On this device' : 'No automatic analysis'}</small>
+                </dd>
+              </div>
+              <div>
+                <Activity size={17} aria-hidden />
+                <dt>Sync engine</dt>
+                <dd>
+                  <strong>
+                    {session.autoSyncAlgorithmVersion !== null
+                      ? `Algorithm v${session.autoSyncAlgorithmVersion}`
+                      : 'Automatic'}
+                  </strong>
+                  <small>Local audio analysis</small>
+                </dd>
+              </div>
+            </dl>
+          )}
 
           <div className="panel-offset-control" role="group" aria-label="Manual timing offset">
             <span>
@@ -671,6 +676,7 @@ function CommandPanelSection({
         className="command-section-header"
         type="button"
         aria-expanded={expanded}
+        aria-controls={`panel-${id}-content`}
         onClick={onToggle}
       >
         {icon}
@@ -680,7 +686,11 @@ function CommandPanelSection({
         </span>
         <ChevronDown size={16} aria-hidden />
       </button>
-      {expanded && <div className="command-section-body">{children}</div>}
+      {expanded && (
+        <div id={`panel-${id}-content`} className="command-section-body">
+          {children}
+        </div>
+      )}
     </section>
   )
 }

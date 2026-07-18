@@ -1,4 +1,5 @@
 import { Clapperboard, LayoutGrid, Plus, UsersRound } from 'lucide-react'
+import type { RefObject } from 'react'
 import type { LibraryMode } from './libraryPresentation'
 
 const emptyStateContent = {
@@ -19,7 +20,15 @@ const emptyStateContent = {
   }
 } satisfies Record<LibraryMode, { icon: typeof LayoutGrid; title: string; message: string }>
 
-export function LibraryEmptyState({ mode, onNew }: { mode: LibraryMode; onNew(): void }): JSX.Element {
+export function LibraryEmptyState({
+  mode,
+  actionRef,
+  onNew
+}: {
+  mode: LibraryMode
+  actionRef?: RefObject<HTMLButtonElement>
+  onNew(): void
+}): JSX.Element {
   const content = emptyStateContent[mode]
   const Icon = content.icon
 
@@ -30,7 +39,7 @@ export function LibraryEmptyState({ mode, onNew }: { mode: LibraryMode; onNew():
       </div>
       <h2 id={`library-empty-${mode}`}>{content.title}</h2>
       <p>{content.message}</p>
-      <button className="primary-button" type="button" onClick={onNew}>
+      <button ref={actionRef} className="primary-button" type="button" onClick={onNew}>
         <Plus size={18} aria-hidden />
         Create a WatchAlong
       </button>

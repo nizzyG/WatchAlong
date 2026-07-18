@@ -48,7 +48,7 @@ The engine is confident on most pairings. When it isn't, it says so and steps as
 
 ## Appearance
 
-WatchAlong has two cabinet modes: **Mahogany** (dark) and **Oak** (light). Both are warm, textured, and built to feel like real furniture, not a generic app theme. The app follows your system's dark or light preference by default. Switch manually from the Command Panel.
+WatchAlong has two cabinet modes: **Mahogany** (dark) and **Oak** (light). Both are warm, textured, and built to feel like real furniture, not a generic app theme. The app follows your system's dark or light preference by default. Switch manually from the Control Panel.
 
 ![WatchAlong library in Oak mode](docs/screenshots/library-oak.png)
 

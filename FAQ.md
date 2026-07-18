@@ -50,8 +50,8 @@ WatchAlong uses Chromium's media engine, which supports H.264, VP8, VP9, AV1 vid
 | `P` | Toggle PiP visibility |
 | `Alt+Enter` | Enter / exit fullscreen (including the popped-out movie window) |
 | `[` / `]` | Nudge sync offset by −0.1s / +0.1s |
-| `Ctrl+Shift+P` | Open / close the Command Panel from the library or player |
-| `↑` / `↓` / `Tab` / `Shift+Tab` / `Enter` / `Esc` | Navigate inside the Command Panel without leaving it |
+| `Ctrl+,` (`⌘+,` on macOS) | Open / close the Control Panel from the library or player |
+| `↑` / `↓` / `Tab` / `Shift+Tab` / `Enter` / `Esc` | Navigate inside the Control Panel without leaving it |
 
 Playback shortcuts work in the player and are ignored while you're typing or using a control. WatchAlong claims the system Play/Pause key only while a ready pairing is open, then releases it when you return to the library or enter Sync Setup. Fullscreen works in both the library and player, and exits automatically when you leave those surfaces.
 
@@ -137,7 +137,7 @@ WatchAlong reads what's already in your library. It never fetches images from th
 
 ### 23. Can I change how the app looks?
 
-Two cabinet modes: **Mahogany** (dark) and **Oak** (light). Both use real wood-grain textures and warm tones inspired by home entertainment furniture. The app follows your system preference by default. Switch manually from the Command Panel.
+Two cabinet modes: **Mahogany** (dark) and **Oak** (light). Both use real wood-grain textures and warm tones inspired by home entertainment furniture. The app follows your system preference by default. Switch manually from the Control Panel.
 
 ### 24. How do I position the PiP overlay?
 
@@ -147,9 +147,9 @@ Drag it by the title bar. Resize from the lower-right corner. Release near a cor
 
 Click the pop-out icon in the PiP toolbar. The movie lifts into its own window. Drag it to a second monitor, resize independently, or fullscreen it. Pop it back in with the pop-in button or by closing the window. Sync stays frame-accurate across both windows.
 
-### 26. What's the Command Panel?
+### 26. What's the Control Panel?
 
-Press `Ctrl+Shift+P` (or click the gear icon) from the library or during playback. A focused panel slides in with Now Playing, compact Library, active Downloads, Preferences, and Help. Navigate with arrow keys, Tab, or a click.
+Press `Ctrl+,` (`⌘+,` on macOS), or click the gear icon from the library or during playback. A focused panel slides in with Now Playing, compact Library, active Downloads, Preferences, and Help. Navigate with arrow keys, Tab, or a click.
 
 ### 27. My movie has multiple audio tracks. Can I choose which one plays?
 
@@ -167,7 +167,7 @@ See [PRIVACY.md](PRIVACY.md) for a full breakdown of what's stored and where.
 
 ### 29. Where are sessions, settings, and downloads stored?
 
-Sessions and preferences: JSON files in Electron's standard `userData` directory. Downloaded reactions: your system's Videos folder, in a `WatchAlong/Reactions` subfolder. You can change the download location from the Command Panel.
+Sessions and preferences: JSON files in Electron's standard `userData` directory. Downloaded reactions: your system's Videos folder, in a `WatchAlong/Reactions` subfolder. You can change the download location from the Control Panel.
 
 ### 30. If I uninstall, is anything left behind?
 

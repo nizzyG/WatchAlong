@@ -32,7 +32,7 @@ describe('autoSyncEvents', () => {
     order.push('returned')
 
     expect(order).toEqual(['commit', 'returned'])
-    expect(commit).toHaveBeenCalledWith('session-1', -42.25, 0.999, 0.94, 23.976)
+    expect(commit).toHaveBeenCalledWith('session-1', -42.25, 0.999, 0.94, 23.976, result)
     expect(result).toEqual({
       sessionId: 'session-1',
       outcome: 'confident',
@@ -51,7 +51,7 @@ describe('autoSyncEvents', () => {
 
     const result = events.completePartial('session-1', 'initial', -30, 1.001, 0.69, 3, 25)
 
-    expect(commit).toHaveBeenCalledWith('session-1', -30, 1.001, 0.69, 25)
+    expect(commit).toHaveBeenCalledWith('session-1', -30, 1.001, 0.69, 25, result)
     expect(result).toEqual({
       sessionId: 'session-1',
       outcome: 'partial',
@@ -89,7 +89,7 @@ describe('autoSyncEvents', () => {
 
     const result = events.completeReadyOpeningPartial('session-1', -56, 1, 0.69, 4, 24)
 
-    expect(commit).toHaveBeenCalledWith('session-1', -56, 1, 0.69, 24)
+    expect(commit).toHaveBeenCalledWith('session-1', -56, 1, 0.69, 24, result)
     expect(result).toEqual({
       sessionId: 'session-1',
       outcome: 'partial',

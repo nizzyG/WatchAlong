@@ -18,6 +18,7 @@ export type RendererSessionPatch = Partial<Pick<
   | 'reactorSource'
   | 'detectedMovieFps'
   | 'movieRateCorrection'
+  | 'syncReadiness'
   | 'reactorName'
 >>
 
@@ -38,6 +39,7 @@ const rendererWritableSessionKeyRecord = {
   reactorSource: true,
   detectedMovieFps: true,
   movieRateCorrection: true,
+  syncReadiness: true,
   reactorName: true
 } satisfies Record<keyof RendererSessionPatch, true>
 

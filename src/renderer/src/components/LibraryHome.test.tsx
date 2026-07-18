@@ -1,13 +1,29 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createDefaultSession } from '@shared/session'
 import type { LibrarySession, LibraryViewPreference, SessionLibrary } from '@shared/types'
 import type { MoviePosterActionResult } from '../moviePosterActions'
 import { LibraryHome } from './LibraryHome'
 
 describe('LibraryHome', () => {
+  const scrollIntoView = vi.fn()
+  const originalScrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView')
+
   beforeEach(() => {
     window.localStorage.clear()
+    scrollIntoView.mockClear()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView
+    })
+  })
+
+  afterEach(() => {
+    if (originalScrollIntoView) {
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScrollIntoView)
+    } else {
+      delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    }
   })
 
   it('organizes the same local sessions as pairings, reactors, or movies', () => {
@@ -30,14 +46,20 @@ describe('LibraryHome', () => {
     expect(container.querySelectorAll('.reactor-library .movie-poster-card')).toHaveLength(2)
     expect(screen.getByRole('button', { name: 'More actions for Alien with VKunia' })).toBeInTheDocument()
     expect(screen.getByRole('progressbar', { name: 'Alien with VKunia: 25% watched' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Open Alien with VKunia' }))
-    expect(onOpenSession).toHaveBeenCalledWith('alien')
+    const inProgressCard = screen.getByRole('button', { name: 'View details for Alien with VKunia' })
+    expect(inProgressCard.closest('.library-card')).toHaveClass('library-card-in-progress')
+    expect(inProgressCard).toHaveTextContent('Continue · 25%')
+    fireEvent.click(inProgressCard)
+    expect(onOpenSession).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { name: 'Alien' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue Reaction' }))
+    expect(onOpenSession).toHaveBeenCalledWith('alien', 'play')
 
     fireEvent.click(movies)
     expect(movies).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('heading', { name: 'Anchorman' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Open VKunia for Alien' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Open VKunia for Anchorman' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View details for VKunia for Alien' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View details for VKunia for Anchorman' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'More actions for VKunia for Alien' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'More actions for VKunia for Anchorman' })).toBeInTheDocument()
     expect(screen.getByRole('progressbar', { name: 'VKunia for Alien: 25% watched' })).toBeInTheDocument()
@@ -50,7 +72,7 @@ describe('LibraryHome', () => {
     const manual = session('manual', 'Anchorman — Second Reactor', 'Anchorman.mp4', 'second - Second Reactor')
     manual.moviePosterPath = 'C:\\Art\\anchorman-custom.png'
     const library: SessionLibrary = {
-      version: 7,
+      version: 8,
       activeSessionId: automatic.id,
       sessions: [automatic, manual],
       reactors: []
@@ -81,7 +103,7 @@ describe('LibraryHome', () => {
     const withManualPoster = session('alien', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia')
     withManualPoster.moviePosterPath = 'C:\\Art\\alien.jpg'
     const library: SessionLibrary = {
-      version: 7,
+      version: 8,
       activeSessionId: withManualPoster.id,
       sessions: [withManualPoster],
       reactors: []
@@ -133,7 +155,7 @@ describe('LibraryHome', () => {
     window.localStorage.setItem('watchalong-library-mode', mode)
     const alien = session('alien', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia')
     alien.moviePosterPath = 'C:\\Art\\alien.jpg'
-    const library: SessionLibrary = { version: 7, activeSessionId: alien.id, sessions: [alien], reactors: [] }
+    const library: SessionLibrary = { version: 8, activeSessionId: alien.id, sessions: [alien], reactors: [] }
     const onRename = vi.fn()
     const onEditReactor = vi.fn()
     const onDelete = vi.fn()
@@ -205,7 +227,7 @@ describe('LibraryHome', () => {
     alpha.createdAt = '2026-07-12T12:00:00.000Z'
     bravo.createdAt = '2026-07-13T12:00:00.000Z'
     zulu.createdAt = '2026-07-14T12:00:00.000Z'
-    const library: SessionLibrary = { version: 7, activeSessionId: zulu.id, sessions: [alpha, zulu, bravo], reactors: [] }
+    const library: SessionLibrary = { version: 8, activeSessionId: zulu.id, sessions: [alpha, zulu, bravo], reactors: [] }
 
     const first = renderLibrary(vi.fn(), { library })
     const pairingTitles = (): string[] => [...first.container.querySelectorAll('.pairing-library-grid .library-card-copy strong')]
@@ -234,7 +256,7 @@ describe('LibraryHome', () => {
 
   it('provides a welcoming empty state for every organization view', () => {
     const onNew = vi.fn()
-    const library: SessionLibrary = { version: 7, activeSessionId: null, sessions: [], reactors: [] }
+    const library: SessionLibrary = { version: 8, activeSessionId: null, sessions: [], reactors: [] }
     renderLibrary(vi.fn(), { library, onNew })
 
     expect(screen.getByRole('heading', { name: 'No WatchAlong pairings yet' })).toBeInTheDocument()
@@ -250,13 +272,13 @@ describe('LibraryHome', () => {
   it('uses a balanced shelf treatment for a single reactor pairing', () => {
     window.localStorage.setItem('watchalong-library-mode', 'reactors')
     const onlySession = session('alien', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia')
-    const library: SessionLibrary = { version: 7, activeSessionId: onlySession.id, sessions: [onlySession], reactors: [] }
+    const library: SessionLibrary = { version: 8, activeSessionId: onlySession.id, sessions: [onlySession], reactors: [] }
 
     const { container } = renderLibrary(vi.fn(), { library })
 
     expect(container.querySelector('.reactor-library')).toHaveClass('reactor-library-single')
     expect(container.querySelector('.reactor-shelf-movies')).toHaveClass('reactor-shelf-movies-single')
-    expect(screen.getByRole('button', { name: 'Open Alien with VKunia' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View details for Alien with VKunia' })).toBeInTheDocument()
   })
 
   it.each([
@@ -293,6 +315,156 @@ describe('LibraryHome', () => {
     expect(onViewChange).toHaveBeenLastCalledWith('grid')
   })
 
+  it('remembers Posters or List independently for each organization mode', () => {
+    window.localStorage.setItem('watchalong-library-layouts', JSON.stringify({
+      pairings: 'grid',
+      reactors: 'grid',
+      movies: 'list'
+    }))
+    const onViewChange = vi.fn()
+    const { container } = renderLibrary(vi.fn(), { onViewChange })
+
+    fireEvent.click(screen.getByRole('button', { name: 'By Movie' }))
+    expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true')
+    expect(container.querySelector('.movie-library-grid-compact')).not.toBeNull()
+    expect(onViewChange).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pairings' }))
+    expect(screen.getByRole('button', { name: 'Posters' })).toHaveAttribute('aria-pressed', 'true')
+    expect(container.querySelector('.pairing-library-grid-compact')).toBeNull()
+    expect(onViewChange).not.toHaveBeenCalled()
+  })
+
+  it('uses explicit readiness and saved position for the detail primary action', () => {
+    const onOpenSession = vi.fn()
+    const needsSync = session('needs-sync', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia')
+    needsSync.syncReadiness = 'needs-sync'
+    const readyFresh = session('ready-fresh', 'Anchorman — VKnights', 'Anchorman.mp4', 'vkunia - VKunia')
+    readyFresh.lastReactionTimeSeconds = 0
+    const library: SessionLibrary = {
+      version: 8,
+      activeSessionId: needsSync.id,
+      sessions: [needsSync, readyFresh],
+      reactors: []
+    }
+    renderLibrary(onOpenSession, { library })
+
+    fireEvent.click(screen.getByRole('button', { name: 'View details for Alien — VKunia' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Find Sync' }))
+    expect(onOpenSession).toHaveBeenCalledWith('needs-sync', 'sync')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to library' }))
+    fireEvent.click(screen.getByRole('button', { name: 'View details for Anchorman — VKnights' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Play Reaction' }))
+    expect(onOpenSession).toHaveBeenLastCalledWith('ready-fresh', 'play')
+  })
+
+  it('focuses the first sorted pairing without jumping to the active row, supports Escape, and restores card focus', async () => {
+    const alien = session('alien', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia')
+    const anchorman = session('anchorman', 'Anchorman — VKnights', 'Anchorman.mp4', 'vkunia - VKunia')
+    const library: SessionLibrary = {
+      version: 8,
+      activeSessionId: 'anchorman',
+      // Storage order intentionally differs from the visible alphabetical
+      // order so focus follows the shelf, not the raw session array.
+      sessions: [anchorman, alien],
+      reactors: []
+    }
+    renderLibrary(vi.fn(), { library })
+    const firstCard = screen.getByRole('button', { name: 'View details for Alien — VKunia' })
+    await waitFor(() => expect(firstCard).toHaveFocus())
+    expect(scrollIntoView).not.toHaveBeenCalled()
+
+    fireEvent.click(firstCard)
+    const back = screen.getByRole('button', { name: 'Back to library' })
+    await waitFor(() => expect(back).toHaveFocus())
+    fireEvent.keyDown(back, { key: 'Escape' })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'View details for Alien — VKunia' })).toHaveFocus())
+  })
+
+  it('reveals the remembered card after organization or layout regrouping', async () => {
+    renderLibrary(vi.fn())
+    const rememberedCard = screen.getByRole('button', { name: 'View details for Anchorman — VKnights' })
+    rememberedCard.focus()
+    scrollIntoView.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'By Reactor' }))
+    const regroupedCard = screen.getByRole('button', { name: 'View details for Anchorman with VKunia' })
+    await waitFor(() => expect(regroupedCard).toHaveFocus())
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest', inline: 'nearest' })
+
+    scrollIntoView.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'List' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'View details for Anchorman with VKunia' })).toHaveFocus())
+    await waitFor(() => expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest', inline: 'nearest' }))
+  })
+
+  it('recovers to the nearest visible card when the focused pairing is deleted', async () => {
+    const alien = session('alien', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia')
+    const anchorman = session('anchorman', 'Anchorman — VKnights', 'Anchorman.mp4', 'vkunia - VKunia')
+    const tombstone = session('tombstone', 'Tombstone — Shanelle', 'Tombstone.mp4', 'shanelle - Shanelle')
+    const library: SessionLibrary = {
+      version: 8,
+      activeSessionId: alien.id,
+      sessions: [alien, anchorman, tombstone],
+      reactors: []
+    }
+    const view = renderLibrary(vi.fn(), { library })
+    const deletedCardActions = screen.getByRole('button', { name: 'More actions for Anchorman — VKnights' })
+    deletedCardActions.focus()
+
+    view.rerenderLibrary({ ...library, sessions: [alien, tombstone] })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'View details for Tombstone — Shanelle' })).toHaveFocus())
+  })
+
+  it('does not steal focus from an open card menu when the library mutates', async () => {
+    const alien = session('alien', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia')
+    const anchorman = session('anchorman', 'Anchorman — VKnights', 'Anchorman.mp4', 'vkunia - VKunia')
+    const library: SessionLibrary = {
+      version: 8,
+      activeSessionId: alien.id,
+      sessions: [alien, anchorman],
+      reactors: []
+    }
+    const view = renderLibrary(vi.fn(), { library })
+    fireEvent.click(screen.getByRole('button', { name: 'More actions for Alien — VKunia' }))
+    const menuItem = screen.getByRole('menuitem', { name: 'Rename pairing' })
+    await waitFor(() => expect(menuItem).toHaveFocus())
+
+    const tombstone = session('tombstone', 'Tombstone — Shanelle', 'Tombstone.mp4', 'shanelle - Shanelle')
+    view.rerenderLibrary({ ...library, sessions: [alien, anchorman, tombstone] })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 40))
+    })
+
+    expect(menuItem).toHaveFocus()
+  })
+
+  it('returns from detail with Escape or BrowserBack even when focus is in the persistent header', async () => {
+    renderLibrary(vi.fn())
+    const card = screen.getByRole('button', { name: 'View details for Alien — VKunia' })
+    fireEvent.click(card)
+
+    const headerMode = screen.getByRole('button', { name: 'Pairings' })
+    headerMode.focus()
+    fireEvent.keyDown(headerMode, { key: 'Escape' })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'View details for Alien — VKunia' })).toHaveFocus())
+
+    fireEvent.click(screen.getByRole('button', { name: 'View details for Alien — VKunia' }))
+    headerMode.focus()
+    fireEvent.keyDown(headerMode, { key: 'BrowserBack' })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'View details for Alien — VKunia' })).toHaveFocus())
+  })
+
+  it('focuses the creation action when the library has no cards', async () => {
+    const library: SessionLibrary = { version: 8, activeSessionId: null, sessions: [], reactors: [] }
+    renderLibrary(vi.fn(), { library })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create a WatchAlong' })).toHaveFocus())
+  })
+
   it('exposes a stateful fullscreen control with the standard shortcut hint', () => {
     const onToggleFullscreen = vi.fn()
     const first = renderLibrary(vi.fn(), { onToggleFullscreen })
@@ -311,7 +483,7 @@ describe('LibraryHome', () => {
 })
 
 function renderLibrary(
-  onOpenSession: (sessionId: string) => void,
+  onOpenSession: (sessionId: string, intent: 'play' | 'sync') => void,
   options: {
     library?: SessionLibrary
     view?: LibraryViewPreference
@@ -327,7 +499,7 @@ function renderLibrary(
   } = {}
 ) {
   const library: SessionLibrary = options.library ?? {
-    version: 7,
+    version: 8,
     activeSessionId: 'alien',
     sessions: [
       session('alien', 'Alien — VKunia', 'Alien.mkv', 'vkunia - VKunia'),
@@ -336,9 +508,9 @@ function renderLibrary(
     reactors: []
   }
 
-  return render(
+  const renderHome = (nextLibrary: SessionLibrary) => (
     <LibraryHome
-      library={library}
+      library={nextLibrary}
       view={options.view ?? 'grid'}
       onViewChange={options.onViewChange ?? vi.fn()}
       fullscreenActive={options.fullscreenActive ?? false}
@@ -353,6 +525,14 @@ function renderLibrary(
       onDelete={options.onDelete ?? vi.fn()}
     />
   )
+  const result = render(renderHome(library))
+
+  return {
+    ...result,
+    rerenderLibrary(nextLibrary: SessionLibrary): void {
+      result.rerender(renderHome(nextLibrary))
+    }
+  }
 }
 
 function session(id: string, title: string, movieName: string, campaign: string): LibrarySession {
@@ -363,6 +543,7 @@ function session(id: string, title: string, movieName: string, campaign: string)
     reactionPath: `C:\\Reactions\\patreon\\${id}\\${campaign}\\posts\\10 - Post\\video\\reaction.mp4`,
     reactionSource: 'patreon',
     reactionDurationSeconds: 100,
-    lastReactionTimeSeconds: 25
+    lastReactionTimeSeconds: 25,
+    syncReadiness: 'ready'
   })
 }

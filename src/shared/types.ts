@@ -14,6 +14,7 @@ export type LibraryViewPreference = 'grid' | 'list'
 export type ImportWizardMode = 'new' | 'show-again' | 'swap-reaction'
 export type SessionTitleOrigin = 'generated' | 'custom'
 export type ReactorNameOrigin = 'metadata' | 'custom'
+export type SyncReadiness = 'ready' | 'needs-sync'
 
 export interface MediaFile {
   path: string
@@ -79,6 +80,7 @@ export interface LibrarySession {
   detectedMovieFps: number | null
   movieRateCorrection: number
   timingOrigin: 'manual' | 'automatic'
+  syncReadiness: SyncReadiness
   autoSyncConfidence: number | null
   autoSyncAnalyzedAt: string | null
   autoSyncAlgorithmVersion: number | null
@@ -110,7 +112,7 @@ export interface ReactorAssignmentRequest {
 }
 
 export interface SessionLibrary {
-  version: 7
+  version: 8
   activeSessionId: string | null
   sessions: LibrarySession[]
   reactors: ReactorProfile[]

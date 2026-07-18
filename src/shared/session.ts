@@ -9,7 +9,8 @@ import type {
   ReactorSource,
   SessionData,
   SessionLibrary,
-  SessionTitleOrigin
+  SessionTitleOrigin,
+  SyncReadiness
 } from './types'
 import {
   deriveLegacyReactorIdentity,
@@ -18,7 +19,7 @@ import {
 } from './reactorIdentity'
 import { clamp } from './numeric'
 
-export const SESSION_LIBRARY_VERSION = 7
+export const SESSION_LIBRARY_VERSION = 8
 
 export const DEFAULT_OVERLAY: OverlayGeometry = {
   x: 24,
@@ -65,6 +66,7 @@ export function createDefaultSession(now = new Date(), patch: Partial<LibrarySes
     detectedMovieFps: normalizeDetectedMovieFps(patch.detectedMovieFps),
     movieRateCorrection: normalizeMovieRateCorrection(patch.movieRateCorrection),
     timingOrigin: normalizeTimingOrigin(patch.timingOrigin),
+    syncReadiness: normalizeSyncReadiness(patch.syncReadiness, reactionPath, moviePath, false),
     autoSyncConfidence: normalizeConfidence(patch.autoSyncConfidence),
     autoSyncAnalyzedAt: stringOrNull(patch.autoSyncAnalyzedAt),
     autoSyncAlgorithmVersion: normalizeAlgorithmVersion(patch.autoSyncAlgorithmVersion),
@@ -137,6 +139,14 @@ export function normalizeSession(value: unknown, now = new Date()): SessionData 
     detectedMovieFps: normalizeDetectedMovieFps(source?.detectedMovieFps),
     movieRateCorrection: normalizeMovieRateCorrection(source?.movieRateCorrection),
     timingOrigin: normalizeTimingOrigin(source?.timingOrigin),
+    // v7 and older had no explicit readiness. Preserve complete saved
+    // pairings as usable; incomplete drafts still need both media files.
+    syncReadiness: normalizeSyncReadiness(
+      source?.syncReadiness,
+      reactionPath,
+      moviePath,
+      !Object.prototype.hasOwnProperty.call(source ?? {}, 'syncReadiness')
+    ),
     autoSyncConfidence: normalizeConfidence(source?.autoSyncConfidence),
     autoSyncAnalyzedAt: stringOrNull(source?.autoSyncAnalyzedAt),
     autoSyncAlgorithmVersion: normalizeAlgorithmVersion(source?.autoSyncAlgorithmVersion),
@@ -269,6 +279,17 @@ export function normalizeMovieRateCorrection(value: unknown): number {
 
 export function normalizeTimingOrigin(value: unknown): LibrarySession['timingOrigin'] {
   return value === 'automatic' ? 'automatic' : 'manual'
+}
+
+export function normalizeSyncReadiness(
+  value: unknown,
+  reactionPath: string | null,
+  moviePath: string | null,
+  preserveLegacyCompletePair: boolean
+): SyncReadiness {
+  if (!reactionPath || !moviePath) return 'needs-sync'
+  if (value === 'ready' || value === 'needs-sync') return value
+  return preserveLegacyCompletePair ? 'ready' : 'needs-sync'
 }
 
 export function normalizeAudioTrackPreference(value: unknown): AudioTrackPreference | null {

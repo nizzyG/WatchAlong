@@ -28,7 +28,7 @@ Your app settings: download directory, launch behavior, UI preferences. (Reactor
 
 ### Downloaded reactions
 
-Saved to your system's Videos folder in a `WatchAlong/Reactions` subfolder by default. You can change the download location from the Command Panel.
+Saved to your system's Videos folder in a `WatchAlong/Reactions` subfolder by default. You can change the download location from the Control Panel.
 
 ### Saved Patreon session (optional — only if you choose to save it)
 

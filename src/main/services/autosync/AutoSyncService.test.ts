@@ -14,6 +14,7 @@ describe('AutoSyncService', () => {
       offsetSeconds: 12,
       movieRateCorrection: 0.999,
       timingOrigin: 'automatic',
+      syncReadiness: 'ready',
       autoSyncConfidence: 0.91,
       autoSyncAnalyzedAt: '2026-02-01T00:00:00.000Z',
       autoSyncAlgorithmVersion: 1
@@ -30,6 +31,7 @@ describe('AutoSyncService', () => {
       offsetSeconds: result.offsetSeconds,
       movieRateCorrection: result.movieRateCorrection,
       timingOrigin: 'automatic',
+      syncReadiness: 'ready',
       autoSyncAnalyzedAt: '2026-07-13T12:00:00.000Z',
       autoSyncAlgorithmVersion: 3
     })
@@ -66,6 +68,7 @@ describe('AutoSyncService', () => {
       movieRateCorrection: 0.999,
       detectedMovieFps: 23.976,
       timingOrigin: 'automatic' as const,
+      syncReadiness: 'ready' as const,
       autoSyncConfidence: 0.93,
       autoSyncAnalyzedAt: '2026-07-01T12:00:00.000Z',
       autoSyncAlgorithmVersion: 3
@@ -101,14 +104,15 @@ describe('AutoSyncService', () => {
       offsetSeconds: -30,
       movieRateCorrection: 1.001,
       timingOrigin: 'automatic',
+      syncReadiness: 'needs-sync',
       autoSyncConfidence: 0.69,
       autoSyncAlgorithmVersion: 3
     })
   })
 
-  it('turns an asynchronous intro-refinement failure into a readable result', async () => {
+  it('preserves readiness when a recheck fails during intro refinement', async () => {
     const session = createDefaultSession(new Date(), {
-      id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4'
+      id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4', syncReadiness: 'ready'
     })
     const repository = new MemorySessions(session)
     const service = partialResultService(repository, -30)
@@ -123,12 +127,13 @@ describe('AutoSyncService', () => {
         throw new Error('invalid data')
       })
 
-    await expect(service.analyze(session.id, { intent: 'initial', snapshot: session })).resolves.toEqual({
+    await expect(service.analyze(session.id, { intent: 'recheck', snapshot: session })).resolves.toEqual({
       sessionId: session.id,
       outcome: 'failed',
       message: 'One of these files could not be read clearly. Your existing timing was left unchanged.'
     })
     expect(repository.updates).toHaveLength(0)
+    expect(repository.session.syncReadiness).toBe('ready')
   })
 
   it('recovers an opening-only reaction from corroborating visual anchors', async () => {
@@ -144,7 +149,11 @@ describe('AutoSyncService', () => {
       outcome: 'partial', readyToPlay: true, offsetSeconds: -56, movieRateCorrection: 1, anchorCount: 4
     })
     expect(repository.updates).toHaveLength(1)
-    expect(repository.session).toMatchObject({ offsetSeconds: -56, timingOrigin: 'automatic' })
+    expect(repository.session).toMatchObject({
+      offsetSeconds: -56,
+      timingOrigin: 'automatic',
+      syncReadiness: 'ready'
+    })
   })
 
   it('commits a strong opening result when an existing session is rechecked', async () => {
@@ -170,6 +179,7 @@ describe('AutoSyncService', () => {
       offsetSeconds: result.offsetSeconds,
       movieRateCorrection: 1.001,
       timingOrigin: 'automatic',
+      syncReadiness: 'ready',
       autoSyncAlgorithmVersion: 3
     })
   })
@@ -269,7 +279,9 @@ describe('AutoSyncService', () => {
   })
 
   it('discards a result when the media paths changed during analysis', async () => {
-    const session = createDefaultSession(new Date(), { id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4' })
+    const session = createDefaultSession(new Date(), {
+      id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4', syncReadiness: 'ready'
+    })
     const repository = new MemorySessions({ ...session, moviePath: 'replacement.mp4' })
     const service = new AutoSyncService({ sessions: repository, backend: new SyntheticBackend(-20), emitProgress: () => undefined, emitComplete: () => undefined })
     const result = await service.analyze(session.id, { intent: 'initial', snapshot: session })
@@ -294,15 +306,18 @@ describe('AutoSyncService', () => {
   }, 20000)
 
   it('cancels an in-progress scan without changing timing', async () => {
-    const session = createDefaultSession(new Date(), { id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4' })
+    const session = createDefaultSession(new Date(), {
+      id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4', syncReadiness: 'ready'
+    })
     const repository = new MemorySessions(session)
     let complete!: (event: AutoSyncCompleteEvent) => void
     const completion = new Promise<AutoSyncCompleteEvent>((resolve) => { complete = resolve })
     const service = new AutoSyncService({ sessions: repository, backend: new BlockingBackend(), emitProgress: () => undefined, emitComplete: complete })
-    expect(service.start(session.id, 'initial')).toEqual({ started: true })
+    expect(service.start(session.id, 'recheck')).toEqual({ started: true })
     service.cancel(session.id)
     expect((await completion).outcome).toBe('cancelled')
     expect(repository.updates).toHaveLength(0)
+    expect(repository.session.syncReadiness).toBe('ready')
   })
 
   it('does not save timing for an unrelated moving video with a static corner logo', async () => {
@@ -414,7 +429,7 @@ class MemorySessions implements AutoSyncSessionRepository {
   getSession(id: string): LibrarySession | null { return id === this.session.id ? this.session : null }
   updateSession(_id: string, patch: Partial<LibrarySession>): SessionLibrary {
     this.updates.push(patch); this.session = { ...this.session, ...patch }
-    return { version: 7, activeSessionId: this.session.id, sessions: [this.session], reactors: [] }
+    return { version: 8, activeSessionId: this.session.id, sessions: [this.session], reactors: [] }
   }
 }
 

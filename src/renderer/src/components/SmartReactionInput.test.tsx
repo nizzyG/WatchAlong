@@ -444,7 +444,7 @@ function createApi(): WatchAlongApi {
     getLibrary: vi.fn(),
     getLibraryRecoveryStatus: vi.fn(async () => ({ available: false })),
     revealLibraryRecoveryFile: vi.fn(async () => false),
-    startFreshLibraryAfterRecovery: vi.fn(async () => ({ version: 7 as const, activeSessionId: null, sessions: [], reactors: [] })),
+    startFreshLibraryAfterRecovery: vi.fn(async () => ({ version: 8 as const, activeSessionId: null, sessions: [], reactors: [] })),
     saveActiveSession: vi.fn(),
     saveSessionPosition: vi.fn(),
     setSessionMedia: vi.fn(),

@@ -118,10 +118,10 @@ export function useReactionDownload({
             reactorName: event.metadata?.reactorName,
             avatarPath: event.metadata?.avatarPath
           })).catch(() => {
-            setError('The reaction is safely downloaded, but WatchAlong could not attach it. Open Downloads in the Command Panel and choose Attach.')
+            setError('The reaction is safely downloaded, but WatchAlong could not attach it. Open Downloads in the Control Panel and choose Attach.')
           })
         } catch {
-          setError('The reaction is safely downloaded, but WatchAlong could not attach it. Open Downloads in the Command Panel and choose Attach.')
+          setError('The reaction is safely downloaded, but WatchAlong could not attach it. Open Downloads in the Control Panel and choose Attach.')
         }
       }
     })

@@ -168,7 +168,7 @@ export class SessionStore {
             movieAudioTrackPreference: movieAudioTrackPreferenceAfterMovieChange(active, filePath)
           }
         : {}),
-      ...resetAutoSyncMetadata,
+      ...needsSyncAfterMediaChange,
       title: completedDraftTitle(active, role, suggestedTitle) ?? (
         role === 'movie' && active.titleOrigin === 'generated' ? basenameForTitle(filePath) : active.title
       ),
@@ -238,7 +238,7 @@ export class SessionStore {
         : { reactionPath: filePath, reactionSource }),
       ...reactorIdentityAfterReactionChange(target, role, reactorName),
       title: completedDraftTitle(target, role, suggestedTitle) ?? target.title,
-      ...resetAutoSyncMetadata,
+      ...needsSyncAfterMediaChange,
       createdAt: target.createdAt,
       updatedAt
     })
@@ -328,9 +328,11 @@ export class SessionStore {
     }
 
     const now = new Date()
-    const timingPatch = isManualTimingPatch(patch) && patch.timingOrigin !== 'automatic'
-      ? resetAutoSyncMetadata
-      : {}
+    const timingPatch = isMediaPathReplacement(target, patch)
+      ? needsSyncAfterMediaChange
+      : isManualTimingPatch(patch) && patch.timingOrigin !== 'automatic'
+        ? resetAutoSyncMetadata
+        : {}
     const movieAudioTrackPatch = Object.prototype.hasOwnProperty.call(patch, 'moviePath')
       ? {
           movieAudioTrackPreference: movieAudioTrackPreferenceAfterMovieChange(
@@ -744,8 +746,30 @@ const resetAutoSyncMetadata: Pick<
   autoSyncAlgorithmVersion: null
 }
 
+const needsSyncAfterMediaChange = {
+  ...resetAutoSyncMetadata,
+  syncReadiness: 'needs-sync'
+} as const satisfies Pick<
+  LibrarySession,
+  'timingOrigin' | 'syncReadiness' | 'autoSyncConfidence' | 'autoSyncAnalyzedAt' | 'autoSyncAlgorithmVersion'
+>
+
 function isManualTimingPatch(patch: Partial<LibrarySession>): boolean {
-  return 'offsetSeconds' in patch || 'movieRateCorrection' in patch || 'reactorSource' in patch
+  return 'offsetSeconds' in patch || 'movieRateCorrection' in patch || 'reactorSource' in patch ||
+    patch.timingOrigin === 'manual'
+}
+
+function isMediaPathReplacement(
+  session: LibrarySession,
+  patch: Partial<LibrarySession>
+): boolean {
+  return (
+    Object.prototype.hasOwnProperty.call(patch, 'moviePath') &&
+    mediaPathIdentity(session.moviePath) !== mediaPathIdentity(patch.moviePath ?? null)
+  ) || (
+    Object.prototype.hasOwnProperty.call(patch, 'reactionPath') &&
+    mediaPathIdentity(session.reactionPath) !== mediaPathIdentity(patch.reactionPath ?? null)
+  )
 }
 
 function basenameForTitle(filePath: string): string {

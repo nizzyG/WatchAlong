@@ -4,6 +4,7 @@ import type { LibrarySession } from '@shared/types'
 import { ReactionSourceIcon, reactionSourceLabel } from './ReactionSource'
 import { fileName, formatRelativeTime } from './appFormat'
 import { deriveMovieIdentity } from './libraryPresentation'
+import { libraryProgress } from './libraryPlayback'
 import { MoviePoster } from './MoviePoster'
 import { ReactorAvatar } from './ReactorAvatar'
 
@@ -16,6 +17,9 @@ export function LibrarySessionCard({
   artwork = 'movie',
   reactorLabel = 'Reactor not identified',
   showReactorBadge = false,
+  openLabelPrefix = 'Open',
+  onRegisterMainButton,
+  onMainButtonFocus,
   onOpen,
   onChoosePoster,
   onClearPoster,
@@ -31,6 +35,9 @@ export function LibrarySessionCard({
   artwork?: 'movie' | 'reactor'
   reactorLabel?: string
   showReactorBadge?: boolean
+  openLabelPrefix?: 'Open' | 'View details for'
+  onRegisterMainButton?(button: HTMLButtonElement | null): void
+  onMainButtonFocus?(): void
   onOpen(): void
   onChoosePoster?(): void
   onClearPoster?(): void
@@ -42,14 +49,13 @@ export function LibrarySessionCard({
   const [menuPlacement, setMenuPlacement] = useState<'up' | 'down'>('down')
   const actionsButtonRef = useRef<HTMLButtonElement>(null)
   const actionsMenuRef = useRef<HTMLDivElement>(null)
-  const duration = session.reactionDurationSeconds ?? 0
-  const progress = duration > 0 ? Math.min(100, Math.max(0, (session.lastReactionTimeSeconds / duration) * 100)) : 0
+  const progress = libraryProgress(session)
   const showActions = Boolean(onChoosePoster || onClearPoster || onRename || onEditReactor || onDelete)
   const actionCount = [onRename, onEditReactor, onChoosePoster, session.moviePosterPath && onClearPoster, onDelete].filter(Boolean).length
   const displayTitle = primaryLabel || session.title || fileName(session.moviePath ?? session.reactionPath ?? 'Untitled watchalong')
   const controlLabel = accessibleLabel || displayTitle
   const movieTitle = deriveMovieIdentity(session).label
-  const roundedProgress = Math.round(progress)
+  const roundedProgress = Math.round(progress.percent ?? 0)
 
   const closeActions = (restoreFocus = false): void => {
     setActionsOpen(false)
@@ -74,8 +80,15 @@ export function LibrarySessionCard({
   }
 
   return (
-    <article className={`library-card ${compact ? 'library-card-compact' : ''}`}>
-      <button className="library-card-main" type="button" aria-label={`Open ${controlLabel}`} onClick={onOpen}>
+    <article className={`library-card ${compact ? 'library-card-compact' : ''} ${progress.hasSavedPosition ? 'library-card-in-progress' : ''}`}>
+      <button
+        ref={onRegisterMainButton}
+        className="library-card-main"
+        type="button"
+        aria-label={`${openLabelPrefix} ${controlLabel}`}
+        onFocus={onMainButtonFocus}
+        onClick={onOpen}
+      >
         <span className="library-card-thumbnail" aria-hidden>
           {artwork === 'reactor'
             ? <ReactorAvatar session={session} label={reactorLabel} />
@@ -89,6 +102,11 @@ export function LibrarySessionCard({
         <span className="library-card-copy">
           <strong>{displayTitle}</strong>
           {secondaryLabel && <span className="library-card-context">{secondaryLabel}</span>}
+          {progress.hasSavedPosition && (
+            <span className="library-card-resume-label">
+              Continue · {progress.percent === null ? formatSavedPosition(session.lastReactionTimeSeconds) : `${roundedProgress}%`}
+            </span>
+          )}
           <small>
             <ReactionSourceIcon source={session.reactionSource} />
             {reactionSourceLabel(session.reactionSource)} · {formatRelativeTime(session.updatedAt)}
@@ -105,6 +123,7 @@ export function LibrarySessionCard({
             title={`More actions for ${controlLabel}`}
             aria-expanded={actionsOpen}
             aria-haspopup="menu"
+            onFocus={onMainButtonFocus}
             onClick={toggleActions}
             onBlur={(event) => {
               if (!event.currentTarget.parentElement?.contains(event.relatedTarget as Node | null)) {
@@ -140,6 +159,7 @@ export function LibrarySessionCard({
                 <button
                   type="button"
                   role="menuitem"
+                  tabIndex={-1}
                   onClick={() => {
                     closeActions()
                     onRename(actionsButtonRef.current)
@@ -153,6 +173,7 @@ export function LibrarySessionCard({
                 <button
                   type="button"
                   role="menuitem"
+                  tabIndex={-1}
                   onClick={() => {
                     closeActions()
                     onEditReactor(actionsButtonRef.current)
@@ -166,6 +187,7 @@ export function LibrarySessionCard({
                 <button
                   type="button"
                   role="menuitem"
+                  tabIndex={-1}
                   onClick={() => {
                     closeActions(true)
                     onChoosePoster()
@@ -179,6 +201,7 @@ export function LibrarySessionCard({
                 <button
                   type="button"
                   role="menuitem"
+                  tabIndex={-1}
                   onClick={() => {
                     closeActions(true)
                     onClearPoster()
@@ -192,6 +215,7 @@ export function LibrarySessionCard({
                 <button
                   type="button"
                   role="menuitem"
+                  tabIndex={-1}
                   onClick={() => {
                     closeActions()
                     onDelete(actionsButtonRef.current)
@@ -207,16 +231,21 @@ export function LibrarySessionCard({
       )}
       <span
         className="library-card-progress"
-        aria-label={duration > 0 ? `${controlLabel}: ${roundedProgress}% watched` : undefined}
-        aria-valuemin={duration > 0 ? 0 : undefined}
-        aria-valuemax={duration > 0 ? 100 : undefined}
-        aria-valuenow={duration > 0 ? roundedProgress : undefined}
-        role={duration > 0 ? 'progressbar' : undefined}
+        aria-label={progress.percent !== null ? `${controlLabel}: ${roundedProgress}% watched` : undefined}
+        aria-valuemin={progress.percent !== null ? 0 : undefined}
+        aria-valuemax={progress.percent !== null ? 100 : undefined}
+        aria-valuenow={progress.percent !== null ? roundedProgress : undefined}
+        role={progress.percent !== null ? 'progressbar' : undefined}
       >
-        <span style={{ width: `${progress}%` }} />
+        <span style={{ width: `${progress.percent ?? 0}%` }} />
       </span>
     </article>
   )
+}
+
+function formatSavedPosition(seconds: number): string {
+  const totalMinutes = Math.max(1, Math.floor(seconds / 60))
+  return `${totalMinutes} min`
 }
 
 function preferredMenuPlacement(trigger: HTMLButtonElement | null, actionCount: number): 'up' | 'down' {

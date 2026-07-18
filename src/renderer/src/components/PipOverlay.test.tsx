@@ -94,4 +94,23 @@ describe('PipOverlay', () => {
 
     expect(requestFullscreen).not.toHaveBeenCalled()
   })
+
+  it('shifts the complete presentation above the OSD without committing geometry', () => {
+    const onChange = vi.fn()
+    const onCommit = vi.fn()
+    renderOverlay({
+      geometry: { x: 24, y: 460, width: 420, height: 236 },
+      osdTop: 560,
+      subtitleText: 'One subtitle line',
+      onChange,
+      onCommit
+    })
+
+    const presentation = document.querySelector<HTMLElement>('.pip-presentation')!
+    expect(presentation.dataset.presentationShift).toBe('-152')
+    expect(presentation).toContainElement(screen.getByText('Movie').parentElement)
+    expect(presentation).toContainElement(screen.getByText('One subtitle line'))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(onCommit).not.toHaveBeenCalled()
+  })
 })

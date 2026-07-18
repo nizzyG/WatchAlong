@@ -668,6 +668,25 @@
   white-space: nowrap;
 }
 
+.library-card-resume-label {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 3px 9px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--wa-green-readable) 58%, transparent);
+  border-radius: 999px;
+  color: var(--wa-green-readable);
+  background: color-mix(in srgb, var(--wa-green) 12%, var(--wa-panel-inset));
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .library-card-progress {
   display: block;
   width: 100%;
@@ -683,6 +702,11 @@
   min-width: 0;
   background: var(--wa-green);
   box-shadow: 0 0 12px rgba(142, 226, 177, 0.3);
+}
+
+.library-card-in-progress .movie-poster-frame,
+.library-card-in-progress .reactor-avatar {
+  border-bottom-color: var(--wa-green-readable);
 }
 
 .library-card-actions {
@@ -805,7 +829,7 @@
 
 .pairing-library-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
   gap: clamp(24px, 2.5vw, 38px);
   align-items: start;
   padding: 10px 8px 40px;
@@ -1008,7 +1032,7 @@
 
 .reactor-shelf-movies {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(184px, 1fr));
   gap: clamp(18px, 2vw, 26px);
   min-width: 0;
   padding: 26px;
@@ -1092,7 +1116,7 @@
 
 .movie-library-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
   gap: clamp(30px, 3.4vw, 54px) clamp(20px, 2.5vw, 34px);
   align-items: start;
   padding: 10px 6px 48px;
@@ -1269,6 +1293,316 @@
 
 .movie-library-grid-compact .movie-shelf-heading {
   padding-bottom: 4px;
+}
+
+/* Pre-play detail: one calm focal pairing before media is loaded. */
+
+.library-detail-open .library-browser {
+  align-content: stretch;
+  padding: clamp(28px, 4vw, 58px) clamp(32px, 5vw, 76px) 64px;
+}
+
+.library-session-detail {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: clamp(24px, 3vw, 42px);
+  width: min(1180px, 100%);
+  min-height: 100%;
+  margin: 0 auto;
+}
+
+.library-detail-back {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 9px;
+  min-height: 46px;
+  padding: 0 15px;
+  border: 1px solid var(--wa-line);
+  border-radius: 12px;
+  color: var(--wa-paper-dim);
+  background-color: var(--wa-panel-glass-soft);
+  background-image: var(--wa-wood-sheen);
+  box-shadow:
+    0 12px 26px var(--wa-shadow-soft),
+    inset 0 1px 0 var(--wa-bevel-highlight),
+    inset 0 -2px 2px -1px var(--wa-bevel-shadow);
+  font-size: 14px;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.library-detail-back:hover,
+.library-detail-back:focus-visible {
+  border-color: var(--wa-line-strong);
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-hover);
+}
+
+.library-detail-back:focus-visible,
+.library-detail-primary:focus-visible {
+  outline: 3px solid var(--wa-focus);
+  outline-offset: 3px;
+}
+
+.library-detail-stage {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(44px, 6vw, 92px);
+  padding: clamp(28px, 4vw, 56px);
+  border: 1px solid var(--wa-line);
+  border-radius: 26px;
+  color: var(--wa-paper);
+  background-color: var(--wa-panel-glass-soft);
+  background-image:
+    radial-gradient(circle at 22% 16%, var(--wa-wood-glow), transparent 34%),
+    var(--wa-wood-sheen);
+  box-shadow:
+    0 28px 68px var(--wa-shadow),
+    inset 0 1px 0 var(--wa-bevel-highlight),
+    inset 0 -2px 2px -1px var(--wa-bevel-shadow);
+  backdrop-filter: blur(20px) saturate(1.04);
+}
+
+.library-detail-poster {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+}
+
+.library-detail-poster .movie-poster-group {
+  width: min(100%, 340px);
+}
+
+.library-detail-copy {
+  display: grid;
+  align-content: center;
+  gap: 20px;
+  min-width: 0;
+  max-width: 620px;
+}
+
+.library-detail-copy h2 {
+  margin: 0 0 2px;
+  color: var(--wa-paper);
+  font-family: var(--wa-font-sans);
+  font-size: clamp(38px, 4.6vw, 68px);
+  font-weight: 650;
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+  overflow-wrap: anywhere;
+  text-shadow:
+    0 -1px 0 var(--wa-engrave-highlight),
+    0 1px 0 var(--wa-engrave-shadow);
+}
+
+.library-detail-reactor {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  min-width: 0;
+}
+
+.library-detail-reactor .reactor-avatar-card {
+  width: 66px;
+  height: 66px;
+  border-radius: 18px;
+}
+
+.library-detail-reactor > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.library-detail-reactor span,
+.library-detail-reactor strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-detail-reactor span {
+  color: var(--wa-muted);
+  font-size: 13px;
+}
+
+.library-detail-reactor strong {
+  color: var(--wa-paper);
+  font-size: 20px;
+}
+
+.library-detail-pairing-title {
+  margin: -8px 0 0;
+  color: var(--wa-paper-dim);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.library-detail-sync {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-height: 64px;
+  padding: 11px 14px;
+  border: 1px solid var(--wa-line);
+  border-radius: 14px;
+  background: var(--wa-panel-inset);
+  box-shadow: inset 0 1px 4px var(--wa-shadow-inset);
+}
+
+.library-detail-sync > span {
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--wa-amber);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--wa-amber) 13%, transparent);
+}
+
+.library-detail-sync-ready > span {
+  background: var(--wa-green-readable);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--wa-green) 14%, transparent);
+}
+
+.library-detail-sync > div {
+  display: grid;
+  gap: 3px;
+}
+
+.library-detail-sync strong {
+  font-size: 15px;
+}
+
+.library-detail-sync small {
+  color: var(--wa-muted);
+  font-size: 13px;
+}
+
+.library-detail-resume {
+  display: grid;
+  gap: 10px;
+}
+
+.library-detail-resume > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.library-detail-resume strong {
+  font-size: 14px;
+}
+
+.library-detail-resume span {
+  color: var(--wa-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.library-detail-progress {
+  display: block;
+  width: 100%;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--wa-panel-inset);
+  box-shadow: inset 0 1px 3px var(--wa-shadow-inset);
+}
+
+.library-detail-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--wa-green);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--wa-green) 32%, transparent);
+}
+
+.library-detail-primary {
+  justify-self: start;
+  min-width: min(100%, 250px);
+  min-height: 58px;
+  padding: 0 24px;
+  border-radius: 14px;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+/* At the enforced 720p minimum the pre-play stage should read as one complete
+   decision surface, not a poster that continues below the fold. Fullscreen
+   keeps the more cinematic proportions above. */
+@media (max-height: 800px) and (min-width: 901px) {
+  .library-detail-open .library-browser {
+    padding: 18px clamp(32px, 4vw, 56px) 24px;
+  }
+
+  .library-session-detail {
+    width: min(1060px, 100%);
+    min-height: 0;
+    gap: 16px;
+  }
+
+  .library-detail-back {
+    min-height: 42px;
+    padding: 0 14px;
+  }
+
+  .library-detail-stage {
+    grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+    gap: clamp(34px, 4vw, 54px);
+    align-self: start;
+    padding: 22px clamp(28px, 4vw, 44px);
+    border-radius: 22px;
+  }
+
+  .library-detail-poster .movie-poster-group {
+    width: min(100%, 250px);
+  }
+
+  .library-detail-copy {
+    gap: 13px;
+  }
+
+  .library-detail-copy h2 {
+    font-size: clamp(32px, 3.7vw, 48px);
+  }
+
+  .library-detail-reactor {
+    gap: 12px;
+  }
+
+  .library-detail-reactor .reactor-avatar-card {
+    width: 54px;
+    height: 54px;
+    border-radius: 15px;
+  }
+
+  .library-detail-reactor strong {
+    font-size: 18px;
+  }
+
+  .library-detail-sync {
+    min-height: 54px;
+    padding: 8px 13px;
+  }
+
+  .library-detail-resume {
+    gap: 7px;
+  }
+
+  .library-detail-primary {
+    min-height: 50px;
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 900px) {
+  .library-detail-stage {
+    grid-template-columns: minmax(190px, 260px) minmax(0, 1fr);
+    gap: 34px;
+  }
 }
 
 .panel-library-list .library-card:hover,
@@ -1666,7 +2000,11 @@
   .movie-poster-fallback,
   .reactor-avatar-fallback,
   .library-card-menu,
-  .movie-shelf-pairings {
+  .movie-shelf-pairings,
+  .library-detail-stage,
+  .library-detail-sync,
+  .library-detail-back,
+  .library-detail-progress {
     border-color: CanvasText;
     color: CanvasText;
     background: Canvas;
@@ -1689,7 +2027,8 @@
   .library-mode-switch button[aria-pressed='true'],
   .library-layout-switch button[aria-pressed='true'],
   .library-sort-control button[aria-pressed='true'],
-  .library-card-progress span {
+  .library-card-progress span,
+  .library-detail-progress span {
     color: HighlightText;
     background: Highlight;
   }
@@ -1699,5 +2038,10 @@
   .library-card-menu-button:focus-visible {
     outline: 3px solid Highlight;
     outline-offset: -3px;
+  }
+
+  .library-detail-back:focus-visible,
+  .library-detail-primary:focus-visible {
+    outline: 3px solid Highlight;
   }
 }

@@ -9,6 +9,25 @@ const MIN_WIDTH = 320
 const MIN_HEIGHT = 180
 const MAX_VIEWPORT_RATIO = 0.55
 
+/**
+ * Returns a transient upward shift that keeps a PiP surface above visible
+ * player chrome. The persisted geometry remains untouched, so hiding the OSD
+ * puts the movie back exactly where the user placed it.
+ */
+export function getPipPresentationShift(
+  geometry: OverlayGeometry,
+  osdTop: number | null,
+  gap = 16,
+  topMargin = SNAP_MARGIN
+): number {
+  if (osdTop === null || !Number.isFinite(osdTop)) return 0
+
+  const overlap = geometry.y + geometry.height + gap - osdTop
+  if (overlap <= 0) return 0
+
+  return -Math.min(overlap, Math.max(0, geometry.y - topMargin))
+}
+
 export function constrainOverlay(
   geometry: OverlayGeometry,
   viewportWidth = window.innerWidth,

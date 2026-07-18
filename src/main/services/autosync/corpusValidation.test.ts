@@ -158,6 +158,6 @@ class MemoryRepository implements AutoSyncSessionRepository {
   getSession(id: string): LibrarySession | null { return id === this.session.id ? this.session : null }
   updateSession(_id: string, patch: Partial<LibrarySession>): SessionLibrary {
     this.session = { ...this.session, ...patch }
-    return { version: 7, activeSessionId: this.session.id, sessions: [this.session], reactors: [] }
+    return { version: 8, activeSessionId: this.session.id, sessions: [this.session], reactors: [] }
   }
 }

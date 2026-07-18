@@ -3,7 +3,15 @@ import type { SubtitleCue } from '../subtitles'
 
 export function useSubtitles() {
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([])
-  return { subtitleCues, setSubtitleCues }
+  const [subtitlesEnabled, setSubtitlesEnabled] = useState(true)
+
+  return {
+    subtitleCues,
+    setSubtitleCues,
+    subtitlesEnabled,
+    setSubtitlesEnabled,
+    toggleSubtitles: () => setSubtitlesEnabled((enabled) => !enabled)
+  }
 }
 
 export type SubtitlesHook = ReturnType<typeof useSubtitles>

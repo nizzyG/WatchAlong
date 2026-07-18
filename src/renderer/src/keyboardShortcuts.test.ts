@@ -9,21 +9,33 @@ import {
 } from './keyboardShortcuts'
 
 describe('keyboard shortcuts', () => {
-  it('matches only the exact Command Panel chord', () => {
+  it('matches only the exact Control Panel chord for Ctrl or Meta', () => {
     expect(isCommandPanelShortcut(new KeyboardEvent('keydown', {
-      code: 'KeyP',
-      ctrlKey: true,
-      shiftKey: true
+      code: 'Comma',
+      ctrlKey: true
     }))).toBe(true)
     expect(isCommandPanelShortcut(new KeyboardEvent('keydown', {
-      code: 'KeyP',
+      code: 'Comma',
+      metaKey: true
+    }))).toBe(true)
+    expect(isCommandPanelShortcut(new KeyboardEvent('keydown', {
+      code: 'Comma',
       ctrlKey: true,
-      shiftKey: true,
       altKey: true
     }))).toBe(false)
     expect(isCommandPanelShortcut(new KeyboardEvent('keydown', {
-      code: 'KeyP',
+      code: 'Comma',
       metaKey: true,
+      shiftKey: true
+    }))).toBe(false)
+    expect(isCommandPanelShortcut(new KeyboardEvent('keydown', {
+      code: 'Comma',
+      ctrlKey: true,
+      metaKey: true
+    }))).toBe(false)
+    expect(isCommandPanelShortcut(new KeyboardEvent('keydown', {
+      code: 'KeyP',
+      ctrlKey: true,
       shiftKey: true
     }))).toBe(false)
   })
@@ -95,7 +107,7 @@ describe('keyboard shortcuts', () => {
 
   it('keeps every supported binding in the published catalog', () => {
     expect(keyboardShortcutHelpGroups.flatMap((group) => group.items.map((item) => item.label))).toEqual([
-      'Open or close the Command Panel',
+      'Open or close the Control Panel',
       'Enter or exit fullscreen',
       'Play or pause',
       'Seek back or forward 5 seconds',
@@ -106,7 +118,7 @@ describe('keyboard shortcuts', () => {
       'Scroll through panel content',
       'Move between controls without leaving the panel',
       'Use the focused control',
-      'Close the Command Panel'
+      'Close the Control Panel'
     ])
 
     expect(keyboardShortcutHelpGroups
@@ -117,5 +129,8 @@ describe('keyboard shortcuts', () => {
       .find((group) => group.id === 'global')?.items
       .some((item) => item.label === 'Enter or exit fullscreen')
     ).toBe(true)
+    expect(keyboardShortcutHelpGroups
+      .find((group) => group.id === 'global')?.items[0]?.keys
+    ).toEqual(['Ctrl/⌘', ','])
   })
 })

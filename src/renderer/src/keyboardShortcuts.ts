@@ -12,14 +12,14 @@ export interface KeyboardShortcutHelpGroup {
 
 /**
  * The user-facing shortcut catalog lives beside the keyboard matching helpers
- * so the Command Panel cannot silently drift away from the implemented keys.
+ * so the Control Panel cannot silently drift away from the implemented keys.
  */
 export const keyboardShortcutHelpGroups: KeyboardShortcutHelpGroup[] = [
   {
     id: 'global',
     label: 'Library or player',
     items: [
-      { keys: ['Ctrl', 'Shift', 'P'], label: 'Open or close the Command Panel' },
+      { keys: ['Ctrl/⌘', ','], label: 'Open or close the Control Panel' },
       { keys: ['Alt', 'Enter'], label: 'Enter or exit fullscreen' }
     ]
   },
@@ -37,22 +37,21 @@ export const keyboardShortcutHelpGroups: KeyboardShortcutHelpGroup[] = [
   },
   {
     id: 'command-panel',
-    label: 'Inside the Command Panel',
+    label: 'Inside the Control Panel',
     items: [
       { keys: ['↑', '↓'], label: 'Scroll through panel content', separator: 'or' },
       { keys: ['Tab', 'Shift+Tab'], label: 'Move between controls without leaving the panel', separator: 'or' },
       { keys: ['Enter'], label: 'Use the focused control' },
-      { keys: ['Esc'], label: 'Close the Command Panel' }
+      { keys: ['Esc'], label: 'Close the Control Panel' }
     ]
   }
 ]
 
 export function isCommandPanelShortcut(event: KeyboardEvent): boolean {
-  return event.code === 'KeyP'
-    && event.ctrlKey
-    && event.shiftKey
+  return event.code === 'Comma'
+    && event.ctrlKey !== event.metaKey
+    && !event.shiftKey
     && !event.altKey
-    && !event.metaKey
 }
 
 export function isFullscreenShortcut(event: KeyboardEvent): boolean {

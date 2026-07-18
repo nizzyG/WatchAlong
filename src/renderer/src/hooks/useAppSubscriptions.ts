@@ -39,6 +39,8 @@ export function useAppSubscriptions({
   } = playback
   const {
     resumeAfterRepairRef,
+    playWhenReadySessionIdRef,
+    activeSessionIdRef,
     setPreferences,
     setShowWelcome,
     setWizardDimmed,
@@ -215,6 +217,13 @@ export function useAppSubscriptions({
       enterSyncSetup()
     }
   }, [canPlay, pendingSyncSetup])
+
+  useEffect(() => {
+    const requestedSessionId = playWhenReadySessionIdRef.current
+    if (!canPlay || !requestedSessionId || requestedSessionId !== activeSessionIdRef.current) return
+    playWhenReadySessionIdRef.current = null
+    controllerRef.current?.play()
+  }, [canPlay])
 
   useEffect(() => {
     if (!canPlay || !resumeAfterRepairRef.current) return

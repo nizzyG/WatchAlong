@@ -6,6 +6,7 @@ import type {
   SessionLibrary
 } from '@shared/types'
 import type { MoviePosterActionResult } from '../moviePosterActions'
+import type { LibrarySessionStartIntent } from '../components/libraryPlayback'
 import type { DownloadsHook } from './useDownloads'
 import type { PlaybackHook } from './usePlayback'
 import type { SessionHook } from './useSession'
@@ -58,6 +59,7 @@ export function useSessionActions({
     isPlayingRef,
     setSetupMode,
     setSetupPlayingRole,
+    setPendingSyncSetup,
     setSyncState,
     setError,
     setViewTransitioning
@@ -69,7 +71,8 @@ export function useSessionActions({
     setStartupError,
     setShowWelcome,
     setCommandPanelOpen,
-    setPatreonStatus
+    setPatreonStatus,
+    playWhenReadySessionIdRef
   } = sessionState
 
   const mediaAttachment = useMediaAttachment({
@@ -82,7 +85,7 @@ export function useSessionActions({
     consumeDownloadJob,
     transitionToSession
   })
-  const commandPanel = useCommandPanel({ playback, sessionState })
+  const commandPanel = useCommandPanel({ sessionState })
   const sessionDialogs = useSessionDialogs({
     playback,
     sessionState,
@@ -94,7 +97,6 @@ export function useSessionActions({
 
   const openImportWizard = async (options?: ImportWizardLaunchOptions): Promise<void> => {
     setCommandPanelOpen(false)
-    playback.setControlsIdle(false)
     downloads.pausedForWizardRef.current = canPlayRef.current && isPlayingRef.current
     wizardSwapMovieMomentRef.current = options?.mode === 'swap-reaction'
       ? currentMovieMoment(activeSession)
@@ -108,6 +110,12 @@ export function useSessionActions({
   }
 
   const navigateToLibrary = async (): Promise<void> => {
+    if (appView === 'library') {
+      commandPanel.closeCommandPanel()
+      return
+    }
+    playWhenReadySessionIdRef.current = null
+    setPendingSyncSetup(false)
     await transitionToSession(null, {
       pause: 'all-media',
       flushPosition: true,
@@ -157,9 +165,23 @@ export function useSessionActions({
     window.setTimeout(() => setViewTransitioning(false), VIEW_FADE_MS)
   }
 
-  const switchSession = async (sessionId: string): Promise<void> => {
+  const transitionToPlayerSession = async (
+    sessionId: string,
+    startIntent: LibrarySessionStartIntent | null
+  ): Promise<void> => {
     if (sessionId === activeSession?.id && appView === 'player') return
-    await transitionToSession(sessionId, {
+    if (startIntent === 'play') {
+      playWhenReadySessionIdRef.current = sessionId
+      setPendingSyncSetup(false)
+    } else if (startIntent === 'sync') {
+      playWhenReadySessionIdRef.current = null
+      setPendingSyncSetup(true)
+    } else {
+      playWhenReadySessionIdRef.current = null
+      setPendingSyncSetup(false)
+    }
+
+    const transition = await transitionToSession(sessionId, {
       pause: 'controller',
       flushPosition: true,
       detachedMovie: 'leave-session',
@@ -178,7 +200,18 @@ export function useSessionActions({
         if (nextSession) finishViewTransition()
       }
     })
+    if (transition.status === 'cancelled' || transition.session?.id !== sessionId) {
+      if (playWhenReadySessionIdRef.current === sessionId) playWhenReadySessionIdRef.current = null
+      if (startIntent === 'sync') setPendingSyncSetup(false)
+    }
   }
+
+  const switchSession = (sessionId: string): Promise<void> => transitionToPlayerSession(sessionId, null)
+
+  const openLibrarySession = (
+    sessionId: string,
+    intent: LibrarySessionStartIntent
+  ): Promise<void> => transitionToPlayerSession(sessionId, intent)
 
   const chooseMoviePoster = async (sessionId: string): Promise<MoviePosterActionResult> => {
     try {
@@ -232,6 +265,7 @@ export function useSessionActions({
     openLocalReaction: mediaAttachment.openLocalReaction,
     handleDownloadedReaction: mediaAttachment.handleDownloadedReaction,
     switchSession,
+    openLibrarySession,
     chooseMoviePoster,
     clearMoviePoster,
     requestRenameSession: sessionDialogs.requestRenameSession,

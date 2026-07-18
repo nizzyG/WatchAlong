@@ -12,15 +12,19 @@ import {
   TriangleAlert,
   UsersRound
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { LibraryViewPreference, SessionLibrary } from '@shared/types'
 import type { MoviePosterActionResult } from '../moviePosterActions'
+import { useLibraryBrowserPreferences } from '../hooks/useLibraryBrowserPreferences'
+import { useLibraryDetailNavigation } from '../hooks/useLibraryDetailNavigation'
 import { LibraryEmptyState } from './LibraryEmptyState'
+import { LibrarySessionDetail } from './LibrarySessionDetail'
 import { LibrarySortControl } from './LibrarySortControl'
 import { MovieLibraryView } from './MovieLibraryView'
 import { PairingLibraryView } from './PairingLibraryView'
 import { ReactorLibraryView } from './ReactorLibraryView'
-import { groupSessionsByMovie, type LibraryMode, type LibrarySort } from './libraryPresentation'
+import { groupSessionsByMovie, type LibraryMode } from './libraryPresentation'
+import type { LibrarySessionStartIntent } from './libraryPlayback'
 
 export { LibrarySessionCard } from './LibrarySessionCard'
 
@@ -32,7 +36,7 @@ interface LibraryHomeProps {
   onToggleFullscreen(): void
   onOpenCommandPanel(): void
   onNew(): void
-  onOpenSession(sessionId: string): void
+  onOpenSession(sessionId: string, intent: LibrarySessionStartIntent): void
   onChoosePoster(sessionId: string): Promise<MoviePosterActionResult>
   onClearPoster(sessionId: string): Promise<MoviePosterActionResult>
   onRename(sessionId: string, returnFocusTarget: HTMLButtonElement | null): void
@@ -56,14 +60,13 @@ export function LibraryHome({
   onDelete
 }: LibraryHomeProps): JSX.Element {
   const hasSessions = library.sessions.length > 0
-  const [mode, setMode] = useState<LibraryMode>(readSavedLibraryMode)
-  const [sortPreferences, setSortPreferences] = useState<LibrarySortPreferences>(readSavedSortPreferences)
   const [posterNotice, setPosterNotice] = useState<PosterNotice | null>(null)
+  const { mode, sort, layout, changeMode, changeSort, changeLayout } = useLibraryBrowserPreferences(view, onViewChange)
+  const detailNavigation = useLibraryDetailNavigation(library.sessions, `${mode}:${layout}`)
   const movieCount = useMemo(
     () => groupSessionsByMovie(library.sessions, 'date-added', library.reactors).length,
     [library.sessions, library.reactors]
   )
-  const sort = sortPreferences[mode]
 
   const runPosterAction = async (
     action: () => Promise<MoviePosterActionResult>
@@ -92,32 +95,26 @@ export function LibraryHome({
     void runPosterAction(() => onClearPoster(sessionId))
   }
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem('watchalong-library-mode', mode)
-    } catch {
-      // A locked-down renderer can still use the in-memory view toggle.
-    }
-  }, [mode])
+  const selectMode = (nextMode: LibraryMode): void => {
+    if (detailNavigation.selectedSession) detailNavigation.closeDetail(false)
+    changeMode(nextMode)
+  }
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem('watchalong-library-sorts', JSON.stringify(sortPreferences))
-    } catch {
-      // Sorting remains available for this run when storage is unavailable.
-    }
-  }, [sortPreferences])
-
-  const changeSort = (nextSort: LibrarySort): void => {
-    setSortPreferences((current) => current[mode] === nextSort
-      ? current
-      : { ...current, [mode]: nextSort })
+  const selectLayout = (nextView: LibraryViewPreference): void => {
+    if (detailNavigation.selectedSession) detailNavigation.closeDetail(false)
+    changeLayout(nextView)
   }
 
   return (
     <section
-      className={`library-home library-home-${view} library-mode-${mode}`}
+      className={`library-home library-home-${layout} library-mode-${mode} ${detailNavigation.selectedSession ? 'library-detail-open' : ''}`}
       aria-label="WatchAlong Library"
+      onKeyDown={(event) => {
+        if (!detailNavigation.selectedSession || event.defaultPrevented) return
+        if (event.key !== 'Escape' && event.key !== 'BrowserBack') return
+        event.preventDefault()
+        detailNavigation.closeDetail()
+      }}
     >
       <header className="library-home-header">
         <div className="library-home-brand">
@@ -131,13 +128,13 @@ export function LibraryHome({
         </div>
         <div className="library-header-actions">
           <div className="library-mode-switch" role="group" aria-label="Organize library">
-            <LibraryModeButton active={mode === 'pairings'} icon={<LayoutGrid size={16} />} label="Pairings" onClick={() => setMode('pairings')} />
-            <LibraryModeButton active={mode === 'reactors'} icon={<UsersRound size={16} />} label="By Reactor" onClick={() => setMode('reactors')} />
-            <LibraryModeButton active={mode === 'movies'} icon={<Clapperboard size={16} />} label="By Movie" onClick={() => setMode('movies')} />
+            <LibraryModeButton active={mode === 'pairings'} icon={<LayoutGrid size={16} />} label="Pairings" onClick={() => selectMode('pairings')} />
+            <LibraryModeButton active={mode === 'reactors'} icon={<UsersRound size={16} />} label="By Reactor" onClick={() => selectMode('reactors')} />
+            <LibraryModeButton active={mode === 'movies'} icon={<Clapperboard size={16} />} label="By Movie" onClick={() => selectMode('movies')} />
           </div>
           <div className="library-layout-switch" role="group" aria-label="Library layout">
-            <LibraryModeButton active={view === 'grid'} icon={<Grid2X2 size={16} />} label="Posters" onClick={() => onViewChange('grid')} />
-            <LibraryModeButton active={view === 'list'} icon={<Rows3 size={17} />} label="List" onClick={() => onViewChange('list')} />
+            <LibraryModeButton active={layout === 'grid'} icon={<Grid2X2 size={16} />} label="Posters" onClick={() => selectLayout('grid')} />
+            <LibraryModeButton active={layout === 'list'} icon={<Rows3 size={17} />} label="List" onClick={() => selectLayout('list')} />
           </div>
           <button className="primary-button" type="button" onClick={onNew}>
             <Plus size={18} aria-hidden />
@@ -157,8 +154,9 @@ export function LibraryHome({
           <button
             className="icon-button library-command-panel-button"
             type="button"
-            title="Command Panel"
-            aria-label="Command Panel"
+            title="Control Panel"
+            aria-label="Control Panel"
+            aria-keyshortcuts="Control+Comma Meta+Comma"
             onClick={onOpenCommandPanel}
           >
             <Settings size={18} aria-hidden />
@@ -179,53 +177,71 @@ export function LibraryHome({
       )}
 
       <div className="library-browser">
-        <LibrarySortControl mode={mode} sort={sort} onSortChange={changeSort} />
-
-        {!hasSessions && <LibraryEmptyState mode={mode} onNew={onNew} />}
-
-        {hasSessions && mode === 'pairings' && (
-          <PairingLibraryView
-            sessions={library.sessions}
+        {detailNavigation.selectedSession ? (
+          <LibrarySessionDetail
+            session={detailNavigation.selectedSession}
             reactors={library.reactors}
-            sort={sort}
-            compact={view === 'list'}
-            onOpenSession={onOpenSession}
-            onChoosePoster={choosePoster}
-            onClearPoster={clearPoster}
-            onRename={onRename}
-            onEditReactor={onEditReactor}
-            onDelete={onDelete}
+            backButtonRef={detailNavigation.detailBackButtonRef}
+            onBack={() => detailNavigation.closeDetail()}
+            onStart={(intent) => onOpenSession(detailNavigation.selectedSession!.id, intent)}
           />
-        )}
+        ) : (
+          <>
+            <LibrarySortControl mode={mode} sort={sort} onSortChange={changeSort} />
 
-        {hasSessions && mode === 'reactors' && (
-          <ReactorLibraryView
-            sessions={library.sessions}
-            reactors={library.reactors}
-            sort={sort}
-            compact={view === 'list'}
-            onOpenSession={onOpenSession}
-            onChoosePoster={choosePoster}
-            onClearPoster={clearPoster}
-            onRename={onRename}
-            onEditReactor={onEditReactor}
-            onDelete={onDelete}
-          />
-        )}
+            {!hasSessions && <LibraryEmptyState mode={mode} actionRef={detailNavigation.emptyActionRef} onNew={onNew} />}
 
-        {hasSessions && mode === 'movies' && (
-          <MovieLibraryView
-            sessions={library.sessions}
-            reactors={library.reactors}
-            sort={sort}
-            compact={view === 'list'}
-            onOpenSession={onOpenSession}
-            onChoosePoster={choosePoster}
-            onClearPoster={clearPoster}
-            onRename={onRename}
-            onEditReactor={onEditReactor}
-            onDelete={onDelete}
-          />
+            {hasSessions && mode === 'pairings' && (
+              <PairingLibraryView
+                sessions={library.sessions}
+                reactors={library.reactors}
+                sort={sort}
+                compact={layout === 'list'}
+                onOpenSession={detailNavigation.openDetail}
+                onRegisterSessionCard={detailNavigation.registerCardButton}
+                onSessionCardFocus={detailNavigation.noteCardFocus}
+                onChoosePoster={choosePoster}
+                onClearPoster={clearPoster}
+                onRename={onRename}
+                onEditReactor={onEditReactor}
+                onDelete={onDelete}
+              />
+            )}
+
+            {hasSessions && mode === 'reactors' && (
+              <ReactorLibraryView
+                sessions={library.sessions}
+                reactors={library.reactors}
+                sort={sort}
+                compact={layout === 'list'}
+                onOpenSession={detailNavigation.openDetail}
+                onRegisterSessionCard={detailNavigation.registerCardButton}
+                onSessionCardFocus={detailNavigation.noteCardFocus}
+                onChoosePoster={choosePoster}
+                onClearPoster={clearPoster}
+                onRename={onRename}
+                onEditReactor={onEditReactor}
+                onDelete={onDelete}
+              />
+            )}
+
+            {hasSessions && mode === 'movies' && (
+              <MovieLibraryView
+                sessions={library.sessions}
+                reactors={library.reactors}
+                sort={sort}
+                compact={layout === 'list'}
+                onOpenSession={detailNavigation.openDetail}
+                onRegisterSessionCard={detailNavigation.registerCardButton}
+                onSessionCardFocus={detailNavigation.noteCardFocus}
+                onChoosePoster={choosePoster}
+                onClearPoster={clearPoster}
+                onRename={onRename}
+                onEditReactor={onEditReactor}
+                onDelete={onDelete}
+              />
+            )}
+          </>
         )}
       </div>
     </section>
@@ -273,43 +289,5 @@ function noticeForPosterResult(result: MoviePosterActionResult): PosterNotice | 
     case 'cancelled':
       return null
   }
-}
-
-function readSavedLibraryMode(): LibraryMode {
-  try {
-    const savedMode = window.localStorage.getItem('watchalong-library-mode')
-    if (savedMode === 'reactors' || savedMode === 'movies' || savedMode === 'pairings') {
-      return savedMode
-    }
-  } catch {
-    // Use the clearest default when storage is unavailable.
-  }
-
-  return 'pairings'
-}
-
-type LibrarySortPreferences = Record<LibraryMode, LibrarySort>
-
-const defaultSortPreferences: LibrarySortPreferences = {
-  pairings: 'date-added',
-  reactors: 'date-added',
-  movies: 'date-added'
-}
-
-function readSavedSortPreferences(): LibrarySortPreferences {
-  try {
-    const saved = JSON.parse(window.localStorage.getItem('watchalong-library-sorts') ?? '{}') as Partial<Record<LibraryMode, unknown>>
-    return {
-      pairings: normalizeLibrarySort(saved.pairings),
-      reactors: normalizeLibrarySort(saved.reactors),
-      movies: normalizeLibrarySort(saved.movies)
-    }
-  } catch {
-    return { ...defaultSortPreferences }
-  }
-}
-
-function normalizeLibrarySort(value: unknown): LibrarySort {
-  return value === 'alphabetical' || value === 'date-added' ? value : 'date-added'
 }
 

@@ -91,7 +91,7 @@ describe('media protocol routing', () => {
       reactionSource: 'patreon'
     } as LibrarySession
     const sessionStore = {
-      read: () => ({ version: 7 as const, activeSessionId: session.id, sessions: [session], reactors: [] })
+      read: () => ({ version: 8 as const, activeSessionId: session.id, sessions: [session], reactors: [] })
     } as unknown as SessionStore
 
     registerMediaProtocol(sessionStore)
@@ -120,7 +120,7 @@ describe('media protocol routing', () => {
       moviePosterPath: null
     } as LibrarySession
     const sessionStore = {
-      read: () => ({ version: 7 as const, activeSessionId: session.id, sessions: [session], reactors: [] })
+      read: () => ({ version: 8 as const, activeSessionId: session.id, sessions: [session], reactors: [] })
     } as unknown as SessionStore
     const url = createSessionMediaUrl(session, 'movie-poster')
 
@@ -144,7 +144,7 @@ describe('media protocol routing', () => {
       moviePosterPath: null
     } as LibrarySession
     const sessionStore = {
-      read: () => ({ version: 7 as const, activeSessionId: session.id, sessions: [session], reactors: [] })
+      read: () => ({ version: 8 as const, activeSessionId: session.id, sessions: [session], reactors: [] })
     } as unknown as SessionStore
 
     registerMediaProtocol(sessionStore)
@@ -172,7 +172,7 @@ describe('media protocol routing', () => {
       moviePosterPath: null
     } as LibrarySession
     const sessionStore = {
-      read: () => ({ version: 7 as const, activeSessionId: session.id, sessions: [session], reactors: [] })
+      read: () => ({ version: 8 as const, activeSessionId: session.id, sessions: [session], reactors: [] })
     } as unknown as SessionStore
 
     registerMediaProtocol(sessionStore)

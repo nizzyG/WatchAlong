@@ -442,7 +442,7 @@ describe('SessionStore media drafts', () => {
         'youtube:uc-ames'
       ]))
       expect(merged.reactors[0].avatarPath).not.toBe(amesAvatar)
-      expect(JSON.parse(readFileSync(libraryPath, 'utf8'))).toMatchObject({ version: 7 })
+      expect(JSON.parse(readFileSync(libraryPath, 'utf8'))).toMatchObject({ version: 8 })
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -456,6 +456,7 @@ describe('SessionStore media drafts', () => {
       const sessionId = library.activeSessionId!
       store.updateActive({
         timingOrigin: 'automatic',
+        syncReadiness: 'ready',
         autoSyncConfidence: 0.94,
         autoSyncAnalyzedAt: '2026-07-12T00:00:00.000Z',
         autoSyncAlgorithmVersion: 1
@@ -465,6 +466,30 @@ describe('SessionStore media drafts', () => {
 
       expect(next.sessions[0]).toMatchObject({
         timingOrigin: 'manual',
+        syncReadiness: 'needs-sync',
+        autoSyncConfidence: null,
+        autoSyncAnalyzedAt: null,
+        autoSyncAlgorithmVersion: null
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('marks a ready session as needing sync when its reaction is replaced', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
+    try {
+      const store = new SessionStore(join(dir, 'library.json'), join(dir, 'session.json'))
+      const library = store.createOrSwitchSession('reaction.mp4', 'movie.mp4')
+      const sessionId = library.activeSessionId!
+      store.updateActive({ offsetSeconds: 12.5, syncReadiness: 'ready' })
+
+      const next = store.replaceSessionMedia(sessionId, 'reaction', 'replacement.mp4').library
+
+      expect(next.sessions[0]).toMatchObject({
+        reactionPath: 'replacement.mp4',
+        timingOrigin: 'manual',
+        syncReadiness: 'needs-sync',
         autoSyncConfidence: null,
         autoSyncAnalyzedAt: null,
         autoSyncAlgorithmVersion: null
@@ -483,19 +508,29 @@ describe('SessionStore media drafts', () => {
         offsetSeconds: 12.5,
         movieRateCorrection: 1.001,
         timingOrigin: 'automatic',
+        syncReadiness: 'ready',
         autoSyncConfidence: 0.94,
         autoSyncAnalyzedAt: '2026-07-12T00:00:00.000Z',
         autoSyncAlgorithmVersion: 1
       })
-      expect(automatic.sessions[0].timingOrigin).toBe('automatic')
+      expect(automatic.sessions[0]).toMatchObject({
+        timingOrigin: 'automatic',
+        syncReadiness: 'ready'
+      })
 
       const manual = store.updateActive({ offsetSeconds: 13 })
       expect(manual.sessions[0]).toMatchObject({
         timingOrigin: 'manual',
+        syncReadiness: 'ready',
         autoSyncConfidence: null,
         autoSyncAnalyzedAt: null,
         autoSyncAlgorithmVersion: null
       })
+
+      const unsynced = store.createOrSwitchSession('other-reaction.mp4', 'other-movie.mp4')
+      const adjusted = store.updateActive({ movieRateCorrection: 1.002 })
+      expect(adjusted.sessions.find((session) => session.id === unsynced.activeSessionId)?.syncReadiness)
+        .toBe('needs-sync')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -584,7 +619,7 @@ describe('SessionStore media drafts', () => {
     }
   })
 
-  it('normalizes a version 4 library to version 6 and persists current session data on the next update', () => {
+  it('normalizes a version 4 library to version 8 and persists current session data on the next update', () => {
     const dir = mkdtempSync(join(tmpdir(), 'watchalong-session-store-'))
     try {
       const libraryPath = join(dir, 'library.json')
@@ -601,7 +636,7 @@ describe('SessionStore media drafts', () => {
 
       const migrated = store.read()
       expect(migrated).toMatchObject({
-        version: 7,
+        version: 8,
         activeSessionId: 'legacy-session',
         sessions: [{
           id: 'legacy-session',
@@ -615,7 +650,7 @@ describe('SessionStore media drafts', () => {
         movieAudioTrackPreference: { label: 'Original', language: 'eng', ordinal: 0 }
       })
       expect(JSON.parse(readFileSync(libraryPath, 'utf8'))).toMatchObject({
-        version: 7,
+        version: 8,
         sessions: [{
           id: 'legacy-session',
           moviePosterPath: 'C:\\Movies\\poster.png',
@@ -639,7 +674,7 @@ describe('SessionStore media drafts', () => {
       const recovered = store.read()
 
       expect(recovered.sessions).toHaveLength(2)
-      expect(JSON.parse(readFileSync(libraryPath, 'utf8'))).toMatchObject({ version: 7 })
+      expect(JSON.parse(readFileSync(libraryPath, 'utf8'))).toMatchObject({ version: 8 })
       const quarantine = readdirSync(dir).find((name) => name.startsWith('library.json.corrupt-'))
       expect(quarantine).toBeTruthy()
       expect(readFileSync(join(dir, quarantine!), 'utf8')).toBe('{"sessions": [')

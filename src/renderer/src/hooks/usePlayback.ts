@@ -31,7 +31,6 @@ export function usePlayback() {
   const [setupMode, setSetupMode] = useState(false)
   const [setupPositions, setSetupPositions] = useState<Record<MediaRole, number>>({ reaction: 0, movie: 0 })
   const [setupPlayingRole, setSetupPlayingRole] = useState<MediaRole | null>(null)
-  const [controlsIdle, setControlsIdle] = useState(false)
   const [syncState, setSyncState] = useState<SyncState>('empty')
   const [error, setError] = useState<string | null>(null)
   const [restoreToken, setRestoreToken] = useState<string | null>(null)
@@ -51,7 +50,7 @@ export function usePlayback() {
     movieFrameRateDetectionKeyRef, mediaUrls, setMediaUrls, metadataReady, setMetadataReady,
     durations, setDurations, position, setPosition, moviePosition, setMoviePosition, setupMode,
     setSetupMode, setupPositions, setSetupPositions, setupPlayingRole, setSetupPlayingRole,
-    controlsIdle, setControlsIdle, syncState, setSyncState, error, setError, restoreToken,
+    syncState, setSyncState, error, setError, restoreToken,
     setRestoreToken, pendingSyncSetup, setPendingSyncSetup, viewTransitioning,
     setViewTransitioning, movieWindowActive, setMovieWindowActive,
     movieAudioTrackSnapshot, setMovieAudioTrackSnapshot,

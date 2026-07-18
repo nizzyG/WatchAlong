@@ -13,7 +13,7 @@ export function StreamVolume({ label, volume, muted, disabled, onVolume, onMute 
   const muteAction = muted ? `Unmute ${label}` : `Mute ${label}`
 
   return (
-    <label className="volume-control">
+    <div className="volume-control">
       <button
         className="icon-button volume-mute"
         type="button"
@@ -36,7 +36,7 @@ export function StreamVolume({ label, volume, muted, disabled, onVolume, onMute 
         aria-label={`${label} volume`}
         onChange={(event) => onVolume(Number(event.currentTarget.value))}
       />
-    </label>
+    </div>
   )
 }
 

@@ -25,7 +25,7 @@ const secondSession = createSession('s2', 'Second', 20)
 
 function createLibrary(activeSessionId: string | null = 's1', sessions: LibrarySession[] = [firstSession, secondSession]): SessionLibrary {
   return normalizeLibrary({
-    version: 7,
+    version: 8,
     activeSessionId,
     sessions,
     reactors: []
@@ -410,10 +410,26 @@ describe('App', () => {
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
     expect(api.getMediaUrl).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: /Open First/ }))
+    fireEvent.click(screen.getByRole('button', { name: /View details for First/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Play Reaction' }))
 
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
     expect(api.getMediaUrl).toHaveBeenCalledWith('movie', 's1')
+  })
+
+  it('opens a not-yet-ready pairing directly into manual sync setup from its detail action', async () => {
+    const needsSync = createSession('s1', 'First', 0, { syncReadiness: 'needs-sync' })
+    const api = createApi(createLibrary('s1', [needsSync]))
+    window.watchAlong = api
+
+    const { container } = render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /View details for First/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Find Sync' }))
+
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+    fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
+    fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
+    expect(await screen.findByLabelText('Sync setup')).toBeInTheDocument()
   })
 
   it('resumes the active session on launch when the launch preference is off', async () => {
@@ -463,7 +479,7 @@ describe('App', () => {
     act(() => api.emitMediaPlayPause())
     await waitFor(() => expect(pauseMock).toHaveBeenCalledTimes(pauseCallsBeforeMediaKey + 2))
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
+    fireEvent.click(screen.getByLabelText('Control Panel'))
     fireEvent.click(await screen.findByRole('button', { name: /Close Session/i }))
     await waitFor(() => expect(api.setMediaPlayPauseEnabled).toHaveBeenLastCalledWith(false))
 
@@ -572,7 +588,8 @@ describe('App', () => {
     const loadSession = vi.spyOn(SyncController.prototype, 'loadSession')
 
     const { container } = render(<App />)
-    fireEvent.click(await screen.findByRole('button', { name: /Open First/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /View details for First/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue Reaction' }))
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
     expect(api.saveSessionPosition).not.toHaveBeenCalled()
     const reaction = container.querySelector('video.reaction-video') as HTMLVideoElement
@@ -605,7 +622,8 @@ describe('App', () => {
     window.watchAlong = api
 
     render(<App />)
-    fireEvent.click(await screen.findByRole('button', { name: /Open First/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /View details for First/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue Reaction' }))
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
 
     // Let the controller's pre-metadata animation frames run. They report the
@@ -613,7 +631,7 @@ describe('App', () => {
     await act(async () => new Promise((resolve) => setTimeout(resolve, 50)))
     vi.mocked(api.saveSessionPosition).mockClear()
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
+    fireEvent.click(screen.getByLabelText('Control Panel'))
     fireEvent.click(await screen.findByRole('button', { name: /Close Session/i }))
 
     await waitFor(() => expect(api.saveSessionPosition).toHaveBeenCalledWith('s1', 37.5))
@@ -693,8 +711,8 @@ describe('App', () => {
     fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
 
-    fireEvent.click(screen.getByLabelText('Playback settings'))
-    fireEvent.click(screen.getByRole('button', { name: 'Sync Setup' }))
+    const { advancedTiming } = await openControlPanelAdvancedTiming()
+    fireEvent.click(within(advancedTiming).getByRole('button', { name: 'Open full manual alignment' }))
     expect(await screen.findByLabelText('Sync setup')).toBeInTheDocument()
     vi.mocked(api.saveActiveSession).mockClear()
 
@@ -714,6 +732,13 @@ describe('App', () => {
     fireEvent.keyDown(window, { code: 'BracketRight' })
     expect(playMock).not.toHaveBeenCalled()
     expect(api.saveActiveSession).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Sync' }))
+    await waitFor(() => expect(api.saveActiveSession).toHaveBeenCalledWith({
+      offsetSeconds: 0,
+      lastReactionTimeSeconds: 0,
+      syncReadiness: 'ready'
+    }))
   })
 
   it('keeps playback shortcuts out of controls, editors, and modified key combinations', async () => {
@@ -864,7 +889,7 @@ describe('App', () => {
     await waitFor(() => expect(playMock).toHaveBeenCalledTimes(2))
   })
 
-  it('keeps playback essentials on the remote and configuration inside Playback settings', async () => {
+  it('keeps the remote essential and the Playback settings popover compact and playback-only', async () => {
     const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
     window.watchAlong = api
 
@@ -882,28 +907,74 @@ describe('App', () => {
     expect(remote.getByLabelText('Reaction volume')).toBeInTheDocument()
     expect(remote.getByLabelText('Movie volume')).toBeInTheDocument()
     expect(remote.getByLabelText('Fullscreen')).toBeInTheDocument()
-    expect(remote.getByLabelText('Command Panel')).toBeInTheDocument()
+    expect(remote.getByLabelText('Control Panel')).toBeInTheDocument()
 
     const settingsButton = remote.getByLabelText('Playback settings')
     const settings = settingsButton.closest('details')
-    const syncSetup = screen.getByRole('button', { name: 'Sync Setup' })
     expect(settings).not.toHaveAttribute('open')
-    expect(settings).toContainElement(syncSetup)
 
     fireEvent.click(settingsButton)
     await waitFor(() => expect(settingsButton).toHaveAttribute('aria-expanded', 'true'))
     expect(settings).toHaveAttribute('open')
+    expect(within(settings!).getByText('Movie subtitles')).toBeVisible()
+    expect(within(settings!).getByText('No file selected')).toBeVisible()
+    expect(within(settings!).getByRole('button', { name: 'Choose file' })).toBeVisible()
+    const speed = within(settings!).getByRole('group', { name: 'Playback speed' })
+    expect(speed).toBeVisible()
+    expect(within(speed).getByRole('button', { name: '1x' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(settings!).queryByText('Advanced timing')).not.toBeInTheDocument()
+    expect(within(settings!).queryByRole('button', { name: /Sync Setup|Find Sync Again/i })).not.toBeInTheDocument()
 
     fireEvent.pointerDown(document.body)
     await waitFor(() => expect(settings).not.toHaveAttribute('open'))
+  })
 
-    fireEvent.click(settingsButton)
-    await waitFor(() => expect(settingsButton).toHaveAttribute('aria-expanded', 'true'))
-    expect(settings).toHaveAttribute('open')
+  it('starts with a quiet OSD, reveals it on activity, and groups each playback concern', async () => {
+    const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
+    window.watchAlong = api
 
-    fireEvent.click(syncSetup)
-    expect(settings).not.toHaveAttribute('open')
-    expect(screen.getByLabelText('Sync setup')).toBeInTheDocument()
+    render(<App />)
+    await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
+
+    const osd = screen.getByLabelText('Playback controls')
+    expect(osd).toHaveClass('control-bar-hidden')
+    expect(osd.closest('.app-shell')).toHaveClass('controls-idle')
+
+    fireEvent.pointerMove(window)
+    await waitFor(() => expect(osd).not.toHaveClass('control-bar-hidden'))
+    expect(within(osd).getByRole('group', { name: 'Transport' })).toBeInTheDocument()
+    expect(within(osd).getByRole('group', { name: 'Reaction audio' })).toBeInTheDocument()
+    expect(within(osd).getByRole('group', { name: 'Movie audio and subtitles' })).toBeInTheDocument()
+    expect(within(osd).getByRole('group', { name: 'Display' })).toBeInTheDocument()
+    expect(osd.querySelector('.control-row .find-sync-button')).not.toBeInTheDocument()
+
+    screen.getByLabelText('Play').focus()
+    expect(osd).not.toHaveClass('control-bar-hidden')
+
+    fireEvent.click(screen.getByLabelText('Control Panel'))
+    expect(await screen.findByRole('dialog', { name: 'Control Panel' })).toBeInTheDocument()
+    await waitFor(() => expect(osd).toHaveClass('control-bar-hidden'))
+    expect(osd.closest('.app-shell')).not.toHaveClass('controls-idle')
+  })
+
+  it('toggles a chosen subtitle file without clearing it from the session', async () => {
+    const session = createSession('s1', 'First', 0, { subtitlePath: 'C:\\Subtitles\\movie.srt' })
+    const api = createApi(createLibrary('s1', [session]), { ...defaultPreferences, openLibraryOnLaunch: false })
+    api.getSubtitleText = vi.fn(async () => '1\n00:00:00,000 --> 00:00:10,000\nHello\n')
+    window.watchAlong = api
+
+    render(<App />)
+    const toggle = await screen.findByRole('button', { name: 'Turn off movie subtitles' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.click(toggle)
+    expect(screen.getByRole('button', { name: 'Turn on movie subtitles' })).toHaveAttribute('aria-pressed', 'false')
+    expect(api.clearSubtitle).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByLabelText('Playback settings'))
+    expect(screen.getByText('movie.srt · Off')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Change' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Remove subtitle file movie.srt' })).toBeVisible()
   })
 
   it('saves periodic playback position by session id', async () => {
@@ -936,9 +1007,11 @@ describe('App', () => {
     vi.mocked(api.saveSessionPosition).mockClear()
     vi.mocked(api.setActiveSession).mockClear()
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
-    fireEvent.click(await screen.findByRole('button', { name: /Library/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Open Second/ }))
+    fireEvent.click(screen.getByLabelText('Control Panel'))
+    fireEvent.click(await screen.findByRole('button', { name: /^Library/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'View Full Library' }))
+    fireEvent.click(await screen.findByRole('button', { name: /View details for Second/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue Reaction' }))
 
     await waitFor(() => expect(api.setActiveSession).toHaveBeenCalledWith('s2'))
     const saveIndex = vi.mocked(api.saveSessionPosition).mock.calls.findIndex(
@@ -962,7 +1035,7 @@ describe('App', () => {
     reaction.currentTime = 64.5
     vi.mocked(api.saveSessionPosition).mockClear()
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
+    fireEvent.click(screen.getByLabelText('Control Panel'))
     fireEvent.click(await screen.findByRole('button', { name: /Close Session/i }))
 
     await waitFor(() => expect(api.saveSessionPosition).toHaveBeenCalledWith('s1', 64.5))
@@ -984,7 +1057,7 @@ describe('App', () => {
     Object.defineProperty(reaction, 'readyState', { configurable: true, get: () => 0 })
     vi.mocked(api.saveSessionPosition).mockClear()
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
+    fireEvent.click(screen.getByLabelText('Control Panel'))
     fireEvent.click(await screen.findByRole('button', { name: /Close Session/i }))
 
     await waitFor(() => expect(api.saveSessionPosition).toHaveBeenCalledWith('s1', 37.25))
@@ -1003,13 +1076,14 @@ describe('App', () => {
     firstReaction.currentTime = 64.5
     vi.mocked(api.saveSessionPosition).mockClear()
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
+    fireEvent.click(screen.getByLabelText('Control Panel'))
     fireEvent.click(await screen.findByRole('button', { name: /Close Session/i }))
     await waitFor(() => expect(api.saveSessionPosition).toHaveBeenCalledWith('s1', 64.5))
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
 
     loadSession.mockClear()
-    fireEvent.click(screen.getByRole('button', { name: /Open First/ }))
+    fireEvent.click(screen.getByRole('button', { name: /View details for First/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue Reaction' }))
     await waitFor(() => expect(container.querySelector('video.reaction-video')).toBeInTheDocument())
     const reopenedReaction = container.querySelector('video.reaction-video') as HTMLVideoElement
     const reopenedMovie = container.querySelector('video.pip-video') as HTMLVideoElement
@@ -1075,7 +1149,6 @@ describe('App', () => {
     expect(screen.queryByLabelText('Movie picture in picture')).not.toBeInTheDocument()
     expect(document.querySelector('.pip-popped-out')).not.toBeInTheDocument()
     const bringBack = within(screen.getByLabelText('Playback controls')).getByRole('button', { name: 'Bring movie back' })
-    expect(bringBack).toHaveTextContent('Bring movie back')
     expect(bringBack).toHaveAttribute('aria-pressed', 'true')
     expect(api.saveMovieWindowState).toHaveBeenCalledWith(
       's1',
@@ -1155,9 +1228,11 @@ describe('App', () => {
     fireEvent.click(popOut)
     await waitFor(() => expect(api.openMovieWindow).toHaveBeenCalledTimes(1))
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
-    fireEvent.click(await screen.findByRole('button', { name: /Library/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Open Second/ }))
+    fireEvent.click(screen.getByLabelText('Control Panel'))
+    fireEvent.click(await screen.findByRole('button', { name: /^Library/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'View Full Library' }))
+    fireEvent.click(await screen.findByRole('button', { name: /View details for Second/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue Reaction' }))
     await waitFor(() => expect(api.setActiveSession).toHaveBeenCalledWith('s2'))
 
     finishOpen({
@@ -1191,9 +1266,11 @@ describe('App', () => {
     const geometry = { x: 75, y: 85, width: 480, height: 270 }
     act(() => api.emitMovieWindowGeometry({ sessionId: 's1', geometry, overlay: null }))
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
-    fireEvent.click(await screen.findByRole('button', { name: /Library/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Open Second/ }))
+    fireEvent.click(screen.getByLabelText('Control Panel'))
+    fireEvent.click(await screen.findByRole('button', { name: /^Library/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'View Full Library' }))
+    fireEvent.click(await screen.findByRole('button', { name: /View details for Second/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue Reaction' }))
     await waitFor(() => expect(api.setActiveSession).toHaveBeenCalledWith('s2'))
     expect(api.saveMovieWindowState).toHaveBeenCalledWith('s1', { movieWindowGeometry: geometry })
     expect(api.saveMovieWindowState).not.toHaveBeenCalledWith('s2', { movieWindowGeometry: geometry })
@@ -1220,7 +1297,7 @@ describe('App', () => {
     fireEvent.doubleClick(container.querySelector('video.reaction-video')!)
     expect(document.fullscreenElement).toBe(document.documentElement)
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
+    fireEvent.click(screen.getByLabelText('Control Panel'))
     fireEvent.click(await screen.findByRole('button', { name: /Close Session/i }))
 
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
@@ -1271,9 +1348,11 @@ describe('App', () => {
     fireEvent.doubleClick(container.querySelector('video.reaction-video')!)
     vi.mocked(document.exitFullscreen).mockClear()
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
-    fireEvent.click(await screen.findByRole('button', { name: /^Library/i }))
-    fireEvent.click(await screen.findByRole('button', { name: /Open Second/i }))
+    fireEvent.click(screen.getByLabelText('Control Panel'))
+    fireEvent.click(await screen.findByRole('button', { name: /^Library/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'View Full Library' }))
+    fireEvent.click(await screen.findByRole('button', { name: /View details for Second/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue Reaction' }))
 
     await waitFor(() => expect(api.setActiveSession).toHaveBeenCalledWith('s2'))
     expect(document.exitFullscreen).not.toHaveBeenCalled()
@@ -1288,7 +1367,7 @@ describe('App', () => {
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
     fireEvent.doubleClick(container.querySelector('video.reaction-video')!)
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
+    fireEvent.click(screen.getByLabelText('Control Panel'))
     fireEvent.click(await screen.findByRole('button', { name: /^Library/i }))
     fireEvent.click(await screen.findByRole('button', { name: /New Session/i }))
 
@@ -1313,7 +1392,8 @@ describe('App', () => {
         offsetSeconds: 0
       })
     )
-    expect(await screen.findByText('Detected movie 25 fps / -4.096%')).toBeInTheDocument()
+    const { advancedTiming } = await openControlPanelAdvancedTiming()
+    expect(within(advancedTiming).getByText(/Movie detected at/)).toHaveTextContent('Movie detected at 25 fps')
     expect(api.detectMovieFrameRate).toHaveBeenCalledTimes(1)
   })
 
@@ -1332,10 +1412,10 @@ describe('App', () => {
     render(<App />)
 
     await waitFor(() => expect(api.detectMovieFrameRate).toHaveBeenCalledWith(session.id))
-    const playbackTools = screen.getByRole('group', { name: 'Playback tools' })
-    fireEvent.click(within(playbackTools).getByRole('button', { name: 'Find Sync Again' }))
+    const { panel } = await openControlPanelAdvancedTiming()
+    fireEvent.click(within(panel).getByRole('button', { name: /Find Sync Again/i }))
     await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith(session.id, 'recheck'))
-    await waitFor(() => expect(within(playbackTools).getByRole('button', { name: /Getting ready/i })).toBeDisabled())
+    await waitFor(() => expect(within(panel).getByRole('button', { name: /Getting ready/i })).toBeDisabled())
 
     await act(async () => {
       finishFirstDetection(25)
@@ -1372,10 +1452,10 @@ describe('App', () => {
     render(<App />)
 
     await waitFor(() => expect(api.detectMovieFrameRate).toHaveBeenCalledWith(session.id))
-    const playbackTools = screen.getByRole('group', { name: 'Playback tools' })
-    fireEvent.click(within(playbackTools).getByRole('button', { name: 'Find Sync Again' }))
+    const { panel } = await openControlPanelAdvancedTiming()
+    fireEvent.click(within(panel).getByRole('button', { name: /Find Sync Again/i }))
     await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith(session.id, 'recheck'))
-    await waitFor(() => expect(within(playbackTools).getByRole('button', { name: /Getting ready/i })).toBeDisabled())
+    await waitFor(() => expect(within(panel).getByRole('button', { name: /Getting ready/i })).toBeDisabled())
     await act(async () => {
       finishFirstDetection(25)
       await firstDetection
@@ -1436,8 +1516,8 @@ describe('App', () => {
     const reaction = container.querySelector('video.reaction-video') as HTMLVideoElement
     reaction.currentTime = 100
 
-    fireEvent.click(screen.getByText('Timing'))
-    fireEvent.click(screen.getByRole('button', { name: '25.000 fps (PAL DVD, European broadcast)' }))
+    const { advancedTiming } = await openControlPanelAdvancedTiming()
+    fireEvent.click(within(advancedTiming).getByRole('button', { name: '25.000 fps' }))
 
     await waitFor(() =>
       expect(api.saveActiveSession).toHaveBeenCalledWith({
@@ -1457,10 +1537,10 @@ describe('App', () => {
     render(<App />)
 
     await waitFor(() => expect(api.detectMovieFrameRate).toHaveBeenCalledWith(session.id))
-    fireEvent.click(screen.getByText('Timing'))
-    expect(screen.getByRole('group', { name: 'Manual movie rate' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Stream 24 -> Blu-ray 23.976' })).toBeInTheDocument()
-    expect(screen.queryByText(/Detected movie/i)).not.toBeInTheDocument()
+    const { advancedTiming } = await openControlPanelAdvancedTiming()
+    expect(within(advancedTiming).getByRole('group', { name: 'Manual movie rate' })).toBeInTheDocument()
+    expect(within(advancedTiming).getByRole('button', { name: 'Stream 24 -> Blu-ray 23.976' })).toBeInTheDocument()
+    expect(within(advancedTiming).queryByText(/Movie detected at/i)).not.toBeInTheDocument()
   })
 
   it('labels automatic timing plainly and can measure it again', async () => {
@@ -1477,18 +1557,18 @@ describe('App', () => {
 
     render(<App />)
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
-    const playbackTools = screen.getByRole('group', { name: 'Playback tools' })
-    const primarySyncAction = within(playbackTools).getByRole('button', { name: 'Find Sync Again' })
+    const { panel, advancedTiming } = await openControlPanelAdvancedTiming()
+    const primarySyncAction = within(panel).getByRole('button', { name: /Find Sync Again/i })
     expect(primarySyncAction).toBeVisible()
 
-    fireEvent.click(screen.getByText('Timing'))
-    expect(screen.getByText('Automatically measured')).toBeInTheDocument()
-    expect(screen.getAllByText(/94% confidence/)).toHaveLength(2)
+    expect(within(panel).getByRole('heading', { name: 'Automatically synced' })).toBeInTheDocument()
+    expect(within(advancedTiming).getByText('94%')).toBeInTheDocument()
+    expect(within(advancedTiming).getByText('High confidence')).toBeInTheDocument()
 
     fireEvent.click(primarySyncAction)
     await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1', 'recheck'))
     act(() => api.emitAutoSyncProgress({ sessionId: 's1', phase: 'scanning', percent: 45, message: 'Checking moments…' }))
-    expect(within(playbackTools).getByRole('button', { name: /Checking moments/i })).toBeDisabled()
+    expect(within(panel).getByRole('button', { name: /Checking moments/i })).toBeDisabled()
     act(() => api.emitAutoSyncComplete({
       sessionId: 's1', outcome: 'confident', message: 'Ready.', offsetSeconds: -20,
       movieRateCorrection: 1, confidence: 0.96, anchorCount: 6
@@ -1502,8 +1582,8 @@ describe('App', () => {
 
     render(<App />)
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
-    fireEvent.click(within(screen.getByRole('group', { name: 'Playback tools' }))
-      .getByRole('button', { name: 'Find Sync Again' }))
+    const { panel } = await openControlPanelAdvancedTiming()
+    fireEvent.click(within(panel).getByRole('button', { name: /Find Sync Again/i }))
     await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1', 'recheck'))
 
     await api.setActiveSession('s2')
@@ -1589,8 +1669,8 @@ describe('App', () => {
       filePath: 'C:\\Reactions\\Waiting reaction.mp4'
     }))
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
-    const panel = await screen.findByRole('dialog', { name: 'Command Panel' })
+    fireEvent.click(screen.getByLabelText('Control Panel'))
+    const panel = await screen.findByRole('dialog', { name: 'Control Panel' })
     fireEvent.click(within(panel).getByRole('button', { name: /Downloads/i }))
     vi.mocked(api.closeMovieWindow).mockClear()
     vi.mocked(api.selectMovieFile).mockClear()
@@ -1633,8 +1713,8 @@ describe('App', () => {
       filePath: 'C:\\Reactions\\Replacement reaction.mp4',
       metadata: { reactorName: 'Order Check' }
     }))
-    fireEvent.click(screen.getByLabelText('Command Panel'))
-    const panel = await screen.findByRole('dialog', { name: 'Command Panel' })
+    fireEvent.click(screen.getByLabelText('Control Panel'))
+    const panel = await screen.findByRole('dialog', { name: 'Control Panel' })
     fireEvent.click(within(panel).getByRole('button', { name: /Downloads/i }))
     vi.mocked(api.saveSessionPosition).mockClear()
     vi.mocked(api.closeMovieWindow).mockClear()
@@ -1671,8 +1751,8 @@ describe('App', () => {
       anchorCount: 6
     }))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Finding automatic sync' })).not.toBeInTheDocument())
-    fireEvent.click(screen.getByLabelText('Command Panel'))
-    const reopenedPanel = await screen.findByRole('dialog', { name: 'Command Panel' })
+    fireEvent.click(screen.getByLabelText('Control Panel'))
+    const reopenedPanel = await screen.findByRole('dialog', { name: 'Control Panel' })
     expect(within(reopenedPanel).queryByRole('button', { name: /Downloads/i })).not.toBeInTheDocument()
     expect(within(reopenedPanel).queryByRole('button', { name: 'Attach' })).not.toBeInTheDocument()
   })
@@ -1699,8 +1779,8 @@ describe('App', () => {
       percent: 100,
       filePath: 'C:\\Reactions\\Late replacement.mp4'
     }))
-    fireEvent.click(screen.getByLabelText('Command Panel'))
-    const panel = await screen.findByRole('dialog', { name: 'Command Panel' })
+    fireEvent.click(screen.getByLabelText('Control Panel'))
+    const panel = await screen.findByRole('dialog', { name: 'Control Panel' })
     fireEvent.click(within(panel).getByRole('button', { name: /Downloads/i }))
     fireEvent.click(within(panel).getByRole('button', { name: 'Attach' }))
     await waitFor(() => expect(api.replaceSessionMedia).toHaveBeenCalledWith(
@@ -1711,7 +1791,7 @@ describe('App', () => {
     fireEvent.click(within(panel).getByRole('button', { name: /Open Second/i }))
     await waitFor(() => expect(api.setActiveSession).toHaveBeenCalledWith('s2'))
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's2'))
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Command Panel' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Control Panel' })).not.toBeInTheDocument())
 
     vi.mocked(api.saveSessionPosition).mockClear()
     vi.mocked(api.getMediaUrl).mockClear()
@@ -1736,8 +1816,8 @@ describe('App', () => {
     expect(libraryAfterRace.activeSessionId).toBe('s2')
     expect(libraryAfterRace.sessions.find((session) => session.id === 's2')?.lastReactionTimeSeconds).toBe(20)
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
-    const reopenedPanel = await screen.findByRole('dialog', { name: 'Command Panel' })
+    fireEvent.click(screen.getByLabelText('Control Panel'))
+    const reopenedPanel = await screen.findByRole('dialog', { name: 'Control Panel' })
     fireEvent.click(within(reopenedPanel).getByRole('button', { name: /Downloads/i }))
     expect(within(reopenedPanel).getByRole('button', { name: 'Attach' })).toBeInTheDocument()
   })
@@ -2077,20 +2157,22 @@ describe('App', () => {
     expect(await screen.findByLabelText('Movie picture in picture')).toBeInTheDocument()
   })
 
-  it('opens and closes the command panel with Ctrl+Shift+P, manages focus, and persists preferences', async () => {
+  it('opens and closes the Control Panel with Ctrl+Comma, manages focus, and persists preferences', async () => {
     const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
     window.watchAlong = api
 
     render(<App />)
     await waitFor(() => expect(api.getMediaUrl).toHaveBeenCalledWith('reaction', 's1'))
 
-    screen.getByLabelText('Command Panel').focus()
-    fireEvent.keyDown(window, { code: 'KeyP', ctrlKey: true, shiftKey: true })
-    const panel = await screen.findByRole('dialog', { name: 'Command Panel' })
+    const controlPanelButton = screen.getByLabelText('Control Panel')
+    expect(controlPanelButton).toHaveAttribute('aria-keyshortcuts', 'Control+Comma Meta+Comma')
+    controlPanelButton.focus()
+    fireEvent.keyDown(window, { code: 'Comma', ctrlKey: true })
+    const panel = await screen.findByRole('dialog', { name: 'Control Panel' })
     expect(panel).toHaveAttribute('aria-modal', 'true')
-    await waitFor(() => expect(screen.getByLabelText('Close Command Panel')).toHaveFocus())
-    const closePanelButton = screen.getByLabelText('Close Command Panel')
-    const panelContent = screen.getByRole('region', { name: 'Command Panel content' })
+    await waitFor(() => expect(screen.getByLabelText('Close Control Panel')).toHaveFocus())
+    const closePanelButton = screen.getByLabelText('Close Control Panel')
+    const panelContent = screen.getByRole('region', { name: 'Control Panel content' })
     for (const [code, expectedScrollTop] of [['ArrowDown', 64], ['ArrowUp', 0]] as const) {
       const arrowEvent = new KeyboardEvent('keydown', {
         key: code,
@@ -2109,12 +2191,14 @@ describe('App', () => {
       const closedDetails = element.closest<HTMLDetailsElement>('details:not([open])')
       return !closedDetails || (element.tagName === 'SUMMARY' && element.parentElement === closedDetails)
     })
+    expect(panelControls[0]).toHaveAccessibleName('Close Session')
+    panelControls[0].focus()
     fireEvent.keyDown(window, { code: 'Tab', shiftKey: true })
     expect(panelControls.at(-1)).toHaveFocus()
     fireEvent.keyDown(window, { code: 'Tab' })
     expect(panelControls[0]).toHaveFocus()
 
-    const manualTimingSummary = within(panel).getByText('Manual timing fallback').closest('summary') as HTMLElement
+    const manualTimingSummary = within(panel).getByText('Advanced timing').closest('summary') as HTMLElement
     const manualTimingIndex = panelControls.indexOf(manualTimingSummary)
     expect(manualTimingIndex).toBeGreaterThan(0)
     panelControls[manualTimingIndex - 1].focus()
@@ -2150,11 +2234,11 @@ describe('App', () => {
     openMock.mockRestore()
 
     fireEvent.keyDown(window, { code: 'Escape' })
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Command Panel' })).not.toBeInTheDocument())
-    await waitFor(() => expect(screen.getByLabelText('Command Panel')).toHaveFocus())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Control Panel' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByLabelText('Control Panel')).toHaveFocus())
   })
 
-  it('closes the Command Panel when handing off to full manual alignment', async () => {
+  it('closes the Control Panel when handing off to full manual alignment', async () => {
     const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
     window.watchAlong = api
 
@@ -2163,16 +2247,16 @@ describe('App', () => {
     fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
-    const panel = await screen.findByRole('dialog', { name: 'Command Panel' })
-    fireEvent.click(within(panel).getByText('Manual timing fallback'))
+    fireEvent.click(screen.getByLabelText('Control Panel'))
+    const panel = await screen.findByRole('dialog', { name: 'Control Panel' })
+    fireEvent.click(within(panel).getByText('Advanced timing'))
     fireEvent.click(within(panel).getByRole('button', { name: 'Open full manual alignment' }))
 
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Command Panel' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Control Panel' })).not.toBeInTheDocument())
     expect(screen.getByLabelText('Sync setup')).toBeInTheDocument()
   })
 
-  it('closes the Command Panel when a re-analysis needs manual review', async () => {
+  it('closes the Control Panel when a re-analysis needs manual review', async () => {
     const api = createApi(createLibrary(), { ...defaultPreferences, openLibraryOnLaunch: false })
     window.watchAlong = api
 
@@ -2181,8 +2265,8 @@ describe('App', () => {
     fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
-    const panel = await screen.findByRole('dialog', { name: 'Command Panel' })
+    fireEvent.click(screen.getByLabelText('Control Panel'))
+    const panel = await screen.findByRole('dialog', { name: 'Control Panel' })
     fireEvent.click(within(panel).getByRole('button', { name: /Find Sync Again/i }))
     await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1', 'recheck'))
 
@@ -2196,7 +2280,7 @@ describe('App', () => {
       anchorCount: 3
     }))
 
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Command Panel' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Control Panel' })).not.toBeInTheDocument())
     expect(screen.getByLabelText('Sync setup')).toBeInTheDocument()
   })
 
@@ -2209,8 +2293,8 @@ describe('App', () => {
     fireEvent.loadedMetadata(container.querySelector('video.reaction-video')!)
     fireEvent.loadedMetadata(container.querySelector('video.pip-video')!)
 
-    fireEvent.click(screen.getByLabelText('Command Panel'))
-    const panel = await screen.findByRole('dialog', { name: 'Command Panel' })
+    fireEvent.click(screen.getByLabelText('Control Panel'))
+    const panel = await screen.findByRole('dialog', { name: 'Control Panel' })
     fireEvent.click(within(panel).getByRole('button', { name: /Find Sync Again/i }))
     await waitFor(() => expect(api.startSessionAutoSync).toHaveBeenCalledWith('s1', 'recheck'))
 
@@ -2240,14 +2324,15 @@ describe('App', () => {
     fireEvent.click(settingsButton)
     await waitFor(() => expect(settingsButton).toHaveAttribute('aria-expanded', 'true'))
 
-    fireEvent.keyDown(window, { code: 'KeyP', ctrlKey: true, shiftKey: true })
-    expect(await screen.findByRole('dialog', { name: 'Command Panel' })).toBeInTheDocument()
+    fireEvent.keyDown(window, { code: 'Comma', ctrlKey: true })
+    expect(await screen.findByRole('dialog', { name: 'Control Panel' })).toBeInTheDocument()
     await waitFor(() => expect(settingsButton).toHaveAttribute('aria-expanded', 'false'))
 
     fireEvent.click(screen.getByRole('button', { name: /Close Session/i }))
     expect(await screen.findByLabelText('WatchAlong Library')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /Open First/ }))
+    fireEvent.click(screen.getByRole('button', { name: /View details for First/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Play Reaction' }))
     await waitFor(() => expect(screen.getByLabelText('Playback settings')).toHaveAttribute('aria-expanded', 'false'))
   })
 
@@ -2275,7 +2360,7 @@ describe('App', () => {
     expect(fullscreenTargets).toEqual([document.documentElement, document.documentElement])
   })
 
-  it('opens the Command Panel from the library by button or shortcut while player-only keys stay inactive', async () => {
+  it('opens the Control Panel from the library by button or shortcut while player-only keys stay inactive', async () => {
     const api = createApi()
     window.watchAlong = api
 
@@ -2286,14 +2371,14 @@ describe('App', () => {
     expect(fullscreenTargets).toHaveLength(0)
     expect(api.saveActiveSession).not.toHaveBeenCalled()
 
-    fireEvent.keyDown(window, { code: 'KeyP', ctrlKey: true, shiftKey: true })
-    expect(await screen.findByRole('dialog', { name: 'Command Panel' })).toBeInTheDocument()
+    fireEvent.keyDown(window, { code: 'Comma', ctrlKey: true })
+    expect(await screen.findByRole('dialog', { name: 'Control Panel' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Now Playing/i })).not.toBeInTheDocument()
 
     fireEvent.keyDown(window, { code: 'Escape' })
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Command Panel' })).not.toBeInTheDocument())
-    fireEvent.click(screen.getByLabelText('Command Panel'))
-    expect(await screen.findByRole('dialog', { name: 'Command Panel' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Control Panel' })).not.toBeInTheDocument())
+    fireEvent.click(screen.getByLabelText('Control Panel'))
+    expect(await screen.findByRole('dialog', { name: 'Control Panel' })).toBeInTheDocument()
   })
 
   it('renames and deletes sessions from library card actions', async () => {
@@ -2315,6 +2400,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Delete$/i }))
 
     await waitFor(() => expect(api.deleteSession).toHaveBeenCalledWith('s1'))
+    await waitFor(() => expect(screen.getByRole('button', { name: /View details for Second/ })).toHaveFocus())
   })
 
   it('chooses and clears a local movie poster from a library card', async () => {
@@ -2517,6 +2603,20 @@ describe('App', () => {
   })
 })
 
+async function openControlPanelAdvancedTiming(): Promise<{
+  panel: HTMLElement
+  advancedTiming: HTMLDetailsElement
+}> {
+  fireEvent.click(screen.getByRole('button', { name: 'Control Panel' }))
+  const panel = await screen.findByRole('dialog', { name: 'Control Panel' })
+  const summary = within(panel).getByText('Advanced timing').closest('summary')
+  if (!(summary instanceof HTMLElement)) throw new Error('Advanced timing summary was not found')
+  fireEvent.click(summary)
+  const advancedTiming = summary.closest('details')
+  if (!(advancedTiming instanceof HTMLDetailsElement)) throw new Error('Advanced timing disclosure was not found')
+  return { panel, advancedTiming }
+}
+
 class FakeAudioTrackList extends EventTarget implements BrowserAudioTrackList {
   readonly length: number
   readonly [index: number]: BrowserAudioTrack | undefined
@@ -2569,6 +2669,7 @@ function createSession(
     detectedMovieFps: 24000 / 1001,
     movieRateCorrection: 1,
     timingOrigin: 'manual',
+    syncReadiness: 'ready',
     autoSyncConfidence: null,
     autoSyncAnalyzedAt: null,
     autoSyncAlgorithmVersion: null,

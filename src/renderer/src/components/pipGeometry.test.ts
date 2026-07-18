@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { constrainOverlay, snapOverlayToCorner, snapOverlayToNearestCorner } from './pipGeometry'
+import {
+  constrainOverlay,
+  getPipPresentationShift,
+  snapOverlayToCorner,
+  snapOverlayToNearestCorner
+} from './pipGeometry'
 
 describe('pipGeometry', () => {
   it('constrains the overlay to the viewport', () => {
@@ -32,5 +37,19 @@ describe('pipGeometry', () => {
       x: 24,
       y: 24
     })
+  })
+
+  it('keeps PiP still when it already clears the visible OSD', () => {
+    expect(getPipPresentationShift({ x: 24, y: 24, width: 420, height: 236 }, 540)).toBe(0)
+  })
+
+  it('raises bottom PiP placement above the visible OSD without changing geometry', () => {
+    const geometry = { x: 836, y: 460, width: 420, height: 236 }
+    expect(getPipPresentationShift(geometry, 560)).toBe(-152)
+    expect(geometry).toEqual({ x: 836, y: 460, width: 420, height: 236 })
+  })
+
+  it('clamps the presentation shift to the viewport top margin', () => {
+    expect(getPipPresentationShift({ x: 24, y: 30, width: 420, height: 500 }, 220)).toBe(-6)
   })
 })
