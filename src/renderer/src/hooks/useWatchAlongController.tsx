@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { createDefaultLibrary, getActiveSession } from '@shared/session'
+import { getActiveSession } from '@shared/session'
 import type {
   AudioTrackPreference,
-  AppPreferences,
   LibrarySession,
   MediaRole,
   SessionLibrary
@@ -26,6 +25,7 @@ import { useSessionTransition } from './useSessionTransition'
 import { useAppSubscriptions } from './useAppSubscriptions'
 import { useCabinetTheme } from './useCabinetTheme'
 import { useKeyboardShortcuts } from './useKeyboardShortcuts'
+import { useAppBootstrap } from './useAppBootstrap'
 
 type MediaUrls = Record<MediaRole, string | null>
 type MetadataReady = Record<MediaRole, boolean>
@@ -33,13 +33,6 @@ type Durations = Record<MediaRole, number>
 const emptyUrls: MediaUrls = { reaction: null, movie: null }
 const emptyMetadata: MetadataReady = { reaction: false, movie: false }
 const emptyDurations: Durations = { reaction: Number.NaN, movie: Number.NaN }
-const defaultPreferences: AppPreferences = {
-  hasCompletedOnboarding: false,
-  openLibraryOnLaunch: true,
-  libraryView: 'grid',
-  reactionDownloadDirectory: null,
-  cabinetTheme: 'system'
-}
 const CONTROL_IDLE_DELAY_MS = 2400
 const UNSUPPORTED_SUBTITLE_FORMAT_ERROR = "This subtitle format isn't supported. Use SRT or VTT."
 
@@ -68,9 +61,9 @@ export function useWatchAlongController({
   } = playback
   const {
     appShellRef, sessionRef, activeSessionIdRef, commandPanelButtonRef, commandPanelReturnFocusRef,
-    resumeAfterRepairRef, emptySession, library, setLibrary, preferences, setPreferences, appView,
-    setAppView, startupError, setStartupError, startupRecoveryAvailable, setStartupRecoveryAvailable,
-    showWelcome, setShowWelcome, wizardDimmed,
+    resumeAfterRepairRef, emptySession, library, setLibrary, preferences, appView,
+    setAppView, startupError, startupRecoveryAvailable,
+    showWelcome, wizardDimmed,
     setWizardDimmed, commandPanelOpen, setCommandPanelOpen, expandedPanelSection,
     setExpandedPanelSection, patreonStatus, setPatreonStatus, renameTargetId, setRenameTargetId,
     renameDraft, setRenameDraft, deleteTarget, setDeleteTarget
@@ -260,80 +253,16 @@ export function useWatchAlongController({
     setRestoreToken(null)
   }, [])
 
-  const loadInitialState = useCallback(async (): Promise<void> => {
-    setStartupError(null)
-    setStartupRecoveryAvailable(false)
-    setAppView('loading')
-    setError(null)
-
-    const [libraryResult, preferencesResult] = await Promise.allSettled([
-      window.watchAlong.getLibrary(),
-      window.watchAlong.getPreferences()
-    ])
-
-    const loadedLibrary = libraryResult.status === 'fulfilled' ? libraryResult.value : createDefaultLibrary()
-    const loadedPreferences = preferencesResult.status === 'fulfilled' ? preferencesResult.value : defaultPreferences
-    const loadedSession = commitLibrary(loadedLibrary)
-    setPreferences(loadedPreferences)
-    setShowWelcome(!loadedPreferences.hasCompletedOnboarding)
-    setPosition(loadedSession?.lastReactionTimeSeconds ?? 0)
-    setMoviePosition(0)
-
-    if (libraryResult.status === 'rejected' || preferencesResult.status === 'rejected') {
-      const damagedLibrary = libraryResult.status === 'rejected' &&
-        libraryResult.reason instanceof Error &&
-        (libraryResult.reason.message.includes('damaged library') ||
-          libraryResult.reason.message.includes('recovery file'))
-      const libraryMessage = damagedLibrary
-        ? 'WatchAlong moved a damaged library to a recovery file so it cannot be overwritten.'
-        : 'WatchAlong could not safely open your library. No files were changed.'
-      if (damagedLibrary) {
-        const recovery = await window.watchAlong.getLibraryRecoveryStatus().catch(() => ({ available: false }))
-        setStartupRecoveryAvailable(recovery.available)
-      }
-      setStartupError(libraryMessage)
-      setAppView('startup-error')
-      await refreshMediaUrls(null)
-      return
-    }
-
-    const shouldOpenPlayer = !loadedPreferences.openLibraryOnLaunch && Boolean(loadedSession)
-    setAppView(shouldOpenPlayer ? 'player' : 'library')
-    await refreshMediaUrls(shouldOpenPlayer ? loadedSession?.id ?? null : null)
-  }, [commitLibrary, refreshMediaUrls])
-
-  const revealLibraryRecoveryFile = useCallback(async (): Promise<void> => {
-    try {
-      const revealed = await window.watchAlong.revealLibraryRecoveryFile()
-      if (!revealed) setStartupError('WatchAlong could not find the recovery file. Try Retry once more.')
-    } catch {
-      setStartupError('WatchAlong could not open the recovery folder. The recovery file is still safe.')
-    }
-  }, [])
-
-  const startFreshLibraryAfterRecovery = useCallback(async (): Promise<void> => {
-    try {
-      await window.watchAlong.startFreshLibraryAfterRecovery()
-      await loadInitialState()
-    } catch {
-      setStartupError('WatchAlong could not start a new library. The recovery file is still safe.')
-    }
-  }, [loadInitialState])
-
-  useEffect(() => {
-    let mounted = true
-
-    void (async () => {
-      if (!mounted) {
-        return
-      }
-      await loadInitialState()
-    })()
-
-    return () => {
-      mounted = false
-    }
-  }, [loadInitialState])
+  const {
+    loadInitialState,
+    revealLibraryRecoveryFile,
+    startFreshLibraryAfterRecovery
+  } = useAppBootstrap({
+    playback,
+    sessionState,
+    commitLibrary,
+    refreshMediaUrls
+  })
 
   useEffect(() => {
     sessionRef.current = session
