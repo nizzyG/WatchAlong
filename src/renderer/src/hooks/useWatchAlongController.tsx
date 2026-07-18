@@ -1,14 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { getActiveSession } from '@shared/session'
-import type {
-  AudioTrackPreference,
-  LibrarySession,
-  MediaRole,
-  SessionLibrary
-} from '@shared/types'
+import type { MediaRole } from '@shared/types'
 import { WatchAlongView, type WatchAlongViewActions } from '../components/WatchAlongView'
 import { signedSeconds } from '../components/appFormat'
-import { SyncController, createHtmlVideoAdapter, type VideoAdapter } from '../sync/SyncController'
 import { TimelineMapping } from '../sync/timeline'
 import { getActiveSubtitleCue, hasSubtitleContentBeyondHeader, parseSubtitleText } from '../subtitles'
 import type { PlaybackHook } from './usePlayback'
@@ -16,7 +10,7 @@ import type { SessionHook } from './useSession'
 import type { SubtitlesHook } from './useSubtitles'
 import type { DownloadsHook } from './useDownloads'
 import { useAutoSync } from './useAutoSync'
-import { calculateMovieRateCorrection, reactorSourceOptions, roundSeconds } from './playerTiming'
+import { calculateMovieRateCorrection, reactorSourceOptions } from './playerTiming'
 import { usePlayerControls } from './usePlayerControls'
 import { useMovieWindow } from './useMovieWindow'
 import { useMovieAudioTracks } from './useMovieAudioTracks'
@@ -26,13 +20,8 @@ import { useAppSubscriptions } from './useAppSubscriptions'
 import { useCabinetTheme } from './useCabinetTheme'
 import { useKeyboardShortcuts } from './useKeyboardShortcuts'
 import { useAppBootstrap } from './useAppBootstrap'
+import { useSessionMediaRuntime } from './useSessionMediaRuntime'
 
-type MediaUrls = Record<MediaRole, string | null>
-type MetadataReady = Record<MediaRole, boolean>
-type Durations = Record<MediaRole, number>
-const emptyUrls: MediaUrls = { reaction: null, movie: null }
-const emptyMetadata: MetadataReady = { reaction: false, movie: false }
-const emptyDurations: Durations = { reaction: Number.NaN, movie: Number.NaN }
 const CONTROL_IDLE_DELAY_MS = 2400
 const UNSUPPORTED_SUBTITLE_FORMAT_ERROR = "This subtitle format isn't supported. Use SRT or VTT."
 
@@ -48,25 +37,13 @@ export function useWatchAlongController({
   downloads: DownloadsHook
 }): JSX.Element {
   const {
-    reactionVideoRef, movieVideoRef, controllerRef, remoteMovieAdapterRef, setupModeRef,
-    lastPositionSaveRef, positionRef, restoredPopOutSessionRef, pendingMovieWindowGeometryRef,
-    movieWindowGeometryTimerRef, closingMovieWindowRef, canPlayRef, isPlayingRef,
-    movieFrameRateDetectionKeyRef, mediaUrls, setMediaUrls, metadataReady, setMetadataReady,
-    durations, setDurations, position, setPosition, moviePosition, setMoviePosition, setupMode,
-    setSetupMode, setupPositions, setSetupPositions, setupPlayingRole, setSetupPlayingRole,
-    controlsIdle, setControlsIdle, syncState, setSyncState, error, setError, restoreToken,
-    setRestoreToken, pendingSyncSetup, setPendingSyncSetup, viewTransitioning,
-    setViewTransitioning, movieWindowActive, setMovieWindowActive,
+    setupModeRef, canPlayRef, isPlayingRef, mediaUrls, metadataReady, setMetadataReady,
+    durations, setDurations, position, moviePosition, setMoviePosition, setupMode,
+    setSetupPositions, setControlsIdle, syncState, setError, movieWindowActive,
     setMovieAudioTrackSnapshot
   } = playback
   const {
-    appShellRef, sessionRef, activeSessionIdRef, commandPanelButtonRef, commandPanelReturnFocusRef,
-    resumeAfterRepairRef, emptySession, library, setLibrary, preferences, appView,
-    setAppView, startupError, startupRecoveryAvailable,
-    showWelcome, wizardDimmed,
-    setWizardDimmed, commandPanelOpen, setCommandPanelOpen, expandedPanelSection,
-    setExpandedPanelSection, patreonStatus, setPatreonStatus, renameTargetId, setRenameTargetId,
-    renameDraft, setRenameDraft, deleteTarget, setDeleteTarget
+    emptySession, library, preferences, appView, commandPanelOpen, setPatreonStatus
   } = sessionState
   const { subtitleCues, setSubtitleCues } = subtitles
   const { setDownloadIndicator, setDownloadEvents } = downloads
@@ -80,177 +57,20 @@ export function useWatchAlongController({
   const detectedMovieRateCorrection = calculateMovieRateCorrection(session.detectedMovieFps, session.reactorSource)
   const reactorSourceSummary = reactorSourceOptions.find((option) => option.source === session.reactorSource)?.summary ?? '23.976 fps'
 
-  const commitLibrary = useCallback((next: SessionLibrary): LibrarySession | null => {
-    const nextSession = getActiveSession(next)
-    if (nextSession) {
-      if (activeSessionIdRef.current !== nextSession.id) {
-        // Establish the disk-backed fallback synchronously when session
-        // identity changes. Media elements can emit initial zero-valued events
-        // before metadata and restoration have completed.
-        positionRef.current = nextSession.lastReactionTimeSeconds
-      }
-      sessionRef.current = nextSession
-      activeSessionIdRef.current = nextSession.id
-    } else {
-      sessionRef.current = emptySession
-      activeSessionIdRef.current = null
-      positionRef.current = 0
-    }
-    setLibrary(next)
-    return nextSession
-  }, [emptySession])
+  const {
+    commitLibrary,
+    currentMovieMoment,
+    persist,
+    flushCurrentSessionPosition,
+    getMovieAdapter,
+    buildController,
+    destroyRemoteMovieAdapter,
+    refreshMediaUrls
+  } = useSessionMediaRuntime({ playback, sessionState, activeSession, session })
 
   const consumeDownloadJob = useCallback((jobId: string): void => {
     setDownloadEvents((current) => current.filter((item) => item.jobId !== jobId))
     setDownloadIndicator((current) => current?.jobId === jobId ? null : current)
-  }, [])
-
-  const currentMovieMoment = useCallback((source: LibrarySession | null): number | null => {
-    if (!source?.moviePath || !source.reactionPath) return null
-    const reaction = reactionVideoRef.current
-    const reactionTime = reaction && reaction.readyState > 0 && Number.isFinite(reaction.currentTime)
-      ? reaction.currentTime
-      : positionRef.current
-    return new TimelineMapping({
-      offsetSeconds: source.offsetSeconds,
-      movieRateCorrection: source.movieRateCorrection
-    }).reactionToMovie(reactionTime)
-  }, [])
-
-  const mergeSavedSessionPosition = useCallback((next: SessionLibrary, sessionId: string): void => {
-    if (activeSessionIdRef.current === sessionId) {
-      commitLibrary(next)
-      return
-    }
-
-    const savedSession = next.sessions.find((session) => session.id === sessionId)
-    if (!savedSession) {
-      return
-    }
-
-    setLibrary((current) => ({
-      ...current,
-      sessions: current.sessions.map((session) => (session.id === sessionId ? savedSession : session))
-    }))
-  }, [commitLibrary])
-
-  const saveSessionPosition = useCallback(async (sessionId: string, reactionTime: number): Promise<void> => {
-    const next = await window.watchAlong.saveSessionPosition(sessionId, roundSeconds(Math.max(0, reactionTime)))
-    mergeSavedSessionPosition(next, sessionId)
-  }, [mergeSavedSessionPosition])
-
-  const flushCurrentSessionPosition = useCallback(async (): Promise<void> => {
-    if (appView !== 'player') {
-      return
-    }
-
-    const sessionId = activeSessionIdRef.current
-    if (!sessionId) {
-      return
-    }
-
-    const reaction = reactionVideoRef.current
-    const currentRestoreToken = `${sessionId}|${mediaUrls.reaction ?? ''}|${mediaUrls.movie ?? ''}`
-    const mediaRestored = restoreToken === currentRestoreToken
-    const nextReactionTime = mediaRestored
-      ? reaction && reaction.readyState > 0 && Number.isFinite(reaction.currentTime)
-        ? reaction.currentTime
-        : positionRef.current
-      : sessionRef.current.id === sessionId
-        ? sessionRef.current.lastReactionTimeSeconds
-        : positionRef.current
-    await saveSessionPosition(sessionId, nextReactionTime)
-  }, [appView, mediaUrls.movie, mediaUrls.reaction, restoreToken, saveSessionPosition])
-
-  const getMovieAdapter = useCallback((): VideoAdapter | null => {
-    if (remoteMovieAdapterRef.current) {
-      return remoteMovieAdapterRef.current
-    }
-
-    return movieVideoRef.current ? createHtmlVideoAdapter('movie', movieVideoRef.current) : null
-  }, [])
-
-  const buildController = useCallback((movieAdapter: VideoAdapter): SyncController | null => {
-    const reaction = reactionVideoRef.current
-    if (!reaction) {
-      return null
-    }
-
-    controllerRef.current?.destroy()
-
-    const controller = new SyncController({
-      reaction: createHtmlVideoAdapter('reaction', reaction),
-      movie: movieAdapter,
-      getOffset: () => sessionRef.current.offsetSeconds,
-      getMovieRate: () => sessionRef.current.movieRateCorrection,
-      setOffset: async (offsetSeconds) => {
-        const next = await window.watchAlong.saveActiveSession({ offsetSeconds })
-        commitLibrary(next)
-      },
-      onState: setSyncState,
-      onPosition: (reactionTime) => {
-        if (!Number.isFinite(reactionTime)) {
-          return
-        }
-
-        if (setupModeRef.current) {
-          positionRef.current = reactionTime
-          setPosition(reactionTime)
-          setSetupPositions((current) => ({ ...current, reaction: reactionTime }))
-          return
-        }
-
-        // attach() starts the controller's animation loop before the stored
-        // position has been restored. Persisting those initial zero-valued
-        // frames can overwrite the disk value that loadSession is about to
-        // read. Paused/seeking positions are still saved by explicit flushes;
-        // only genuinely playing media needs periodic persistence.
-        if (controllerRef.current?.getState() !== 'playing') {
-          return
-        }
-
-        positionRef.current = reactionTime
-        setPosition(reactionTime)
-        const currentSession = sessionRef.current
-        const now = Date.now()
-        if (now - lastPositionSaveRef.current > 1500 && currentSession.reactionPath && currentSession.moviePath) {
-          lastPositionSaveRef.current = now
-          void saveSessionPosition(currentSession.id, reactionTime)
-        }
-      },
-      onError: setError
-    })
-
-    controller.attach()
-    controller.setAudio(audioState(sessionRef.current))
-    controller.setPlaybackRate(sessionRef.current.playbackRate)
-    controller.setSetupMode(setupModeRef.current)
-    controllerRef.current = controller
-    return controller
-  }, [commitLibrary, saveSessionPosition])
-
-  const destroyRemoteMovieAdapter = useCallback((): void => {
-    remoteMovieAdapterRef.current?.destroy()
-    remoteMovieAdapterRef.current = null
-  }, [])
-
-  const refreshMediaUrls = useCallback(async (sessionId: string | null): Promise<void> => {
-    if (!sessionId) {
-      setMediaUrls(emptyUrls)
-      setMetadataReady(emptyMetadata)
-      setDurations(emptyDurations)
-      setRestoreToken(null)
-      return
-    }
-
-    const [reaction, movie] = await Promise.all([
-      window.watchAlong.getMediaUrl('reaction', sessionId),
-      window.watchAlong.getMediaUrl('movie', sessionId)
-    ])
-    setMediaUrls({ reaction, movie })
-    setMetadataReady(emptyMetadata)
-    setDurations(emptyDurations)
-    setRestoreToken(null)
   }, [])
 
   const {
@@ -265,10 +85,6 @@ export function useWatchAlongController({
   })
 
   useEffect(() => {
-    sessionRef.current = session
-  }, [session])
-
-  useEffect(() => {
     let mounted = true
     void window.watchAlong.getSavedPatreonSessionStatus().then((status) => {
       if (mounted) {
@@ -279,11 +95,6 @@ export function useWatchAlongController({
       mounted = false
     }
   }, [])
-
-  useEffect(() => {
-    setupModeRef.current = setupMode
-    controllerRef.current?.setSetupMode(setupMode)
-  }, [setupMode])
 
   useEffect(() => {
     return window.watchAlong.onMovieMediaEvent((event) => {
@@ -311,75 +122,6 @@ export function useWatchAlongController({
       }
     })
   }, [])
-
-  useEffect(() => {
-    const movie = movieVideoRef.current
-    if (!movie || controllerRef.current) {
-      return
-    }
-
-    const controller = buildController(createHtmlVideoAdapter('movie', movie))
-
-    return () => {
-      controller?.destroy()
-      if (controllerRef.current === controller) {
-        controllerRef.current = null
-      }
-    }
-  }, [appView, buildController, mediaUrls.movie, mediaUrls.reaction, movieWindowActive])
-
-  useEffect(() => {
-    const reaction = reactionVideoRef.current
-    const movie = movieVideoRef.current
-    if (reaction && reaction.src !== (mediaUrls.reaction ?? '')) {
-      reaction.src = mediaUrls.reaction ?? ''
-    }
-
-    if (movie && movie.src !== (mediaUrls.movie ?? '')) {
-      movie.src = mediaUrls.movie ?? ''
-    }
-  }, [mediaUrls, movieWindowActive])
-
-  useEffect(() => {
-    controllerRef.current?.setAudio(audioState(session))
-    controllerRef.current?.setPlaybackRate(session.playbackRate)
-  }, [
-    session.isMovieMuted,
-    session.isReactionMuted,
-    session.movieVolume,
-    session.movieRateCorrection,
-    session.playbackRate,
-    session.reactionVolume,
-    session
-  ])
-
-  useEffect(() => {
-    // Library IPC commits update sessionRef synchronously, while the `session`
-    // render value can still be one React commit behind. This matters when the
-    // user closes and immediately reopens the same pairing after its position
-    // was flushed: the old render still contains the pre-flush position.
-    const restoreSession = sessionRef.current
-    const token = `${restoreSession.id}|${mediaUrls.reaction ?? ''}|${mediaUrls.movie ?? ''}`
-    if (
-      !activeSession ||
-      restoreSession.id !== activeSessionIdRef.current ||
-      !mediaUrls.reaction ||
-      !mediaUrls.movie ||
-      !metadataReady.reaction ||
-      !metadataReady.movie ||
-      restoreToken === token
-    ) {
-      return
-    }
-
-    controllerRef.current?.setAudio(audioState(restoreSession))
-    controllerRef.current?.setPlaybackRate(restoreSession.playbackRate)
-    positionRef.current = restoreSession.lastReactionTimeSeconds
-    controllerRef.current?.loadSession(restoreSession.lastReactionTimeSeconds)
-    setPosition(restoreSession.lastReactionTimeSeconds)
-    setMoviePosition(getMovieAdapter()?.currentTime ?? 0)
-    setRestoreToken(token)
-  }, [activeSession, activeSessionIdRef, getMovieAdapter, mediaUrls, metadataReady, restoreToken, sessionRef])
 
   useEffect(() => {
     let mounted = true
@@ -485,10 +227,6 @@ export function useWatchAlongController({
   const shouldAutoHideControls = appView === 'player' && isPlaying && !setupMode && !commandPanelOpen
 
   useEffect(() => {
-    positionRef.current = position
-  }, [position])
-
-  useEffect(() => {
     let timer: number | undefined
 
     const clearIdleTimer = (): void => {
@@ -527,11 +265,6 @@ export function useWatchAlongController({
     }
   }, [shouldAutoHideControls])
 
-
-  const persist = async (patch: Partial<LibrarySession>): Promise<LibrarySession | null> => {
-    const next = await window.watchAlong.saveActiveSession(patch)
-    return commitLibrary(next)
-  }
 
   const { selectMovieAudioTrack } = useMovieAudioTracks({
     playback,
@@ -640,18 +373,4 @@ export function useWatchAlongController({
       actions={actions}
     />
   )
-}
-
-function audioState(session: LibrarySession): {
-  reactionVolume: number
-  movieVolume: number
-  isReactionMuted: boolean
-  isMovieMuted: boolean
-} {
-  return {
-    reactionVolume: session.reactionVolume,
-    movieVolume: session.movieVolume,
-    isReactionMuted: session.isReactionMuted,
-    isMovieMuted: session.isMovieMuted
-  }
 }
