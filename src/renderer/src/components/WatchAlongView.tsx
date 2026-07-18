@@ -83,10 +83,9 @@ export interface WatchAlongViewActions {
   togglePlayPause: () => void
   seekBy: (deltaSeconds: number) => void
   seekTo: (value: number) => void
-  syncNow: () => void
+  enterSyncSetup: () => void
   openSubtitle: () => Promise<void>
   toggleFullscreen: () => void
-  toggleReactionFullscreen: () => void
   toggleCommandPanel: (returnFocusTarget?: HTMLElement | null) => void
   setReactionVolume: (value: number) => void
   setMovieVolume: (value: number) => void
@@ -272,7 +271,7 @@ export function WatchAlongView({
         className="reaction-video"
         playsInline
         preload="metadata"
-        onDoubleClick={actions.toggleReactionFullscreen}
+        onDoubleClick={actions.toggleFullscreen}
         onLoadedMetadata={() => actions.handleMetadata('reaction')}
         onTimeUpdate={() => actions.handleTimeUpdate('reaction')}
         onError={(event) => actions.handleVideoError('reaction', event.currentTarget)}
@@ -495,7 +494,7 @@ export function WatchAlongView({
                     disabled={!canPlay}
                     onClick={() => {
                       closePlaybackSettings()
-                      actions.syncNow()
+                      actions.enterSyncSetup()
                     }}
                   >
                     {setupMode ? <RefreshCw size={16} aria-hidden /> : <SlidersHorizontal size={16} aria-hidden />}
@@ -692,7 +691,7 @@ export function WatchAlongView({
           onClose={actions.closeCommandPanel}
           onSyncSetup={() => {
             actions.closeCommandPanel()
-            actions.syncNow()
+            actions.enterSyncSetup()
           }}
           onFindSyncAgain={() => void actions.detectSyncAgain()}
           onNudgeOffset={(deltaSeconds) => void actions.nudgeOffset(deltaSeconds)}

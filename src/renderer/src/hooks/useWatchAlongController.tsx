@@ -4,7 +4,6 @@ import type { MediaRole } from '@shared/types'
 import { WatchAlongView, type WatchAlongViewActions } from '../components/WatchAlongView'
 import { signedSeconds } from '../components/appFormat'
 import { TimelineMapping } from '../sync/timeline'
-import { getActiveSubtitleCue, hasSubtitleContentBeyondHeader, parseSubtitleText } from '../subtitles'
 import type { PlaybackHook } from './usePlayback'
 import type { SessionHook } from './useSession'
 import type { SubtitlesHook } from './useSubtitles'
@@ -21,9 +20,7 @@ import { useCabinetTheme } from './useCabinetTheme'
 import { useKeyboardShortcuts } from './useKeyboardShortcuts'
 import { useAppBootstrap } from './useAppBootstrap'
 import { useSessionMediaRuntime } from './useSessionMediaRuntime'
-
-const CONTROL_IDLE_DELAY_MS = 2400
-const UNSUPPORTED_SUBTITLE_FORMAT_ERROR = "This subtitle format isn't supported. Use SRT or VTT."
+import { usePlayerSurfaceLifecycle } from './usePlayerSurfaceLifecycle'
 
 export function useWatchAlongController({
   playback,
@@ -38,14 +35,13 @@ export function useWatchAlongController({
 }): JSX.Element {
   const {
     setupModeRef, canPlayRef, isPlayingRef, mediaUrls, metadataReady, setMetadataReady,
-    durations, setDurations, position, moviePosition, setMoviePosition, setupMode,
-    setSetupPositions, setControlsIdle, syncState, setError, movieWindowActive,
+    durations, setDurations, position, setMoviePosition, setupMode,
+    setSetupPositions, syncState,
     setMovieAudioTrackSnapshot
   } = playback
   const {
     emptySession, library, preferences, appView, commandPanelOpen, setPatreonStatus
   } = sessionState
-  const { subtitleCues, setSubtitleCues } = subtitles
   const { setDownloadIndicator, setDownloadEvents } = downloads
   const autoSync = useAutoSync()
   const wizardSwapMovieMomentRef = useRef<number | null>(null)
@@ -53,7 +49,6 @@ export function useWatchAlongController({
 
   const activeSession = useMemo(() => getActiveSession(library), [library])
   const session = activeSession ?? emptySession
-  const activeSubtitle = useMemo(() => getActiveSubtitleCue(subtitleCues, moviePosition), [moviePosition, subtitleCues])
   const detectedMovieRateCorrection = calculateMovieRateCorrection(session.detectedMovieFps, session.reactorSource)
   const reactorSourceSummary = reactorSourceOptions.find((option) => option.source === session.reactorSource)?.summary ?? '23.976 fps'
 
@@ -123,59 +118,6 @@ export function useWatchAlongController({
     })
   }, [])
 
-  useEffect(() => {
-    let mounted = true
-
-    void (async () => {
-      if (!activeSession?.subtitlePath) {
-        setSubtitleCues([])
-        return
-      }
-
-      const text = await window.watchAlong.getSubtitleText(activeSession.id)
-      if (mounted) {
-        const cues = text ? parseSubtitleText(text) : []
-        setSubtitleCues(cues)
-        if (text && cues.length === 0 && hasSubtitleContentBeyondHeader(text)) {
-          setError(UNSUPPORTED_SUBTITLE_FORMAT_ERROR)
-        }
-      }
-    })()
-
-    return () => {
-      mounted = false
-    }
-  }, [activeSession?.id, activeSession?.subtitlePath])
-
-  useEffect(() => {
-    if (!movieWindowActive) {
-      return
-    }
-
-    void window.watchAlong.sendMovieMediaCommand({
-      id: `subtitle-${Date.now()}`,
-      type: 'setSubtitleText',
-      value: activeSubtitle?.text ?? null
-    })
-  }, [activeSubtitle?.text, movieWindowActive])
-
-  // Fullscreen belongs to the two primary application surfaces. Keep it while
-  // moving between the library and player, but leave it for loading and
-  // recovery screens, including when a delayed request settles after navigation.
-  useEffect(() => {
-    const exitFullscreenOutsidePrimaryView = (): void => {
-      if (appView === 'library' || appView === 'player' || !document.fullscreenElement) return
-      void document.exitFullscreen().catch(() => undefined)
-    }
-
-    exitFullscreenOutsidePrimaryView()
-    document.addEventListener('fullscreenchange', exitFullscreenOutsidePrimaryView)
-    return () => document.removeEventListener('fullscreenchange', exitFullscreenOutsidePrimaryView)
-  }, [appView])
-
-
-
-
   useKeyboardShortcuts(() => ({
     autoSyncRollInSessionId,
     autoSyncRunningSessionId: autoSync.runningSessionId,
@@ -226,45 +168,13 @@ export function useWatchAlongController({
   const movieStartsAtReaction = Math.max(0, -session.offsetSeconds / session.movieRateCorrection)
   const shouldAutoHideControls = appView === 'player' && isPlaying && !setupMode && !commandPanelOpen
 
-  useEffect(() => {
-    let timer: number | undefined
-
-    const clearIdleTimer = (): void => {
-      if (timer !== undefined) {
-        window.clearTimeout(timer)
-        timer = undefined
-      }
-    }
-
-    const markActive = (): void => {
-      setControlsIdle(false)
-      clearIdleTimer()
-      if (shouldAutoHideControls) {
-        timer = window.setTimeout(() => setControlsIdle(true), CONTROL_IDLE_DELAY_MS)
-      }
-    }
-
-    markActive()
-    if (!shouldAutoHideControls) {
-      return clearIdleTimer
-    }
-
-    window.addEventListener('mousemove', markActive)
-    window.addEventListener('mousedown', markActive)
-    window.addEventListener('wheel', markActive, { passive: true })
-    window.addEventListener('keydown', markActive)
-    window.addEventListener('touchstart', markActive, { passive: true })
-
-    return () => {
-      clearIdleTimer()
-      window.removeEventListener('mousemove', markActive)
-      window.removeEventListener('mousedown', markActive)
-      window.removeEventListener('wheel', markActive)
-      window.removeEventListener('keydown', markActive)
-      window.removeEventListener('touchstart', markActive)
-    }
-  }, [shouldAutoHideControls])
-
+  const { activeSubtitleText, toggleFullscreen } = usePlayerSurfaceLifecycle({
+    playback,
+    sessionState,
+    subtitles,
+    activeSession,
+    shouldAutoHideControls
+  })
 
   const { selectMovieAudioTrack } = useMovieAudioTracks({
     playback,
@@ -278,7 +188,7 @@ export function useWatchAlongController({
     popOutMovie,
     popInMovie
   } = useMovieWindow({
-    playback, sessionState, activeSession, session, activeSubtitleText: activeSubtitle?.text ?? null,
+    playback, sessionState, activeSession, session, activeSubtitleText,
     canPlay, hasMissingMedia, getMovieAdapter, buildController, destroyRemoteMovieAdapter,
     persist, commitLibrary
   })
@@ -315,8 +225,8 @@ export function useWatchAlongController({
     toggleMovieMute, setPlaybackRate, setMovieRateCorrection, setReactorSource, detectSyncAgain,
     togglePipVisibility, nudgeOffset, handleMetadata, handleTimeUpdate, handleVideoError,
     handleVideoRecovery,
-    updateOverlay, commitOverlay, toggleFullscreen, toggleReactionFullscreen, enterSyncSetup,
-    syncNow, cancelSyncSetup, saveSyncSetup, setIndependentSetupTime, nudgeSetupTime,
+    updateOverlay, commitOverlay, enterSyncSetup,
+    cancelSyncSetup, saveSyncSetup, setIndependentSetupTime, nudgeSetupTime,
     toggleSetupPreview
   } = usePlayerControls({
     playback, sessionState, activeSession, session, autoSync, autoSyncBusy, canPlay,
@@ -336,7 +246,7 @@ export function useWatchAlongController({
     locateMissingMedia, updateOverlay, commitOverlay, persist, popOutMovie, popInMovie, togglePipVisibility,
     handleMetadata, handleTimeUpdate, handleVideoError, cancelSyncSetup, saveSyncSetup,
     toggleSetupPreview, setIndependentSetupTime, nudgeSetupTime, togglePlayPause, seekBy, seekTo,
-    syncNow, openSubtitle, toggleFullscreen, toggleReactionFullscreen, toggleCommandPanel,
+    enterSyncSetup, openSubtitle, toggleFullscreen, toggleCommandPanel,
     setReactionVolume, setMovieVolume, toggleReactionMute, toggleMovieMute, setPlaybackRate,
     selectMovieAudioTrack,
     detectSyncAgain, nudgeOffset, setReactorSource, setMovieRateCorrection, clearSubtitle, closeCommandPanel,
@@ -353,7 +263,7 @@ export function useWatchAlongController({
       autoSync={autoSync}
       activeSession={activeSession}
       session={session}
-      activeSubtitleText={activeSubtitle?.text ?? null}
+      activeSubtitleText={activeSubtitleText}
       missingMediaRoles={missingMediaRoles}
       hasMedia={hasMedia}
       movieReady={movieReady}

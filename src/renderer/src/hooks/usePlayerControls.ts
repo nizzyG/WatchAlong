@@ -48,7 +48,7 @@ export function usePlayerControls({
     position,
     setPendingSyncSetup
   } = playback
-  const { sessionRef, activeSessionIdRef, setLibrary, appView } = sessionState
+  const { sessionRef, activeSessionIdRef, setLibrary } = sessionState
 
   const {
     handleMetadata,
@@ -168,15 +168,6 @@ export function usePlayerControls({
     void persist({ overlay })
   }
 
-  const toggleFullscreen = (): void => {
-    if (appView !== 'library' && appView !== 'player') return
-    if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => undefined)
-      return
-    }
-    void document.documentElement.requestFullscreen().catch(() => undefined)
-  }
-
   return {
     togglePlayPause,
     seekBy,
@@ -197,10 +188,7 @@ export function usePlayerControls({
     handleVideoRecovery,
     updateOverlay,
     commitOverlay,
-    toggleFullscreen,
-    toggleReactionFullscreen: toggleFullscreen,
     enterSyncSetup,
-    syncNow: enterSyncSetup,
     cancelSyncSetup,
     saveSyncSetup,
     setIndependentSetupTime,
