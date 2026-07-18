@@ -106,6 +106,31 @@ describe('AutoSyncService', () => {
     })
   })
 
+  it('turns an asynchronous intro-refinement failure into a readable result', async () => {
+    const session = createDefaultSession(new Date(), {
+      id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4'
+    })
+    const repository = new MemorySessions(session)
+    const service = partialResultService(repository, -30)
+    type AsyncInternal = (...args: never[]) => Promise<unknown>
+    const internals = service as unknown as Record<'refineAnchors', AsyncInternal>
+    const refineAnchors = vi.mocked(internals.refineAnchors)
+    refineAnchors.mockReset()
+    refineAnchors
+      .mockResolvedValueOnce({ anchors: [], consensus: null })
+      .mockImplementationOnce(async () => {
+        await Promise.resolve()
+        throw new Error('invalid data')
+      })
+
+    await expect(service.analyze(session.id, { intent: 'initial', snapshot: session })).resolves.toEqual({
+      sessionId: session.id,
+      outcome: 'failed',
+      message: 'One of these files could not be read clearly. Your existing timing was left unchanged.'
+    })
+    expect(repository.updates).toHaveLength(0)
+  })
+
   it('recovers an opening-only reaction from corroborating visual anchors', async () => {
     const session = createDefaultSession(new Date(), {
       id: 'session-1', moviePath: 'movie.mp4', reactionPath: 'reaction.mp4'

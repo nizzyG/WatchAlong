@@ -7,12 +7,10 @@ import type {
   StartAutoSyncResult
 } from '@shared/types'
 import { clamp } from '@shared/numeric'
-import { captureTimingSnapshot, isTimingSnapshotCurrent } from '@shared/sessionTiming'
-import { isConfidentFit } from './fitting'
-import { createAutoSyncEvents, fallback, friendlyError, stale, type AutoSyncEvents } from './autoSyncEvents'
+import { captureTimingSnapshot } from '@shared/sessionTiming'
+import { runAutoSyncAnalysis } from './autoSyncAnalysis'
+import { createAutoSyncEvents, fallback, friendlyError, type AutoSyncEvents } from './autoSyncEvents'
 import {
-  choosePreferredFit,
-  fitMatchSet,
   resolveCandidateGroups,
   type AnchorMatchSet
 } from './fitResolution'
@@ -34,8 +32,6 @@ import {
 import {
   findOpeningMotionOffset as resolveOpeningMotionOffset,
   findOpeningPrefixInset,
-  openingEvidenceStats,
-  offsetStatsForRate,
   scanOpeningTimelines as scanOpeningTimelineEvidence,
   type DetectedInset
 } from './openingFallback'
@@ -48,18 +44,6 @@ import {
   COARSE_RATE_BAND,
   DEFAULT_SIGNATURE_GRID_SIZE,
   GEOMETRY_SCAN,
-  MAX_OPENING_ELIGIBLE_DEVIATION_SECONDS,
-  MAX_PARTIAL_DEVIATION_SECONDS,
-  MAX_STRONG_OPENING_DEVIATION_SECONDS,
-  MIN_OPENING_ELIGIBLE_ANCHORS,
-  MIN_PARTIAL_ANCHORS,
-  MIN_PARTIAL_GEOMETRY_CONFIDENCE,
-  MIN_STRONG_OPENING_ANCHORS,
-  MIN_STRONG_OPENING_SPAN_SECONDS,
-  OPENING_CORROBORATION_TOLERANCE_SECONDS,
-  OPENING_PARTIAL_FLOOR,
-  PARTIAL_CONFIDENCE_CAP,
-  PARTIAL_OFFSET_AGREEMENT_SECONDS,
   PROBE_FRACTIONS,
   RATE_BAND,
   REFINEMENT_SCAN
@@ -129,106 +113,23 @@ export class AutoSyncService {
     const timingSnapshot = captureTimingSnapshot(session)
     const effectiveSignal = options.signal ?? new AbortController().signal
     try {
-      this.progress(sessionId, 'preparing', AUTO_SYNC_PROGRESS.preparing, 'Checking both videos…')
-      const [movieInfo, reactionInfo] = await Promise.all([
-        this.options.backend.probe(session.moviePath, effectiveSignal),
-        this.options.backend.probe(session.reactionPath, effectiveSignal)
-      ])
-
-      this.progress(sessionId, 'finding-inset', AUTO_SYNC_PROGRESS.findingInset, 'Finding the movie inside the reaction…')
-      const intro = await this.findGeometry(session, movieInfo, reactionInfo, effectiveSignal)
-      if (!intro) return fallback(sessionId, 'WatchAlong couldn’t clearly see the movie in this reaction. You can line it up manually.')
-
-      this.progress(sessionId, 'scanning', AUTO_SYNC_PROGRESS.scanning, 'Comparing moments across the watchalong…')
-      const scan = intro.openingOnly
-        ? { anchors: [], consensus: null, geometry: intro.geometry, mask: intro.mask }
-        : await this.scanTimelines(session, movieInfo, reactionInfo, intro, effectiveSignal)
-      const coarse = scan.anchors
-      this.progress(sessionId, 'refining', AUTO_SYNC_PROGRESS.refining, 'Double-checking the best matches…')
-      const refined = await this.refineAnchors(session, coarse, scan.geometry, scan.mask, effectiveSignal)
-      const refinedFit = fitMatchSet(refined, movieInfo.duration)
-      const coarseFit = fitMatchSet({ anchors: coarse, consensus: scan.consensus }, movieInfo.duration)
-      // A refinement is only better when its complete evidence is stronger.
-      // This also prevents a marginal refined pass from hiding a valid coarse fit.
-      const fit = choosePreferredFit(refinedFit, coarseFit)
-      const current = this.options.sessions.getSession(sessionId)
-      if (!isTimingSnapshotCurrent(current, timingSnapshot)) return stale(sessionId)
-
-      this.progress(sessionId, 'finishing', AUTO_SYNC_PROGRESS.finishing, 'Finishing the timing…')
-      if (fit && isConfidentFit(fit)) {
-        return this.events.completeFromFit(sessionId, fit, movieInfo.frameRate)
-      }
-
-      const refinedIntro = await this.refineAnchors(session, intro.anchors, intro.geometry, intro.mask, effectiveSignal, false)
-      const latest = this.options.sessions.getSession(sessionId)
-      if (!isTimingSnapshotCurrent(latest, timingSnapshot)) return stale(sessionId)
-      const introOffset = offsetStatsForRate(refinedIntro.anchors, latest.movieRateCorrection)
-      const bodyOffset = offsetStatsForRate(refined.anchors, latest.movieRateCorrection)
-      const partialOffset = introOffset && bodyOffset &&
-        Math.abs(bodyOffset.offsetSeconds - introOffset.offsetSeconds) <= PARTIAL_OFFSET_AGREEMENT_SECONDS
-        ? bodyOffset.offsetSeconds
-        : introOffset?.offsetSeconds
-      const introOffsetIsReliable = Boolean(
-        introOffset && introOffset.count >= MIN_PARTIAL_ANCHORS &&
-        introOffset.maximumDeviation <= MAX_PARTIAL_DEVIATION_SECONDS
-      )
-      if (!intro.openingOnly && intro.confidence >= MIN_PARTIAL_GEOMETRY_CONFIDENCE &&
-        introOffsetIsReliable && partialOffset !== undefined && Number.isFinite(partialOffset)) {
-        // A marginal drift estimate is useful evidence, but not safe to apply.
-        // Keep the user's current rate and only prefill the well-supported start point.
-        return this.events.completePartial(sessionId, options.intent, partialOffset, latest.movieRateCorrection,
-          Math.min(PARTIAL_CONFIDENCE_CAP, fit?.confidence ?? intro.confidence), introOffset!.count, movieInfo.frameRate)
-      }
-
-      // Preserve the established whole-runtime and partial paths above. Only
-      // when they cannot decide do we spend extra work on the opening. This
-      // recovers reactions that briefly show the movie and then blur or black
-      // it out, without letting those low-information later frames invent a
-      // drift fit.
-      const coarseIntroOffset = offsetStatsForRate(intro.anchors, latest.movieRateCorrection)
-      const openingEligible = Boolean(
-        coarseIntroOffset &&
-        coarseIntroOffset.count >= MIN_OPENING_ELIGIBLE_ANCHORS &&
-        coarseIntroOffset.maximumDeviation <= MAX_OPENING_ELIGIBLE_DEVIATION_SECONDS
-      )
-      if (openingEligible) {
-        const opening = await this.scanOpeningTimelines(
-          session,
-          movieInfo,
-          reactionInfo,
-          intro,
-          effectiveSignal
-        )
-        const independentOpeningOffset = openingEvidenceStats(opening.anchors, latest.movieRateCorrection)
-        const openingOffset = independentOpeningOffset ?? (
-          intro.openingOnly && opening.anchors.length >= MIN_OPENING_ELIGIBLE_ANCHORS
-            ? openingEvidenceStats([...intro.anchors, ...opening.anchors], latest.movieRateCorrection)
-            : null
-        )
-        const strongIndependentVisualEvidence = Boolean(
-          independentOpeningOffset &&
-          independentOpeningOffset.count >= MIN_STRONG_OPENING_ANCHORS &&
-          independentOpeningOffset.maximumDeviation <= MAX_STRONG_OPENING_DEVIATION_SECONDS &&
-          independentOpeningOffset.spanSeconds >= MIN_STRONG_OPENING_SPAN_SECONDS
-        )
-        const openingMotionOffset = strongIndependentVisualEvidence
-          ? null
-          : intro.openingMotionOffset ?? await this.findOpeningMotionOffset(session, intro, effectiveSignal)
-        const hasRequiredCorroboration = strongIndependentVisualEvidence || (
-          openingMotionOffset !== null && openingOffset !== null &&
-          Math.abs(openingMotionOffset - openingOffset.offsetSeconds) <= OPENING_CORROBORATION_TOLERANCE_SECONDS
-        )
-        if (openingOffset && hasRequiredCorroboration) {
-          const currentAfterOpening = this.options.sessions.getSession(sessionId)
-          if (!isTimingSnapshotCurrent(currentAfterOpening, timingSnapshot)) return stale(sessionId)
-          return this.events.completeReadyOpeningPartial(sessionId, openingOffset.offsetSeconds,
-            currentAfterOpening.movieRateCorrection,
-            Math.min(PARTIAL_CONFIDENCE_CAP, Math.max(intro.confidence, OPENING_PARTIAL_FLOOR)),
-            openingOffset.count, movieInfo.frameRate)
-        }
-      }
-
-      return fallback(sessionId, 'WatchAlong wasn’t certain enough to change your timing. You can line it up manually.')
+      return await runAutoSyncAnalysis({
+        sessionId,
+        intent: options.intent,
+        session,
+        timingSnapshot,
+        signal: effectiveSignal
+      }, {
+        getSession: (...args) => this.options.sessions.getSession(...args),
+        progress: (...args) => this.progress(...args),
+        probe: (...args) => this.options.backend.probe(...args),
+        findGeometry: (...args) => this.findGeometry(...args),
+        scanTimelines: (...args) => this.scanTimelines(...args),
+        refineAnchors: (...args) => this.refineAnchors(...args),
+        scanOpeningTimelines: (...args) => this.scanOpeningTimelines(...args),
+        findOpeningMotionOffset: (...args) => this.findOpeningMotionOffset(...args),
+        events: this.events
+      })
     } catch (error) {
       if (effectiveSignal.aborted || (error instanceof Error && error.name === 'AbortError')) {
         return { sessionId, outcome: 'cancelled', message: 'Automatic sync was cancelled. Your timing was left unchanged.' }
