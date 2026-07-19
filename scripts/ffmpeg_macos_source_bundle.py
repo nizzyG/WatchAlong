@@ -78,6 +78,19 @@ def _validate_https_url(value: Any, field: str) -> str:
     return url
 
 
+def _validate_download_locations(entry: dict[str, Any], prefix: str) -> None:
+    primary = _validate_https_url(entry.get("url"), f"{prefix}.url")
+    mirrors = entry.get("mirrors", [])
+    if not isinstance(mirrors, list):
+        raise BundleError(f"Manifest field {prefix}.mirrors must be an array of HTTPS URLs.")
+    seen = {primary}
+    for index, value in enumerate(mirrors):
+        mirror = _validate_https_url(value, f"{prefix}.mirrors[{index}]")
+        if mirror in seen:
+            raise BundleError(f"Duplicate download URL in manifest field {prefix}: {mirror}")
+        seen.add(mirror)
+
+
 def _validate_relative_repo_path(value: Any, field: str) -> str:
     raw = _require_string(value, field)
     path = PurePosixPath(raw)
@@ -117,7 +130,7 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         if archive_name in archive_names:
             raise BundleError(f"Duplicate source archive filename: {archive_name}.")
         archive_names.add(archive_name)
-        _validate_https_url(component.get("url"), f"{prefix}.url")
+        _validate_download_locations(component, prefix)
         _validate_sha256(component.get("sha256"), f"{prefix}.sha256")
 
     targets = manifest.get("buildTargets")
@@ -146,7 +159,7 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         if report_name in report_names:
             raise BundleError(f"Duplicate build report filename: {report_name}.")
         report_names.add(report_name)
-        _validate_https_url(report.get("url"), f"{prefix}.versionsReport.url")
+        _validate_download_locations(report, f"{prefix}.versionsReport")
         _validate_sha256(report.get("sha256"), f"{prefix}.versionsReport.sha256")
 
         binaries = target.get("binaries")
@@ -238,8 +251,16 @@ def _download_once(url: str, destination: Path) -> str:
 
 
 def download_verified(
-    *, name: str, url: str, expected_sha256: str, destination: Path, attempts: int = 3
+    *,
+    name: str,
+    url: str,
+    expected_sha256: str,
+    destination: Path,
+    mirrors: Iterable[str] = (),
+    attempts: int = 3,
 ) -> Path:
+    if attempts < 1:
+        raise BundleError("Download attempts must be at least one.")
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         actual = sha256_file(destination)
@@ -251,28 +272,42 @@ def download_verified(
 
     partial = destination.with_name(destination.name + ".part")
     partial.unlink(missing_ok=True)
+    source_urls = (url, *tuple(mirrors))
+    failures: list[str] = []
     for attempt in range(1, attempts + 1):
-        try:
-            print(f"Downloading source input ({attempt}/{attempts}): {name}")
-            actual = _download_once(url, partial)
+        for source_index, source_url in enumerate(source_urls, start=1):
+            try:
+                print(
+                    f"Downloading source input (attempt {attempt}/{attempts}, "
+                    f"source {source_index}/{len(source_urls)}): {name}"
+                )
+                actual = _download_once(source_url, partial)
+            except (OSError, urllib.error.URLError) as error:
+                partial.unlink(missing_ok=True)
+                failures.append(f"{source_url}: {type(error).__name__}: {error}")
+                continue
             if actual != expected_sha256:
                 partial.unlink(missing_ok=True)
+                failures.append(f"{source_url}: SHA-256 {actual}")
+                continue
+            try:
+                partial.replace(destination)
+            except OSError as error:
+                partial.unlink(missing_ok=True)
                 raise BundleError(
-                    f"Downloaded source hash mismatch for {name}: expected {expected_sha256}, "
-                    f"got {actual}. The upstream artifact may have changed; refusing to continue."
-                )
-            partial.replace(destination)
-            return destination
-        except BundleError:
-            raise
-        except (OSError, urllib.error.URLError) as error:
-            partial.unlink(missing_ok=True)
-            if attempt == attempts:
-                raise BundleError(
-                    f"Unable to download source input {name} after {attempts} attempts: {error}"
+                    f"Unable to cache verified source input {name} at {destination}: {error}"
                 ) from error
+            if source_index > 1:
+                print(f"Verified {name} from manifest mirror {source_index - 1}.")
+            return destination
+        if attempt < attempts:
             time.sleep(2 ** (attempt - 1))
-    raise AssertionError("download retry loop exited unexpectedly")
+    details = "; ".join(failures)
+    raise BundleError(
+        f"Unable to download verified source input {name} after {attempts} attempts from "
+        f"{len(source_urls)} source(s): expected SHA-256 {expected_sha256}; observed failures: "
+        f"{details}. Refusing to continue."
+    )
 
 
 def _safe_extract_regular_tar(archive: Path, destination: Path) -> None:
@@ -627,6 +662,7 @@ def build_bundle(
             cached = download_verified(
                 name=f"{component['name']} {component['version']}",
                 url=component["url"],
+                mirrors=component.get("mirrors", ()),
                 expected_sha256=component["sha256"],
                 destination=downloads / component["archiveName"],
             )
@@ -638,6 +674,7 @@ def build_bundle(
             cached = download_verified(
                 name=f"{target['target']} versions report",
                 url=report["url"],
+                mirrors=report.get("mirrors", ()),
                 expected_sha256=report["sha256"],
                 destination=downloads / report["archiveName"],
             )

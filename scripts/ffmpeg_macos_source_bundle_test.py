@@ -7,6 +7,7 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 
 from scripts import ffmpeg_macos_source_bundle as bundle
 
@@ -64,6 +65,18 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(bundle.BundleError, "plain filename"):
             bundle.validate_manifest(manifest)
 
+    def test_manifest_rejects_insecure_and_duplicate_mirrors(self) -> None:
+        manifest = minimal_manifest("a" * 64)
+        manifest["components"][0]["mirrors"] = ["http://example.invalid/rav1e.tar.gz"]
+        with self.assertRaisesRegex(bundle.BundleError, "absolute HTTPS URL"):
+            bundle.validate_manifest(manifest)
+
+        manifest["components"][0]["mirrors"] = [
+            manifest["components"][0]["url"]
+        ]
+        with self.assertRaisesRegex(bundle.BundleError, "Duplicate download URL"):
+            bundle.validate_manifest(manifest)
+
     def test_binary_verification_names_the_mismatched_file(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -76,6 +89,150 @@ class ManifestTests(unittest.TestCase):
                 bundle.BundleError, "Covered binary hash mismatch for resources/ffmpeg"
             ):
                 bundle.verify_covered_binaries(manifest, root)
+
+
+class DownloadTests(unittest.TestCase):
+    def test_hash_mismatch_is_retried_before_verified_bytes_are_accepted(self) -> None:
+        good_bytes = b"verified upstream source"
+        expected = digest(good_bytes)
+        bad_hash = digest(b"transient corrupt response")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "source.tar.gz"
+
+            def fake_download(_url: str, partial: Path) -> str:
+                if fake_download.call_count == 0:
+                    fake_download.call_count += 1
+                    partial.write_bytes(b"transient corrupt response")
+                    return bad_hash
+                partial.write_bytes(good_bytes)
+                return expected
+
+            fake_download.call_count = 0
+            with (
+                mock.patch.object(bundle, "_download_once", side_effect=fake_download) as download,
+                mock.patch.object(bundle.time, "sleep") as sleep,
+            ):
+                result = bundle.download_verified(
+                    name="test source",
+                    url="https://example.invalid/source.tar.gz",
+                    expected_sha256=expected,
+                    destination=destination,
+                )
+
+            self.assertEqual(result.read_bytes(), good_bytes)
+            self.assertEqual(download.call_count, 2)
+            sleep.assert_called_once_with(1)
+            self.assertFalse(destination.with_name(destination.name + ".part").exists())
+
+    def test_primary_hash_mismatch_falls_back_to_pinned_manifest_mirror(self) -> None:
+        good_bytes = b"verified mirrored source"
+        expected = digest(good_bytes)
+        primary = "https://primary.example.invalid/source.tar.gz"
+        mirror = "https://mirror.example.invalid/source.tar.gz"
+
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "source.tar.gz"
+
+            def fake_download(url: str, partial: Path) -> str:
+                if url == primary:
+                    partial.write_bytes(b"bad CDN response")
+                    return digest(b"bad CDN response")
+                partial.write_bytes(good_bytes)
+                return expected
+
+            with (
+                mock.patch.object(bundle, "_download_once", side_effect=fake_download) as download,
+                mock.patch.object(bundle.time, "sleep") as sleep,
+            ):
+                result = bundle.download_verified(
+                    name="test source",
+                    url=primary,
+                    mirrors=(mirror,),
+                    expected_sha256=expected,
+                    destination=destination,
+                )
+
+            self.assertEqual(result.read_bytes(), good_bytes)
+            self.assertEqual(
+                [call.args[0] for call in download.call_args_list],
+                [primary, mirror],
+            )
+            sleep.assert_not_called()
+
+    def test_repeated_hash_mismatches_fail_closed_without_cached_bytes(self) -> None:
+        expected = digest(b"expected source")
+        bad_bytes = b"untrusted response"
+        bad_hash = digest(bad_bytes)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "source.tar.gz"
+
+            def fake_download(_url: str, partial: Path) -> str:
+                partial.write_bytes(bad_bytes)
+                return bad_hash
+
+            mirror = "https://mirror.example.invalid/source.tar.gz"
+            with (
+                mock.patch.object(bundle, "_download_once", side_effect=fake_download) as download,
+                mock.patch.object(bundle.time, "sleep") as sleep,
+                self.assertRaisesRegex(
+                    bundle.BundleError,
+                    rf"after 3 attempts.*2 source\(s\).*expected SHA-256 {expected}.*{bad_hash}",
+                ),
+            ):
+                bundle.download_verified(
+                    name="test source",
+                    url="https://example.invalid/source.tar.gz",
+                    mirrors=(mirror,),
+                    expected_sha256=expected,
+                    destination=destination,
+                )
+
+            self.assertEqual(download.call_count, 6)
+            self.assertEqual(sleep.call_args_list, [mock.call(1), mock.call(2)])
+            self.assertFalse(destination.exists())
+            self.assertFalse(destination.with_name(destination.name + ".part").exists())
+
+    def test_verified_cache_is_reused_without_network_access(self) -> None:
+        cached = b"already verified source"
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "source.tar.gz"
+            destination.write_bytes(cached)
+            with mock.patch.object(bundle, "_download_once") as download:
+                result = bundle.download_verified(
+                    name="test source",
+                    url="https://example.invalid/source.tar.gz",
+                    expected_sha256=digest(cached),
+                    destination=destination,
+                )
+
+            self.assertEqual(result, destination)
+            download.assert_not_called()
+
+    def test_verified_partial_is_removed_when_atomic_cache_write_fails(self) -> None:
+        verified = b"verified source"
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "source.tar.gz"
+
+            def fake_download(_url: str, partial: Path) -> str:
+                partial.write_bytes(verified)
+                return digest(verified)
+
+            with (
+                mock.patch.object(bundle, "_download_once", side_effect=fake_download),
+                mock.patch.object(Path, "replace", side_effect=OSError("disk full")),
+                self.assertRaisesRegex(bundle.BundleError, "Unable to cache verified source input"),
+            ):
+                bundle.download_verified(
+                    name="test source",
+                    url="https://example.invalid/source.tar.gz",
+                    expected_sha256=digest(verified),
+                    destination=destination,
+                )
+
+            self.assertFalse(destination.exists())
+            self.assertFalse(destination.with_name(destination.name + ".part").exists())
 
 
 class Rav1eTests(unittest.TestCase):
