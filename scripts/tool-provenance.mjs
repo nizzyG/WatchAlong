@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto'
+import { execFile as execFileCallback } from 'node:child_process'
 import { createReadStream } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
+import { promisify } from 'node:util'
+
+const execFile = promisify(execFileCallback)
 
 const MANIFEST_START = '<!-- tool-integrity-manifest:start -->'
 const MANIFEST_END = '<!-- tool-integrity-manifest:end -->'
@@ -15,6 +19,12 @@ const FORBIDDEN_FFMPEG_MARKERS = [
   '--enable-nonfree',
   'nonfree and unredistributable'
 ]
+const REQUIRED_LFS_ATTRIBUTES = new Map([
+  ['filter', 'lfs'],
+  ['diff', 'lfs'],
+  ['merge', 'lfs'],
+  ['text', 'unset']
+])
 
 export function parseToolProvenance(markdown) {
   const start = markdown.indexOf(MANIFEST_START)
@@ -60,6 +70,97 @@ export function parseToolProvenance(markdown) {
   }
 
   return entries
+}
+
+export async function verifyGitLfsAttributeCoverage(
+  repositoryRoot,
+  manifestEntries,
+  { runGit = defaultRunGit, hasGitMetadata = defaultHasGitMetadata } = {}
+) {
+  let gitMetadataPresent
+  try {
+    gitMetadataPresent = await hasGitMetadata(repositoryRoot)
+  } catch (error) {
+    throw new Error(`Unable to inspect Git metadata: ${formatError(error)}`)
+  }
+
+  if (!gitMetadataPresent) {
+    return { checked: false, lfsPathCount: 0 }
+  }
+
+  let isWorktree
+  try {
+    isWorktree = (await runGit(repositoryRoot, ['rev-parse', '--is-inside-work-tree'])).trim() === 'true'
+  } catch (error) {
+    throw new Error(`Unable to determine Git worktree status: ${formatError(error)}`)
+  }
+
+  if (!isWorktree) {
+    return { checked: false, lfsPathCount: 0 }
+  }
+
+  let lfsOutput
+  try {
+    lfsOutput = await runGit(repositoryRoot, ['lfs', 'ls-files', '--name-only'])
+  } catch (error) {
+    throw new Error(`Unable to inspect Git LFS-managed tool paths: ${formatError(error)}`)
+  }
+
+  const manifestPaths = new Set(manifestEntries.map((entry) => entry.path))
+  const lfsPaths = [
+    ...new Set(
+      lfsOutput
+        .split(/\r?\n/)
+        .map((path) => path.trim())
+        .filter((path) => path.length > 0 && manifestPaths.has(path))
+    )
+  ]
+
+  if (lfsPaths.length === 0) {
+    return { checked: true, lfsPathCount: 0 }
+  }
+
+  let attributeOutput
+  try {
+    attributeOutput = await runGit(repositoryRoot, [
+      'check-attr',
+      '-z',
+      ...REQUIRED_LFS_ATTRIBUTES.keys(),
+      '--',
+      ...lfsPaths
+    ])
+  } catch (error) {
+    throw new Error(`Unable to inspect Git LFS attributes: ${formatError(error)}`)
+  }
+
+  const attributesByPath = parseNullDelimitedAttributes(attributeOutput)
+  const violations = []
+
+  for (const path of lfsPaths) {
+    const attributes = attributesByPath.get(path) ?? new Map()
+    const mismatches = [...REQUIRED_LFS_ATTRIBUTES].filter(
+      ([name, expected]) => attributes.get(name) !== expected
+    )
+
+    if (mismatches.length > 0) {
+      violations.push(
+        `${path} (${mismatches
+          .map(([name, expected]) => `${name}=${attributes.get(name) ?? 'unspecified'}; expected ${expected}`)
+          .join(', ')})`
+      )
+    }
+  }
+
+  if (violations.length > 0) {
+    throw new Error(
+      `Git LFS attribute coverage mismatch:\n- ${violations.join('\n- ')}\n` +
+        'These files are stored as Git LFS pointers and require complete binary-safe attributes. ' +
+        'Missing filter=lfs leaves pointer text in a clean checkout; missing -text permits line-ending conversion. ' +
+        'Restore "filter=lfs diff=lfs merge=lfs -text" in .gitattributes.'
+    )
+  }
+
+  return { checked: true, lfsPathCount: lfsPaths.length }
 }
 
 export async function discoverToolBinaries(repositoryRoot) {
@@ -202,4 +303,52 @@ function sha256File(path) {
     stream.on('data', (chunk) => hash.update(chunk))
     stream.on('end', () => resolveHash(hash.digest('hex')))
   })
+}
+
+function parseNullDelimitedAttributes(output) {
+  const fields = output.split('\0')
+  if (fields.at(-1) === '') {
+    fields.pop()
+  }
+
+  if (fields.length % 3 !== 0) {
+    throw new Error('Git returned malformed attribute data while verifying LFS coverage.')
+  }
+
+  const attributesByPath = new Map()
+  for (let index = 0; index < fields.length; index += 3) {
+    const path = fields[index]
+    const name = fields[index + 1]
+    const value = fields[index + 2]
+    const attributes = attributesByPath.get(path) ?? new Map()
+    attributes.set(name, value)
+    attributesByPath.set(path, attributes)
+  }
+
+  return attributesByPath
+}
+
+async function defaultRunGit(repositoryRoot, args) {
+  const { stdout } = await execFile('git', args, {
+    cwd: repositoryRoot,
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024
+  })
+  return stdout
+}
+
+async function defaultHasGitMetadata(repositoryRoot) {
+  try {
+    await stat(resolve(repositoryRoot, '.git'))
+    return true
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return false
+    }
+    throw error
+  }
+}
+
+function formatError(error) {
+  return error instanceof Error ? error.message : String(error)
 }
