@@ -23,6 +23,11 @@ const installEnvironment = {
   WATCHALONG_TARGET_PLATFORM: targetPlatform,
   WATCHALONG_TARGET_ARCH: targetArch,
   WATCHALONG_TARGET_NODE_VERSION: targetNodeVersion,
+  // Standard WatchAlong downloads use patreon-dl's cookie-backed HTTP path.
+  // Puppeteer's optional browser is cached outside packaged resources, so a
+  // CI download would never ship to users or provide its runtime fallback.
+  // Skip that unshipped download to keep release builds deterministic.
+  PUPPETEER_SKIP_DOWNLOAD: 'true',
   // Native installers such as prebuild-install and node-gyp consume these
   // values. This lets an x64 CI host install an arm64 binding for an arm64 DMG.
   npm_config_platform: targetPlatform,
@@ -41,6 +46,9 @@ if (dryRun) {
           platform: targetPlatform,
           arch: targetArch,
           node: targetNodeVersion
+        },
+        installPolicy: {
+          puppeteerBrowserDownloads: installEnvironment.PUPPETEER_SKIP_DOWNLOAD !== 'true'
         }
       },
       null,
