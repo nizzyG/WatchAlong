@@ -435,6 +435,7 @@ describe('SmartReactionInput', () => {
 
 function createApi(): WatchAlongApi {
   return {
+    getAppVersion: vi.fn(async () => '1.1.0'),
     openVideos: vi.fn(),
     selectMovieFile: vi.fn(),
     selectReactionFile: vi.fn(),

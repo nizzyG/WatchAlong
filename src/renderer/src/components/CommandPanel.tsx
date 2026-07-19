@@ -39,7 +39,6 @@ import { manualMovieSourceRates, reactorSourceOptions } from '../hooks/playerTim
 
 export type CommandPanelSection = 'now-playing' | 'library' | 'downloads' | 'preferences' | 'help'
 
-const APP_VERSION = '1.0.1'
 const ONLINE_HELP_URL = 'https://github.com/nizzyG/WatchAlong#readme'
 const DONATION_URL = 'https://ko-fi.com/watchalong'
 
@@ -51,6 +50,7 @@ interface CommandPanelProps {
   downloads: DownloadProgressEvent[]
   preferences: AppPreferences
   patreonStatus: SavedPatreonSessionStatus
+  appVersion: string | null
   expandedSection: CommandPanelSection | null
   onExpandedSection(section: CommandPanelSection | null): void
   onClose(): void
@@ -82,6 +82,7 @@ export function CommandPanel({
   downloads,
   preferences,
   patreonStatus,
+  appVersion,
   expandedSection,
   onExpandedSection,
   onClose,
@@ -361,7 +362,7 @@ export function CommandPanel({
             id="help"
             icon={<Clock3 size={17} aria-hidden />}
             label="Help & About"
-            summary={`Version ${APP_VERSION}`}
+            summary={appVersion ? `Version ${appVersion}` : 'Version unavailable'}
             expanded={expandedSection === 'help'}
             onToggle={() => toggleSection('help')}
           >

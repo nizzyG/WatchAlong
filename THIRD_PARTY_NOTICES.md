@@ -17,28 +17,22 @@ The 4096 x 4096 diffuse maps were center-cropped to 16:9, downsampled to 2560 x 
 
 ## FFmpeg and ffprobe
 
-- **Windows x64 FFmpeg and ffprobe:** 8.1.1 full build from [Gyan](https://github.com/GyanD/codexffmpeg/releases/download/8.1.1/ffmpeg-8.1.1-full_build.7z)
-- **macOS Intel FFmpeg:** 8.1.1-tessus from [Evermeet](https://evermeet.cx/ffmpeg/ffmpeg-8.1.1.7z)
-- **macOS Intel ffprobe:** 8.0 from [OSXExperts](https://www.osxexperts.net/ffprobe80intel.zip)
-- **macOS Apple Silicon FFmpeg:** 6.0 from [OSXExperts](https://www.osxexperts.net/ffmpeg6arm.zip)
-- **macOS Apple Silicon ffprobe:** 8.1 from [OSXExperts](https://www.osxexperts.net/ffprobe81arm.zip)
-- **License:** GNU General Public License v3.0 or later
-- **Build configuration:** The distributed builds enable GPL components. Exact build configurations and scripts are available from the distributors linked above.
+- **Windows x64 FFmpeg and ffprobe:** WatchAlong build of the signed, unmodified [FFmpeg 8.1.2 source release](https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz), with no external codec libraries linked
+- **macOS Intel FFmpeg and ffprobe:** 8.1.2 from [Martin Riedl's FFmpeg build server](https://ffmpeg.martin-riedl.de/info/detail/macos/amd64/1783018342_8.1.2)
+- **macOS Apple Silicon FFmpeg and ffprobe:** 8.1.2 from [Martin Riedl's FFmpeg build server](https://ffmpeg.martin-riedl.de/info/detail/macos/arm64/1783011502_8.1.2)
+- **Windows license:** [GNU Lesser General Public License v2.1 or later](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html); a verbatim copy from the signed FFmpeg source is installed and released as [FFMPEG_LGPL_2.1.txt](FFMPEG_LGPL_2.1.txt)
+- **macOS license:** [GNU General Public License v3.0 or later](https://www.gnu.org/licenses/gpl-3.0.html)
+- **Build policy:** WatchAlong rejects any FFmpeg or ffprobe executable built with FFmpeg's `--enable-nonfree` option.
 
-### GPL source offer
+All three installers contain FFmpeg and ffprobe 8.1.2. The macOS tools are separate native Intel and Apple Silicon builds. The exact executable origins, configurations, and SHA-256 digests are recorded in [TOOL_PROVENANCE.md](TOOL_PROVENANCE.md).
 
-FFmpeg is distributed under the GNU General Public License v3.0. Under GPLv3 §6, any distribution of FFmpeg binaries must be accompanied by the corresponding source code or a written offer to provide it.
+### Corresponding source
 
-The corresponding FFmpeg source releases for the binaries distributed with WatchAlong are available at:
+Every GitHub release provides complete machine-readable Corresponding Source at no charge in two source archives beside the installers: one for the Windows build and one covering both macOS architectures. Those archives, the installers, and these notices are all included in the same `SHA256SUMS.txt`.
 
-- **6.0:** https://ffmpeg.org/releases/ffmpeg-6.0.tar.xz
-- **8.0:** https://ffmpeg.org/releases/ffmpeg-8.0.tar.xz
-- **8.1:** https://ffmpeg.org/releases/ffmpeg-8.1.tar.xz
-- **8.1.1:** https://ffmpeg.org/releases/ffmpeg-8.1.1.tar.xz
+The Windows source archive contains the exact signed [FFmpeg 8.1.2 `.tar.xz` source](https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz), pinned build recipe and inputs, build configuration, license materials, and the mapping to both shipped executable hashes. The macOS archive contains the exact [FFmpeg 8.1.2 `.tar.bz2` source](https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.bz2), every statically linked non-system library source, the release recipe in effect for the upstream build family, both architecture build reports, vendored Cargo dependencies, license materials, and the mapping to all four shipped executable hashes.
 
-Build configurations and scripts for these static distributions are available from Gyan, Evermeet, and OSXExperts at the artifact links above. Exact executable hashes are recorded in [TOOL_PROVENANCE.md](TOOL_PROVENANCE.md).
-
-To request the source on physical media, or if the above link doesn't work for you, email `watchalong@pm.me`. I'll provide the corresponding source at no charge.
+Exact asset names and upstream reference links are documented in [FFMPEG_SOURCE_ACCESS.md](FFMPEG_SOURCE_ACCESS.md). The same document is installed with WatchAlong and published as a release asset. The source archives will remain available for as long as the corresponding installers are offered. If an asset or link becomes unavailable, report it at `watchalong@pm.me`; email is a support path, not a substitute for the public source archives.
 
 ### GNU General Public License v3.0
 

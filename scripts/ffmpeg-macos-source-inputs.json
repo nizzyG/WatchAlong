@@ -1,0 +1,314 @@
+{
+  "schemaVersion": 1,
+  "sourceSetId": "martin-riedl-macos-ffmpeg-8.1.2",
+  "ffmpegVersion": "8.1.2",
+  "recipe": {
+    "name": "Martin Riedl FFmpeg build script",
+    "commit": "bb1d6db29cee948f9685bcd69e6caf17d960662b"
+  },
+  "buildTargets": [
+    {
+      "target": "macos-arm64",
+      "upstreamBuildId": "1783011502_8.1.2",
+      "versionsReport": {
+        "archiveName": "martin-riedl-macos-arm64-8.1.2-versions.txt",
+        "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783011502_8.1.2/versions.txt",
+        "sha256": "01958e92b4816be5b5f0721daaf553e08efdfe04be4355a9623ea647daecbeac"
+      },
+      "binaries": [
+        {
+          "path": "resources/tools/ffmpeg/ffmpeg-darwin-arm64",
+          "sha256": "eaf91238e104dd0e262bc6510e25061855cc99a6955a721b0ac99660d58c473d"
+        },
+        {
+          "path": "resources/tools/ffmpeg/ffprobe-darwin-arm64",
+          "sha256": "ed9dc5871914b466b96b402c9ec0ba68ce4f836e72faa464b1b4e279835bd4a6"
+        }
+      ]
+    },
+    {
+      "target": "macos-x64",
+      "upstreamBuildId": "1783018342_8.1.2",
+      "versionsReport": {
+        "archiveName": "martin-riedl-macos-x64-8.1.2-versions.txt",
+        "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1783018342_8.1.2/versions.txt",
+        "sha256": "9b20c8e8ca0d90457bdd027673905a33842c55f9b51d11cb00052f1c435711eb"
+      },
+      "binaries": [
+        {
+          "path": "resources/tools/ffmpeg/ffmpeg-darwin-x64",
+          "sha256": "1ca59dda73668c59898a0b305afd8a88817a989187f222ec62d64e775d614d23"
+        },
+        {
+          "path": "resources/tools/ffmpeg/ffprobe-darwin-x64",
+          "sha256": "bdb6aff0f1f414382effd97040f7862dc85e67996ac296cb4288beed0e06498f"
+        }
+      ]
+    }
+  ],
+  "rav1eCargo": {
+    "component": "rav1e",
+    "cargoLockSha256": "861482385bdef579e207bb371937dd49cb9ff47d9406c40660b760fa672d0589",
+    "registryPackageCount": 271,
+    "gitPackageCount": 0
+  },
+  "components": [
+    {
+      "name": "build-script",
+      "version": "bb1d6db29cee948f9685bcd69e6caf17d960662b",
+      "role": "build-recipe",
+      "archiveName": "martin-riedl-ffmpeg-build-script-bb1d6db29cee948f9685bcd69e6caf17d960662b.tar.gz",
+      "url": "https://git.martin-riedl.de/ffmpeg/build-script/archive/bb1d6db29cee948f9685bcd69e6caf17d960662b.tar.gz",
+      "sha256": "b4bcb3aa69bb16304a5b69c62837ec01c167909136afe477df452e8c178e0d5f"
+    },
+    {
+      "name": "ffmpeg",
+      "version": "8.1.2",
+      "role": "program-source",
+      "archiveName": "ffmpeg-8.1.2.tar.bz2",
+      "url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.bz2",
+      "sha256": "b4925bd4411e654ad3884bc8da1860b0d860bd64a95a17220de48cfcd5f0a859"
+    },
+    {
+      "name": "zlib",
+      "version": "1.3.2",
+      "role": "indirect-static-library",
+      "archiveName": "zlib-1.3.2.tar.gz",
+      "url": "https://www.zlib.net/fossils/zlib-1.3.2.tar.gz",
+      "sha256": "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16"
+    },
+    {
+      "name": "openssl",
+      "version": "3.6.1",
+      "role": "static-library",
+      "archiveName": "openssl-3.6.1.tar.gz",
+      "url": "https://github.com/openssl/openssl/releases/download/openssl-3.6.1/openssl-3.6.1.tar.gz",
+      "sha256": "b1bfedcd5b289ff22aee87c9d600f515767ebf45f77168cb6d64f231f518a82e"
+    },
+    {
+      "name": "libxml2",
+      "version": "2.15.3",
+      "role": "static-library",
+      "archiveName": "libxml2-2.15.3.tar.xz",
+      "url": "https://download.gnome.org/sources/libxml2/2.15/libxml2-2.15.3.tar.xz",
+      "sha256": "78262a6e7ac170d6528ebfe2efccdf220191a5af6a6cd61ea4a9a9a5042c7a07"
+    },
+    {
+      "name": "fribidi",
+      "version": "1.0.16",
+      "role": "indirect-static-library",
+      "archiveName": "fribidi-1.0.16.tar.xz",
+      "url": "https://github.com/fribidi/fribidi/releases/download/v1.0.16/fribidi-1.0.16.tar.xz",
+      "sha256": "1b1cde5b235d40479e91be2f0e88a309e3214c8ab470ec8a2744d82a5a9ea05c"
+    },
+    {
+      "name": "freetype",
+      "version": "2.13.0",
+      "role": "static-library",
+      "archiveName": "freetype-2.13.0.tar.gz",
+      "url": "https://download.savannah.gnu.org/releases/freetype/freetype-2.13.0.tar.gz",
+      "sha256": "a7aca0e532a276ea8d85bd31149f0a74c33d19c8d287116ef8f5f8357b4f1f80"
+    },
+    {
+      "name": "fontconfig",
+      "version": "2.17.1",
+      "role": "static-library",
+      "archiveName": "fontconfig-2.17.1.tar.xz",
+      "url": "https://gitlab.freedesktop.org/api/v4/projects/890/packages/generic/fontconfig/2.17.1/fontconfig-2.17.1.tar.xz",
+      "sha256": "9f5cae93f4fffc1fbc05ae99cdfc708cd60dfd6612ffc0512827025c026fa541"
+    },
+    {
+      "name": "harfbuzz",
+      "version": "14.2.1",
+      "role": "static-library",
+      "archiveName": "harfbuzz-14.2.1.tar.xz",
+      "url": "https://github.com/harfbuzz/harfbuzz/releases/download/14.2.1/harfbuzz-14.2.1.tar.xz",
+      "sha256": "a54a5d8e9380a41fbb762ce367bcbf7704792dfca0d93f1bbca86c5a57902e0e"
+    },
+    {
+      "name": "snappy",
+      "version": "1.2.2",
+      "role": "static-library",
+      "archiveName": "snappy-1.2.2.tar.gz",
+      "url": "https://github.com/google/snappy/archive/refs/tags/1.2.2.tar.gz",
+      "sha256": "90f74bc1fbf78a6c56b3c4a082a05103b3a56bb17bca1a27e052ea11723292dc"
+    },
+    {
+      "name": "srt",
+      "version": "1.5.5",
+      "role": "static-library",
+      "archiveName": "srt-1.5.5.tar.gz",
+      "url": "https://github.com/Haivision/srt/archive/refs/tags/v1.5.5.tar.gz",
+      "sha256": "c3518bc43a71b5289032395b2db4c3e09e73d78b54247d56c14553a503b491cf"
+    },
+    {
+      "name": "libvmaf",
+      "version": "3.1.0",
+      "role": "static-library",
+      "archiveName": "libvmaf-3.1.0.tar.gz",
+      "url": "https://github.com/Netflix/vmaf/archive/refs/tags/v3.1.0.tar.gz",
+      "sha256": "80090e29d7fd0db472ddc663513f5be89bc936815e62b767e630c1d627279fe2"
+    },
+    {
+      "name": "libass",
+      "version": "0.17.4",
+      "role": "static-library",
+      "archiveName": "libass-0.17.4.tar.gz",
+      "url": "https://github.com/libass/libass/releases/download/0.17.4/libass-0.17.4.tar.gz",
+      "sha256": "a886b3b80867f437bc55cff3280a652bfa0d37b43d2aff39ddf3c4f288b8c5a8"
+    },
+    {
+      "name": "libklvanc",
+      "version": "1.6.0",
+      "role": "static-library",
+      "archiveName": "libklvanc-1.6.0.tar.gz",
+      "url": "https://github.com/stoth68000/libklvanc/archive/refs/tags/vid.obe.1.6.0.tar.gz",
+      "sha256": "5076ca48455a4ef4ead2cd880ba189b21937a9ad8fd458adfc133d7bb1c948c3"
+    },
+    {
+      "name": "libogg",
+      "version": "1.3.6",
+      "role": "indirect-static-library",
+      "archiveName": "libogg-1.3.6.tar.gz",
+      "url": "https://ftp.osuosl.org/pub/xiph/releases/ogg/libogg-1.3.6.tar.gz",
+      "sha256": "83e6704730683d004d20e21b8f7f55dcb3383cdf84c0daedf30bde175f774638"
+    },
+    {
+      "name": "zimg",
+      "version": "3.0.6",
+      "role": "static-library",
+      "archiveName": "zimg-3.0.6.tar.gz",
+      "url": "https://github.com/sekrit-twc/zimg/archive/refs/tags/release-3.0.6.tar.gz",
+      "sha256": "be89390f13a5c9b2388ce0f44a5e89364a20c1c57ce46d382b1fcc3967057577"
+    },
+    {
+      "name": "zvbi",
+      "version": "0.2.35",
+      "role": "static-library",
+      "archiveName": "zvbi-0.2.35.tar.bz2",
+      "url": "https://downloads.sourceforge.net/project/zapping/zvbi/0.2.35/zvbi-0.2.35.tar.bz2",
+      "sha256": "fc883c34111a487c4a783f91b1b2bb5610d8d8e58dcba80c7ab31e67e4765318"
+    },
+    {
+      "name": "aom",
+      "version": "3.14.1",
+      "role": "static-library",
+      "archiveName": "libaom-3.14.1.tar.gz",
+      "url": "https://storage.googleapis.com/aom-releases/libaom-3.14.1.tar.gz",
+      "sha256": "44bf90dbd23e734d50e70a8c41c285193922938bd0d3bc2ee56764d181d55ef5"
+    },
+    {
+      "name": "dav1d",
+      "version": "1.5.3",
+      "role": "static-library",
+      "archiveName": "dav1d-1.5.3.tar.gz",
+      "url": "https://code.videolan.org/videolan/dav1d/-/archive/1.5.3/dav1d-1.5.3.tar.gz",
+      "sha256": "cbe212b02faf8c6eed5b6d55ef8a6e363aaab83f15112e960701a9c3df813686"
+    },
+    {
+      "name": "openh264",
+      "version": "2.6.0",
+      "role": "static-library",
+      "archiveName": "openh264-2.6.0.tar.gz",
+      "url": "https://github.com/cisco/openh264/archive/v2.6.0.tar.gz",
+      "sha256": "558544ad358283a7ab2930d69a9ceddf913f4a51ee9bf1bfb9e377322af81a69"
+    },
+    {
+      "name": "openjpeg",
+      "version": "2.5.4",
+      "role": "static-library",
+      "archiveName": "openjpeg-2.5.4.tar.gz",
+      "url": "https://github.com/uclouvain/openjpeg/archive/refs/tags/v2.5.4.tar.gz",
+      "sha256": "a695fbe19c0165f295a8531b1e4e855cd94d0875d2f88ec4b61080677e27188a"
+    },
+    {
+      "name": "rav1e",
+      "version": "0.8.1",
+      "role": "static-library-with-cargo-dependencies",
+      "archiveName": "rav1e-0.8.1.tar.gz",
+      "url": "https://github.com/xiph/rav1e/archive/refs/tags/v0.8.1.tar.gz",
+      "sha256": "06d1523955fb6ed9cf9992eace772121067cca7e8926988a1ee16492febbe01e"
+    },
+    {
+      "name": "svt-av1",
+      "version": "3.1.2",
+      "role": "static-library",
+      "archiveName": "svt-av1-3.1.2.tar.gz",
+      "url": "https://gitlab.com/AOMediaCodec/SVT-AV1/-/archive/v3.1.2/SVT-AV1-v3.1.2.tar.gz",
+      "sha256": "d0d73bfea42fdcc1222272bf2b0e2319e9df5574721298090c3d28315586ecb1"
+    },
+    {
+      "name": "libvpx",
+      "version": "1.16.0",
+      "role": "static-library",
+      "archiveName": "libvpx-1.16.0.tar.gz",
+      "url": "https://github.com/webmproject/libvpx/archive/v1.16.0.tar.gz",
+      "sha256": "7a479a3c66b9f5d5542a4c6a1b7d3768a983b1e5c14c60a9396edc9b649e015c"
+    },
+    {
+      "name": "vvenc",
+      "version": "1.14.0",
+      "role": "static-library",
+      "archiveName": "vvenc-1.14.0.tar.gz",
+      "url": "https://github.com/fraunhoferhhi/vvenc/archive/refs/tags/v1.14.0.tar.gz",
+      "sha256": "dd43d061d59dbc0d9b9ae5b99cb40672877dd811646228938f065798939ee174"
+    },
+    {
+      "name": "libwebp",
+      "version": "1.6.0",
+      "role": "static-library",
+      "archiveName": "libwebp-1.6.0.tar.gz",
+      "url": "https://github.com/webmproject/libwebp/archive/refs/tags/v1.6.0.tar.gz",
+      "sha256": "93a852c2b3efafee3723efd4636de855b46f9fe1efddd607e1f42f60fc8f2136"
+    },
+    {
+      "name": "x264",
+      "version": "0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee",
+      "role": "static-library",
+      "archiveName": "x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee.tar.gz",
+      "url": "https://code.videolan.org/videolan/x264/-/archive/0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee/x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee.tar.gz",
+      "sha256": "d0967a1348c85dfde363bb52610403be898171493100561efa0dd05d5fd1ae50",
+      "auditNote": "The upstream recipe fetched x264 master. The latest master commit before both builds, and the still-current master commit when audited, was this exact commit."
+    },
+    {
+      "name": "x265",
+      "version": "4.2",
+      "role": "static-library",
+      "archiveName": "x265-4.2.tar.gz",
+      "url": "https://bitbucket.org/multicoreware/x265_git/get/4.2.tar.gz",
+      "sha256": "0a3d41f6b4e2fe5a49d783d6631bd1a49c44cdf999074a3ff09e2cb71ac8ed33"
+    },
+    {
+      "name": "lame",
+      "version": "3.100",
+      "role": "static-library",
+      "archiveName": "lame-3.100.tar.gz",
+      "url": "https://unlimited.dl.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz",
+      "sha256": "ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e"
+    },
+    {
+      "name": "opus",
+      "version": "1.6.1",
+      "role": "static-library",
+      "archiveName": "opus-1.6.1.tar.gz",
+      "url": "https://downloads.xiph.org/releases/opus/opus-1.6.1.tar.gz",
+      "sha256": "6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1"
+    },
+    {
+      "name": "libvorbis",
+      "version": "1.3.7",
+      "role": "static-library",
+      "archiveName": "libvorbis-1.3.7.tar.gz",
+      "url": "https://ftp.osuosl.org/pub/xiph/releases/vorbis/libvorbis-1.3.7.tar.gz",
+      "sha256": "0e982409a9c3fc82ee06e08205b1355e5c6aa4c36bca58146ef399621b0ce5ab"
+    },
+    {
+      "name": "libtheora",
+      "version": "1.2.0",
+      "role": "static-library",
+      "archiveName": "libtheora-1.2.0.tar.gz",
+      "url": "https://downloads.xiph.org/releases/theora/libtheora-1.2.0.tar.gz",
+      "sha256": "279327339903b544c28a92aeada7d0dcfd0397b59c2f368cc698ac56f515906e"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getActiveSession } from '@shared/session'
 import type { MediaRole } from '@shared/types'
 import { WatchAlongView, type WatchAlongViewActions } from '../components/WatchAlongView'
@@ -42,6 +42,7 @@ export function useWatchAlongController({
   const { setDownloadIndicator, setDownloadEvents } = downloads
   const autoSync = useAutoSync()
   const wizardSwapMovieMomentRef = useRef<number | null>(null)
+  const [appVersion, setAppVersion] = useState<string | null>(null)
   useCabinetTheme(preferences.cabinetTheme)
 
   const activeSession = useMemo(() => getActiveSession(library), [library])
@@ -73,6 +74,20 @@ export function useWatchAlongController({
     commitLibrary,
     refreshMediaUrls
   })
+
+  useEffect(() => {
+    let mounted = true
+    void window.watchAlong.getAppVersion().then((version) => {
+      if (mounted) {
+        setAppVersion(version)
+      }
+    }).catch(() => {
+      // Version information is helpful but must never prevent the app from opening.
+    })
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   useEffect(() => {
     let mounted = true
@@ -260,6 +275,7 @@ export function useWatchAlongController({
       autoSyncBusy={autoSyncBusy}
       autoSyncRollInSessionId={autoSyncRollInSessionId}
       autoSyncRollInFinalizing={autoSyncRollInFinalizing}
+      appVersion={appVersion}
       actions={actions}
     />
   )

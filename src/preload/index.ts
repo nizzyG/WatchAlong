@@ -20,6 +20,7 @@ import type {
 const IPC_PREFIX = 'watchalong'
 
 const api: WatchAlongApi = {
+  getAppVersion: () => ipcRenderer.invoke(`${IPC_PREFIX}:get-app-version`),
   openVideos: () => ipcRenderer.invoke(`${IPC_PREFIX}:open-videos`),
   selectMovieFile: () => ipcRenderer.invoke(`${IPC_PREFIX}:select-movie-file`),
   selectReactionFile: () => ipcRenderer.invoke(`${IPC_PREFIX}:select-reaction-file`),

@@ -219,3 +219,4 @@ If you'd like to support the developer directly, you can [buy me a coffee on Ko-
 - [Privacy](PRIVACY.md)
 - [Security](SECURITY.md)
 - [Third-Party Notices](THIRD_PARTY_NOTICES.md)
+- [FFmpeg Corresponding Source Access](FFMPEG_SOURCE_ACCESS.md)

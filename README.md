@@ -36,7 +36,7 @@ Your Patreon subscriptions are what actually matter. The sync setup shouldn't be
 1. Have a DRM-free local movie file you're authorized to use.
 2. Download WatchAlong from the [releases page](https://github.com/nizzyG/WatchAlong/releases).
    - **Windows:** Run the `.exe` installer.
-   - **macOS:** Open the `.dmg` and drag to Applications.
+   - **macOS 13.5 (Ventura) or later:** Open the `.dmg` and drag to Applications. Choose the Apple Silicon download for an M-series Mac, or the Intel download for an Intel Mac.
 3. Launch and click **+ New WatchAlong**.
 4. Follow the wizard to load your movie and add a reaction.
 
@@ -58,7 +58,7 @@ Movie poster art appears automatically when your library folders contain standar
 
 **Windows:** Tested end to end.
 
-**macOS:** Built and verified, but tested in a virtual machine rather than on real Apple hardware. If you run into trouble on a real Mac, [open an issue](https://github.com/nizzyG/WatchAlong/issues) and let me know.
+**macOS:** Requires macOS 13.5 (Ventura) or later. Both Intel and Apple Silicon installers are built and verified, but tested in a virtual machine rather than on real Apple hardware. If you run into trouble on a real Mac, [open an issue](https://github.com/nizzyG/WatchAlong/issues) and let me know.
 
 This release was built by one person. Bug reports and feedback are always welcome.
 
@@ -72,6 +72,7 @@ Questions about legality, file formats, Patreon setup, frame-rate drift, or how 
 - [Privacy](PRIVACY.md)
 - [Security](SECURITY.md)
 - [Third-Party Notices](THIRD_PARTY_NOTICES.md)
+- [FFmpeg Corresponding Source Access](FFMPEG_SOURCE_ACCESS.md)
 - [Bundled Tool Provenance](TOOL_PROVENANCE.md)
 
 ## Support
@@ -82,7 +83,7 @@ If you'd like to support the developer directly, you can [buy me a coffee on Ko-
 
 ## For developers
 
-Electron, React, and TypeScript. The sync engine and auto-sync detection are pure, tested TypeScript modules. The bundled tools (yt-dlp, ffmpeg, patreon-dl, Node.js) have their own licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Exact sources and SHA-256 digests for the standalone executables are recorded in [TOOL_PROVENANCE.md](TOOL_PROVENANCE.md) and checked offline before every build.
+Electron, React, and TypeScript. The sync engine and auto-sync detection are pure, tested TypeScript modules. The bundled tools (yt-dlp, ffmpeg, patreon-dl, Node.js) have their own licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Exact upstream artifacts and SHA-256 digests for the standalone executables are recorded in [TOOL_PROVENANCE.md](TOOL_PROVENANCE.md) and checked offline before every build. Each release also provides the complete FFmpeg source bundles described in [FFMPEG_SOURCE_ACCESS.md](FFMPEG_SOURCE_ACCESS.md).
 
 ```bash
 git clone https://github.com/nizzyG/WatchAlong.git

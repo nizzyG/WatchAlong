@@ -11,6 +11,10 @@ const MANAGED_TOOL_DIRECTORIES = [
   'resources/tools/node'
 ]
 const LEGACY_TOOL_PATHS = []
+const FORBIDDEN_FFMPEG_MARKERS = [
+  '--enable-nonfree',
+  'nonfree and unredistributable'
+]
 
 export function parseToolProvenance(markdown) {
   const start = markdown.indexOf(MANIFEST_START)
@@ -114,6 +118,7 @@ export async function verifyToolProvenance(repositoryRoot, markdown) {
   }
 
   const mismatches = []
+  const policyViolations = []
   for (const entry of entries) {
     const absolutePath = resolve(repositoryRoot, entry.path)
     const repositoryRelativePath = relative(repositoryRoot, absolutePath)
@@ -124,6 +129,16 @@ export async function verifyToolProvenance(repositoryRoot, markdown) {
     const actual = await sha256File(absolutePath)
     if (actual !== entry.sha256) {
       mismatches.push(`${entry.path}\n  expected ${entry.sha256}\n  actual   ${actual}`)
+      continue
+    }
+
+    if (isFfmpegExecutable(entry.path)) {
+      const forbiddenMarker = await findForbiddenMarker(absolutePath)
+      if (forbiddenMarker) {
+        policyViolations.push(
+          `${entry.path} contains ${JSON.stringify(forbiddenMarker)}, which marks an unredistributable FFmpeg build`
+        )
+      }
     }
   }
 
@@ -131,7 +146,52 @@ export async function verifyToolProvenance(repositoryRoot, markdown) {
     throw new Error(`Bundled tool SHA-256 mismatch:\n${mismatches.join('\n')}`)
   }
 
+  if (policyViolations.length > 0) {
+    throw new Error(`Bundled tool redistribution policy violation:\n- ${policyViolations.join('\n- ')}`)
+  }
+
   return entries
+}
+
+function isFfmpegExecutable(path) {
+  return /^resources\/tools\/ffmpeg\/ff(?:mpeg|probe)(?:\.exe|-)/.test(path)
+}
+
+function findForbiddenMarker(path) {
+  const markers = FORBIDDEN_FFMPEG_MARKERS.map((marker) => ({
+    text: marker,
+    bytes: Buffer.from(marker)
+  }))
+  const overlapLength = Math.max(...markers.map(({ bytes }) => bytes.length)) - 1
+
+  return new Promise((resolveMarker, reject) => {
+    const stream = createReadStream(path)
+    let overlap = Buffer.alloc(0)
+    let settled = false
+
+    stream.on('error', reject)
+    stream.on('data', (chunk) => {
+      if (settled) {
+        return
+      }
+
+      const searchable = overlap.length > 0 ? Buffer.concat([overlap, chunk]) : chunk
+      const match = markers.find(({ bytes }) => searchable.indexOf(bytes) >= 0)
+      if (match) {
+        settled = true
+        stream.destroy()
+        resolveMarker(match.text)
+        return
+      }
+
+      overlap = searchable.subarray(Math.max(0, searchable.length - overlapLength))
+    })
+    stream.on('close', () => {
+      if (!settled) {
+        resolveMarker(null)
+      }
+    })
+  })
 }
 
 function sha256File(path) {

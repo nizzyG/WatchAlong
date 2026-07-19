@@ -67,6 +67,7 @@ function createApi(
   const downloadProgressCallbacks = new Set<DownloadProgressCallback>()
 
   const api = {
+    getAppVersion: vi.fn(async () => '1.1.0'),
     openVideos: vi.fn(),
     selectMovieFile: vi.fn(async () => ({ path: 'C:\\Movies\\Located movie.mp4', name: 'Located movie.mp4' })),
     selectReactionFile: vi.fn(async () => ({ path: 'C:\\Reactions\\Located reaction.mp4', name: 'Located reaction.mp4' })),
@@ -2216,6 +2217,7 @@ describe('App', () => {
     await waitFor(() => expect(api.setPreference).toHaveBeenCalledWith('openLibraryOnLaunch', true))
 
     fireEvent.click(screen.getByRole('button', { name: /Help & About/i }))
+    expect(screen.getByRole('button', { name: /Help & About/i })).toHaveTextContent('Version 1.1.0')
     expect(screen.getByRole('heading', { name: 'Keyboard shortcuts' })).toBeInTheDocument()
     for (const group of keyboardShortcutHelpGroups) {
       expect(screen.getByRole('heading', { name: group.label })).toBeInTheDocument()

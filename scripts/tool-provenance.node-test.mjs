@@ -6,11 +6,11 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { parseToolProvenance, verifyToolProvenance } from './tool-provenance.mjs'
 
-const manifest = (hash) => `
+const manifest = (hash, path = 'resources/tools/yt-dlp/yt-dlp.exe') => `
 <!-- tool-integrity-manifest:start -->
 | Repository path | Target | Version / build | Upstream artifact | SHA-256 |
 |---|---|---|---|---|
-| \`resources/tools/yt-dlp/yt-dlp.exe\` | Windows x64 | test | [fixture](https://example.com/tool) | \`${hash}\` |
+| \`${path}\` | test target | test | [fixture](https://example.com/tool) | \`${hash}\` |
 <!-- tool-integrity-manifest:end -->
 `
 
@@ -46,4 +46,25 @@ test('rejects duplicate manifest paths', () => {
   const duplicateRow = `| \`resources/tools/yt-dlp/yt-dlp.exe\` | Windows x64 | test | [fixture](https://example.com/tool) | \`${hash}\` |`
   const markdown = `${manifest(hash).replace('<!-- tool-integrity-manifest:end -->', '')}\n${duplicateRow}\n<!-- tool-integrity-manifest:end -->`
   assert.throws(() => parseToolProvenance(markdown), /Duplicate tool provenance path/)
+})
+
+test('rejects FFmpeg binaries marked as unredistributable', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'watchalong-tool-provenance-'))
+  const toolDirectory = join(root, 'resources', 'tools', 'ffmpeg')
+  const relativePath = 'resources/tools/ffmpeg/ffmpeg-darwin-arm64'
+  const toolPath = join(toolDirectory, 'ffmpeg-darwin-arm64')
+  const bytes = 'configuration: --enable-gpl --enable-nonfree'
+
+  try {
+    await mkdir(toolDirectory, { recursive: true })
+    await writeFile(toolPath, bytes)
+    const hash = createHash('sha256').update(bytes).digest('hex')
+
+    await assert.rejects(
+      verifyToolProvenance(root, manifest(hash, relativePath)),
+      /unredistributable FFmpeg build/
+    )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })

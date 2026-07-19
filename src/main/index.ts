@@ -9,6 +9,7 @@ import {
   RENDERER_SCHEME
 } from './constants'
 import { registerDownloadIpc } from './ipc/downloadIpc'
+import { registerAppIpc } from './ipc/appIpc'
 import { registerAutoSyncIpc } from './ipc/autoSyncIpc'
 import { registerMovieWindowIpc } from './ipc/movieWindowIpc'
 import { registerMediaKeyIpc } from './ipc/mediaKeyIpc'
@@ -105,6 +106,7 @@ if (!ownsSingleInstance) {
       registerRendererProtocol(join(__dirname, '../renderer'))
     }
     registerSessionIpc({ sessionStore, mediaPathGrants, mainWindowGetter })
+    registerAppIpc({ getVersion: () => app.getVersion() })
     registerPreferencesIpc({ preferencesStore, mainWindowGetter })
     registerDownloadIpc({ downloadManager })
     registerAutoSyncIpc({ autoSyncService })

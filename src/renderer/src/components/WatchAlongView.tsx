@@ -135,6 +135,7 @@ interface WatchAlongViewProps {
   autoSyncBusy: boolean
   autoSyncRollInSessionId: string | null
   autoSyncRollInFinalizing: boolean
+  appVersion: string | null
   actions: WatchAlongViewActions
 }
 
@@ -158,6 +159,7 @@ export function WatchAlongView({
   autoSyncBusy,
   autoSyncRollInSessionId,
   autoSyncRollInFinalizing,
+  appVersion,
   actions
 }: WatchAlongViewProps): JSX.Element {
   const {
@@ -643,6 +645,7 @@ export function WatchAlongView({
           downloads={downloadEvents}
           preferences={preferences}
           patreonStatus={patreonStatus}
+          appVersion={appVersion}
           expandedSection={expandedPanelSection}
           onExpandedSection={setExpandedPanelSection}
           onClose={actions.closeCommandPanel}

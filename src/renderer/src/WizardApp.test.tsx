@@ -359,6 +359,7 @@ function mockAutoSyncResult(result: Omit<AutoSyncCompleteEvent, 'sessionId'>): v
 function createApi(): WatchAlongApi {
   let autoSyncComplete: Parameters<WatchAlongApi['onAutoSyncComplete']>[0] | null = null
   return {
+    getAppVersion: vi.fn(async () => '1.1.0'),
     openVideos: vi.fn(),
     selectMovieFile: vi.fn(async () => firstMovie),
     selectReactionFile: vi.fn(async () => reaction),

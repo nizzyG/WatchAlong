@@ -404,6 +404,7 @@ export interface ImportWizardContext {
 }
 
 export interface WatchAlongApi {
+  getAppVersion(): Promise<string>
   openVideos(): Promise<OpenVideosResult | null>
   selectMovieFile(): Promise<MediaFile | null>
   selectReactionFile(): Promise<MediaFile | null>

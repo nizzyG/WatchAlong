@@ -247,6 +247,7 @@ function renderPanel(
       cabinetTheme: 'system'
     },
     patreonStatus: { available: false, canEncrypt: true },
+    appVersion: '1.1.0',
     expandedSection: 'now-playing',
     onExpandedSection: vi.fn(),
     onClose: vi.fn(),
